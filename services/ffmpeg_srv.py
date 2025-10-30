@@ -1,7 +1,7 @@
 import os
 import subprocess
 from shutil import which
-from typing import Optional
+from typing import List, Optional
 
 
 def _have(cmd: str) -> bool:
@@ -9,11 +9,6 @@ def _have(cmd: str) -> bool:
 
 
 def generate_default_thumbnail(input_path: str, thumbs_dir: str) -> Optional[str]:
-    """
-    Generate a default thumbnail (JPEG) from input video at ~1s.
-    Returns absolute path to the generated thumbnail (thumb_default.jpg),
-    or None if ffmpeg is unavailable or generation failed.
-    """
     if not _have("ffmpeg"):
         return None
     if not os.path.exists(input_path):
@@ -48,9 +43,6 @@ def generate_default_thumbnail(input_path: str, thumbs_dir: str) -> Optional[str
 
 
 def probe_duration_seconds(input_path: str) -> Optional[int]:
-    """
-    Returns duration in whole seconds using ffprobe, or None if unavailable.
-    """
     if not _have("ffprobe"):
         return None
     if not os.path.exists(input_path):
@@ -77,3 +69,60 @@ def probe_duration_seconds(input_path: str) -> Optional[int]:
             return None
     except subprocess.CalledProcessError:
         return None
+
+
+def pick_thumbnail_offsets(duration_sec: Optional[int]) -> List[int]:
+    if duration_sec is None or duration_sec <= 3:
+        return [1]
+    dur = max(1, duration_sec)
+    offsets = set()
+    first = min(10, max(2, int(dur * 0.05)))
+    offsets.add(first)
+    for frac in (0.25, 0.5, 0.75):
+        t = int(dur * frac)
+        if t <= 1:
+            t = 2
+        if t >= dur:
+            t = dur - 1
+        offsets.add(t)
+    res = sorted(x for x in offsets if 1 <= x < dur)
+    if not res:
+        res = [min(5, dur - 1)]
+    return res[:6]
+
+
+def generate_thumbnails(input_path: str, thumbs_dir: str, offsets_sec: List[int]) -> List[str]:
+    if not _have("ffmpeg"):
+        return []
+    if not os.path.exists(input_path):
+        return []
+
+    os.makedirs(thumbs_dir, exist_ok=True)
+    results: List[str] = []
+    index = 1
+    for off in offsets_sec:
+        out_path = os.path.join(thumbs_dir, f"thumb_{index}.jpg")
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            str(off),
+            "-i",
+            input_path,
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=320:-1:flags=bicubic",
+            out_path,
+        ]
+        try:
+            subprocess.run(cmd, check=True)
+            if os.path.exists(out_path):
+                results.append(out_path)
+        except subprocess.CalledProcessError:
+            pass
+        index += 1
+    return results

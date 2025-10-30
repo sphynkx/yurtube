@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Select thumbnail</h1>
+<p>Choose a thumbnail for your video. You can change it later.</p>
+
+<form action="/upload/select-thumbnail" method="post">
+  <input type="hidden" name="video_id" value="{{ video_id }}">
+  <div class="video-grid">
+    {% for c in candidates %}
+    <label class="video-card" style="display:block; border:1px solid #ddd; border-radius:6px; padding:8px;">
+      <div class="thumb" style="margin-bottom:8px;">
+        <img src="{{ c['url'] }}" alt="thumb option" style="width:100%; height:auto; object-fit:cover;">
+      </div>
+      <div>
+        <input type="radio" name="selected_rel" value="{{ c['rel'] }}" {{ 'checked' if c['sel']=='1' else '' }}>
+        Use this
+      </div>
+    </label>
+    {% endfor %}
+  </div>
+  <div style="margin-top:12px;">
+    <button type="submit">Save thumbnail</button>
+    <a href="/manage" style="margin-left:8px;">Skip</a>
+  </div>
+</form>
+{% endblock %}

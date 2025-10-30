@@ -36,7 +36,9 @@ async def create_video(
 
 
 async def set_video_ready(
-    conn: asyncpg.Connection, video_id: str, duration_sec: Optional[int]
+    conn: asyncpg.Connection,
+    video_id: str,
+    duration_sec: Optional[int],
 ) -> None:
     if duration_sec is None:
         await conn.execute(
@@ -59,7 +61,10 @@ async def set_video_ready(
         )
 
 
-async def list_latest_public_videos(conn: asyncpg.Connection, limit: int = 20) -> List[asyncpg.Record]:
+async def list_latest_public_videos(
+    conn: asyncpg.Connection,
+    limit: int = 20,
+) -> List[asyncpg.Record]:
     return await conn.fetch(
         """
         SELECT v.*, u.username, a.path AS thumb_asset_path
@@ -75,7 +80,10 @@ async def list_latest_public_videos(conn: asyncpg.Connection, limit: int = 20) -
     )
 
 
-async def get_video(conn: asyncpg.Connection, video_id: str) -> Optional[asyncpg.Record]:
+async def get_video(
+    conn: asyncpg.Connection,
+    video_id: str,
+) -> Optional[asyncpg.Record]:
     return await conn.fetchrow(
         """
         SELECT v.*, u.username
@@ -87,7 +95,11 @@ async def get_video(conn: asyncpg.Connection, video_id: str) -> Optional[asyncpg
     )
 
 
-async def list_my_videos(conn: asyncpg.Connection, author_uid: str, limit: int = 100) -> List[asyncpg.Record]:
+async def list_my_videos(
+    conn: asyncpg.Connection,
+    author_uid: str,
+    limit: int = 100,
+) -> List[asyncpg.Record]:
     return await conn.fetch(
         """
         SELECT v.*, a.path AS thumb_asset_path
@@ -101,3 +113,41 @@ async def list_my_videos(conn: asyncpg.Connection, author_uid: str, limit: int =
         author_uid,
         limit,
     )
+
+
+async def get_owned_video(
+    conn: asyncpg.Connection,
+    video_id: str,
+    owner_uid: str,
+) -> Optional[asyncpg.Record]:
+    """
+    Return minimal info if the video belongs to owner_uid, else None.
+    """
+    return await conn.fetchrow(
+        """
+        SELECT video_id, author_uid, storage_path
+        FROM videos
+        WHERE video_id = $1 AND author_uid = $2
+        """,
+        video_id,
+        owner_uid,
+    )
+
+
+async def delete_video(
+    conn: asyncpg.Connection,
+    video_id: str,
+    owner_uid: str,
+) -> bool:
+    """
+    Delete video owned by owner_uid. Returns True if a row was deleted.
+    """
+    res = await conn.execute(
+        """
+        DELETE FROM videos
+        WHERE video_id = $1 AND author_uid = $2
+        """,
+        video_id,
+        owner_uid,
+    )
+    return res.endswith("1")

@@ -1,10 +1,4 @@
-# Minimal Brython scaffolding for small UI helpers.
-from browser import document
+# Minimal Brython scaffolding (ASCII only).
+from browser import console
 
-
-def init():
-    # Example: simple client-side flash placeholder, reserved for future.
-    pass
-
-
-init()
+console.log("[brython] init.bry loaded")

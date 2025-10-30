@@ -145,8 +145,5 @@ sudo firewall-cmd --add-port=8077/tcp --permanent
 sudo firewall-cmd --reload
 ```
 
-Monitor:
-```bash
-journalctl -u yurtube.service -f
-```
+
 

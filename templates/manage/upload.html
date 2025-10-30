@@ -6,14 +6,14 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
-<form action="/upload" method="post" enctype="multipart/form-data" novalidate>
+<form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" novalidate>
   <div>
     <label>File</label>
     <input type="file" name="file" required>
   </div>
   <div>
     <label>Title</label>
-    <input type="text" name="title" required value="{{ (form.title if form else '') }}">
+    <input type="text" name="title" value="{{ (form.title if form else '') }}">
   </div>
   <div>
     <label>Description</label>
@@ -46,6 +46,10 @@
   <div>
     <label><input type="checkbox" name="is_made_for_kids" {{ 'checked' if form and form.is_made_for_kids else '' }}> Made for kids</label>
   </div>
-  <button type="submit">Upload</button>
+  <button id="upload-submit" type="submit">Upload</button>
+  <span id="upload-status" style="margin-left:8px;"></span>
 </form>
+
+<!-- Page-specific Brython for preventing double submit -->
+<script type="text/python" src="/static/brython/upload.bry"></script>
 {% endblock %}

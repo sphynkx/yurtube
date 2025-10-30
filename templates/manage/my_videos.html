@@ -1,21 +1,46 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>My videos</h1>
-<div class="video-grid">
+
+<table style="width:100%; border-collapse:collapse;">
+  <thead>
+    <tr>
+      <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;">Thumb</th>
+      <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;">Title</th>
+      <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;">Status</th>
+      <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;">Processing</th>
+      <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;">Actions</th>
+    </tr>
+  </thead>
+  <tbody>
   {% for v in videos %}
-  <a class="video-card" href="/watch?v={{ v['video_id'] }}">
-    <div class="thumb">
-      {% if v['thumb_asset_path'] %}
-        <img src="{{ ('/storage/' + v['thumb_asset_path']) if not storage_public_base_url else (storage_public_base_url.rstrip('/') + '/' + v['thumb_asset_path']) }}" alt="{{ v['title'] }}">
-      {% else %}
-        <img src="data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='180'><rect fill='%23dddddd' width='100%%' height='100%%'/></svg>" alt="{{ v['title'] }}">
-      {% endif %}
-    </div>
-    <div class="meta">
-      <div class="title">{{ v['title'] }}</div>
-      <div class="status">{{ v['status'] }} • {{ v['processing_status'] }}</div>
-    </div>
-  </a>
+    <tr>
+      <td style="padding:8px; width:160px;">
+        <a href="/watch?v={{ v['video_id'] }}">
+          {% if v['thumb_url'] %}
+            <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}" style="width:160px; height:auto; object-fit:cover;">
+          {% else %}
+            <img src="data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='90'><rect fill='%23dddddd' width='100%25' height='100%25'/></svg>" alt="{{ v['title'] }}" style="width:160px; height:auto; object-fit:cover;">
+          {% endif %}
+        </a>
+      </td>
+      <td style="padding:8px;">
+        <div><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
+        <div style="color:#666; font-size:12px;">{{ v['video_id'] }}</div>
+      </td>
+      <td style="padding:8px;">{{ v['status'] }}</td>
+      <td style="padding:8px;">{{ v['processing_status'] }}</td>
+      <td style="padding:8px;">
+        <div style="display:flex; gap:8px;">
+          <form action="/manage/delete" method="post" onsubmit="return confirm('Delete this video?');">
+            <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+            <button type="submit">Delete</button>
+          </form>
+          <a href="/edit/{{ v['video_id'] }}">Edit</a>
+        </div>
+      </td>
+    </tr>
   {% endfor %}
-</div>
+  </tbody>
+</table>
 {% endblock %}

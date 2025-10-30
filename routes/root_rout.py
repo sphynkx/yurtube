@@ -6,12 +6,14 @@ from fastapi.templating import Jinja2Templates
 
 from db import get_conn, release_conn
 from db.videos_db import list_latest_public_videos
+from utils.format_ut import fmt_dt
 from utils.security_ut import get_current_user
-from utils.url_ut import build_storage_url
 from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
+from utils.url_ut import build_storage_url
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+templates.env.filters["dt"] = fmt_dt
 
 
 def _augment_with_thumb(vrow: Dict[str, Any]) -> Dict[str, Any]:

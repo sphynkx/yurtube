@@ -1,0 +1,50 @@
+# Prevent double submission, ASCII only.
+from browser import document, console, window
+
+console.log("[brython] upload.bry loaded")
+
+# Bind only once across duplicate script executions
+if not hasattr(window, "yt_upload_bound"):
+    window.yt_upload_bound = False
+
+
+def on_submit(ev):
+    form = document.getElementById("upload-form")
+    btn = document.getElementById("upload-submit")
+    status = document.getElementById("upload-status")
+
+    if form is None:
+        console.log("[brython] upload: form not found")
+        return
+
+    # If already submitted, do nothing but DO NOT preventDefault
+    if form.attrs.get("data-submitted") == "1":
+        console.log("[brython] upload: repeated submit observed, ignoring")
+        return
+
+    form.attrs["data-submitted"] = "1"
+
+    if btn is not None:
+        btn.disabled = True
+        btn.textContent = "Uploading..."
+
+    if status is not None:
+        status.textContent = "Please wait, uploading and processing..."
+
+    console.log("[brython] upload: submit handler ran")
+
+
+def bind_once():
+    if window.yt_upload_bound:
+        console.log("[brython] upload: already bound, skip")
+        return
+    form = document.getElementById("upload-form")
+    if form is not None:
+        form.bind("submit", on_submit)
+        window.yt_upload_bound = True
+        console.log("[brython] upload: bound submit")
+    else:
+        console.log("[brython] upload: no form, nothing to bind")
+
+
+bind_once()
