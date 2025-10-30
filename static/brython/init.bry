@@ -1,0 +1,10 @@
+# Minimal Brython scaffolding for small UI helpers.
+from browser import document
+
+
+def init():
+    # Example: simple client-side flash placeholder, reserved for future.
+    pass
+
+
+init()

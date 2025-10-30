@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Upload video</h1>
+
+{% if error %}
+<div class="alert alert-error">{{ error }}</div>
+{% endif %}
+
+<form action="/upload" method="post" enctype="multipart/form-data" novalidate>
+  <div>
+    <label>File</label>
+    <input type="file" name="file" required>
+  </div>
+  <div>
+    <label>Title</label>
+    <input type="text" name="title" required value="{{ (form.title if form else '') }}">
+  </div>
+  <div>
+    <label>Description</label>
+    <textarea name="description">{{ (form.description if form else '') }}</textarea>
+  </div>
+  <div>
+    <label>Status</label>
+    <select name="status">
+      {% set s = (form.status if form else 'private') %}
+      <option value="private" {{ 'selected' if s == 'private' else '' }}>Private</option>
+      <option value="unlisted" {{ 'selected' if s == 'unlisted' else '' }}>Unlisted</option>
+      <option value="public" {{ 'selected' if s == 'public' else '' }}>Public</option>
+    </select>
+  </div>
+  <div>
+    <label>Category</label>
+    <select name="category_id">
+      {% set csel = (form.category_id if form else '') %}
+      <option value="">No category</option>
+      {% for c in categories %}
+        <option value="{{ c['category_id'] }}" {{ 'selected' if csel == c['category_id'] else '' }}>
+          {{ c['name'] }}
+        </option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label><input type="checkbox" name="is_age_restricted" {{ 'checked' if form and form.is_age_restricted else '' }}> Age restricted</label>
+  </div>
+  <div>
+    <label><input type="checkbox" name="is_made_for_kids" {{ 'checked' if form and form.is_made_for_kids else '' }}> Made for kids</label>
+  </div>
+  <button type="submit">Upload</button>
+</form>
+{% endblock %}

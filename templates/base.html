@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>YurTube</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="/static/css/main.css" rel="stylesheet">
+  <script type="text/python" src="/static/brython/init.bry"></script>
+  <script src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js"></script>
+  <script>window.addEventListener("load", function(){ brython(); });</script>
+</head>
+<body>
+  <header class="site-header">
+    <div class="logo"><a href="/">YurTube</a></div>
+    <form class="search-form" action="/search" method="get">
+      <input type="text" name="q" placeholder="Search" aria-label="Search">
+    </form>
+    <nav class="user-nav">
+      {% if current_user %}
+        <a href="/upload">Upload</a>
+        <a href="/manage">My videos</a>
+        <form action="/auth/logout" method="post" style="display:inline">
+          <button type="submit">Logout</button>
+        </form>
+      {% else %}
+        <a href="/auth/login">Login</a>
+        <a href="/auth/register">Register</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <ul>
+        <li><a href="/">Home</a></li>
+        <li><a href="/trending">Trending</a></li>
+        <li><a href="/subscriptions">Subscriptions</a></li>
+        <li><a href="/history">History</a></li>
+      </ul>
+    </aside>
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

@@ -1,0 +1,14 @@
+# This file is a sample for deployment-time overrides if you prefer a Python config.
+# In this project we primarily use environment variables via config/config.py.
+# Keep values ASCII-only.
+
+APP_HOST = "0.0.0.0"
+APP_PORT = 8077
+DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5432/yurtube"
+SECRET_KEY = "please-change-me"
+SESSION_COOKIE_NAME = "ytsid"
+SESSION_TTL_SECONDS = 1209600
+STORAGE_ROOT = "/var/www/yurtube/storage"
+STORAGE_PUBLIC_BASE_URL = "https://yurtube.sphynkx.org.ua/storage"
+BASE_URL = "https://yurtube.sphynkx.org.ua"
+DEBUG = False

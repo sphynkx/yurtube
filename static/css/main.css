@@ -1,0 +1,18 @@
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol"; }
+.site-header { display:flex; align-items:center; gap:16px; padding:8px 16px; border-bottom:1px solid #eee; }
+.logo a { font-weight:700; text-decoration:none; color:#111; }
+.search-form input { padding:6px 10px; width:280px; }
+.user-nav a, .user-nav button { margin-left:12px; }
+.layout { display:flex; }
+.sidebar { width:220px; border-right:1px solid #eee; min-height:calc(100vh - 58px); padding:12px; }
+.content { flex:1; padding:16px; }
+.video-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:16px; }
+.video-card { display:block; color:inherit; text-decoration:none; }
+.video-card .thumb { background:#000; width:100%; aspect-ratio:16/9; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.video-card .thumb img { width:100%; height:100%; object-fit:cover; }
+.video-card .meta { padding:6px 0; }
+.player-wrapper { margin-bottom:12px; }
+
+/* Alerts */
+.alert { padding:10px 12px; border-radius:6px; margin:10px 0; border:1px solid transparent; }
+.alert-error { background:#fde8e8; color:#8a1f1f; border-color:#f5c2c7; }

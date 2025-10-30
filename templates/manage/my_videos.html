@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>My videos</h1>
+<div class="video-grid">
+  {% for v in videos %}
+  <a class="video-card" href="/watch?v={{ v['video_id'] }}">
+    <div class="thumb">
+      {% if v['thumb_asset_path'] %}
+        <img src="{{ ('/storage/' + v['thumb_asset_path']) if not storage_public_base_url else (storage_public_base_url.rstrip('/') + '/' + v['thumb_asset_path']) }}" alt="{{ v['title'] }}">
+      {% else %}
+        <img src="data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='180'><rect fill='%23dddddd' width='100%%' height='100%%'/></svg>" alt="{{ v['title'] }}">
+      {% endif %}
+    </div>
+    <div class="meta">
+      <div class="title">{{ v['title'] }}</div>
+      <div class="status">{{ v['status'] }} • {{ v['processing_status'] }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="player-wrapper">
+  <!-- MVP placeholder player: direct original file; later HLS/DASH with ABR -->
+  <video controls preload="metadata" style="width:100%;max-height:70vh">
+    <source src="/storage/{{ video['storage_path'] }}/original.webm" type="video/webm">
+    Your browser does not support the video tag.
+  </video>
+</div>
+<h2>{{ video['title'] }}</h2>
+<div class="video-info">
+  <div class="author">@{{ video['username'] }}</div>
+  <div class="counters">{{ video['views_count'] }} views • {{ video['created_at'] }}</div>
+</div>
+<p>{{ video['description'] }}</p>
+{% endblock %}

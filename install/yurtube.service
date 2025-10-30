@@ -1,0 +1,33 @@
+[Unit]
+Description=YurTube App
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=yurtube
+Group=yurtube
+WorkingDirectory=/var/www/yurtube
+EnvironmentFile=/var/www/yurtube/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/var/www/yurtube/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8077 --workers 2 --proxy-headers --forwarded-allow-ips="192.168.7.1" --access-log
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=true
+
+# File descriptor limit (many sockets/files)
+LimitNOFILE=65536
+
+# Journald -> files (append)
+StandardOutput=append:/var/log/uvicorn/yurtube-access.log
+StandardError=append:/var/log/uvicorn/yurtube-error.log
+
+[Install]
+WantedBy=multi-user.target

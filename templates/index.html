@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Latest videos</h1>
+<div class="video-grid">
+  {% for v in videos %}
+  <a class="video-card" href="/watch?v={{ v['video_id'] }}">
+    <div class="thumb">
+      <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+    </div>
+    <div class="meta">
+      <div class="title">{{ v['title'] }}</div>
+      <div class="author">@{{ v['username'] }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% endblock %}
