@@ -12,28 +12,28 @@
   {% else %}
   <div class="video-grid">
     {% for v in videos %}
-    <div class="video-card">
-      <a href="/watch?v={{ v['video_id'] }}">
-        <div class="thumb">
+    <div class="video-item" style="display:flex; flex-direction:column; gap:6px;">
+      <div class="video-card">
+        <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
           <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
-        </div>
+        </a>
         <div class="meta">
-          <div class="title">{{ v['title'] }}</div>
-          <div class="author">
+          <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
+          <div class="author author-line">
             <img class="mini-avatar" src="{{ v['author_avatar_url_small'] }}" alt="avatar"
                  onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
             {% if v['username'] %}
-              <a href="/@{{ v['username'] }}">@{{ v['username'] }}</a>
+              <span><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></span>
             {% else %}
-              <a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a>
+              <span><a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a></span>
             {% endif %}
           </div>
           {% if v['last_watched_at'] %}
           <div class="time">{{ v['last_watched_at']|dt }}</div>
           {% endif %}
         </div>
-      </a>
-      <form action="/history/remove" method="post" style="margin-top:6px;">
+      </div>
+      <form action="/history/remove" method="post" style="margin:0;">
         <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
         <button type="submit">Remove</button>
       </form>

@@ -24,4 +24,14 @@
 </div>
 
 <p>{{ video['description'] }}</p>
+
+<details style="margin-top:16px;">
+  <summary>Embed</summary>
+  <div style="margin-top:8px;">
+    <textarea id="embed-code" readonly style="width:100%;height:100px;">{{ embed_code }}</textarea>
+    <div style="margin-top:8px;">
+      <button id="copy-embed">Copy to clipboard</button>
+    </div>
+  </div>
+</details>
 {% endblock %}

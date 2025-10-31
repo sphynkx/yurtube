@@ -1,15 +1,11 @@
 # Global Brython helpers (ASCII only)
 from browser import document, console, window
-from urllib.parse import urlparse, urlunparse, parse_qs, urlencode
 
 
 def _append_cache_bust(src: str) -> str:
     try:
-        parts = urlparse(src)
-        q = parse_qs(parts.query)
-        q["v"] = [str(int(window.Date.new().getTime()))]
-        new_query = urlencode(q, doseq=True)
-        return urlunparse((parts.scheme, parts.netloc, parts.path, parts.params, new_query, parts.fragment))
+        sep = "&" if "?" in src else "?"
+        return f"{src}{sep}v={int(window.Date.new().getTime())}"
     except Exception as e:
         console.log(f"[brython] cache-bust error: {e}")
         return src
@@ -23,14 +19,36 @@ def _fallback_avatar(ev):
     console.log("[brython] avatar fallback applied")
 
 
+def _bind_copy_embed():
+    btn = document.getElementById("copy-embed")
+    area = document.getElementById("embed-code")
+    if not btn or not area:
+        return
+
+    def _copy(ev):
+        txt = area.value
+        # Clipboard API if available
+        nav = window.navigator
+        if hasattr(nav, "clipboard") and nav.clipboard:
+            nav.clipboard.writeText(txt)
+            console.log("[brython] embed copied (clipboard API)")
+        else:
+            area.select()
+            ok = document.execCommand("copy")
+            console.log(f"[brython] embed copied (execCommand={ok})")
+
+    btn.bind("click", _copy)
+
+
 def init():
-    # Cache-bust nav avatar on each page load to avoid stale cached images after delete
     img = document.getElementById("nav-avatar")
     if img is not None:
         img.bind("error", _fallback_avatar)
         if img.attrs.get("data-cache-bust") == "1":
             img.attrs["src"] = _append_cache_bust(img.attrs["src"])
             console.log("[brython] nav avatar cache-busted")
+
+    _bind_copy_embed()
     console.log("[brython] init.bry loaded")
 
 

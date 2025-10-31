@@ -27,23 +27,23 @@
 <h2>Videos</h2>
 <div class="video-grid">
   {% for v in videos %}
-  <a class="video-card" href="/watch?v={{ v['video_id'] }}">
-    <div class="thumb">
+  <div class="video-card">
+    <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
       <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
-    </div>
+    </a>
     <div class="meta">
-      <div class="title">{{ v['title'] }}</div>
-      <div class="author">
+      <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
+      <div class="author author-line">
         <img class="mini-avatar" src="{{ v['author_avatar_url_small'] }}" alt="avatar"
              onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
         {% if v['username'] %}
-          <a href="/@{{ v['username'] }}">@{{ v['username'] }}</a>
+          <span><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></span>
         {% else %}
-          <a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a>
+          <span><a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a></span>
         {% endif %}
       </div>
     </div>
-  </a>
+  </div>
   {% endfor %}
   {% if videos|length == 0 %}
   <p>No videos yet.</p>
