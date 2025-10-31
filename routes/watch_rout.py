@@ -9,10 +9,21 @@ from db.views_db import add_view, increment_video_views_counter
 from db.videos_db import get_video
 from utils.format_ut import fmt_dt
 from utils.security_ut import get_current_user
+from utils.url_ut import build_storage_url
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
+
+
+def _avatar_small_url(avatar_path: Optional[str]) -> str:
+    if not avatar_path:
+        return "/static/img/avatar_default.svg"
+    if avatar_path.endswith("avatar.png"):
+        small_rel = avatar_path[: -len("avatar.png")] + "avatar_small.png"
+    else:
+        small_rel = avatar_path
+    return build_storage_url(small_rel)
 
 
 @router.get("/watch", response_class=HTMLResponse)
@@ -23,7 +34,6 @@ async def watch(request: Request, v: str = Query(..., min_length=12, max_length=
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        # Count a view (MVP: count on page load)
         user = get_current_user(request)
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
@@ -32,7 +42,9 @@ async def watch(request: Request, v: str = Query(..., min_length=12, max_length=
         await release_conn(conn)
 
     user = get_current_user(request)
+    vdict = dict(video)
+    vdict["author_avatar_url_small"] = _avatar_small_url(vdict.get("avatar_asset_path"))
     return templates.TemplateResponse(
         "watch.html",
-        {"request": request, "video": video, "current_user": user},
+        {"request": request, "video": vdict, "current_user": user},
     )

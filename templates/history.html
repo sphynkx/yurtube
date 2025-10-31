@@ -4,23 +4,40 @@
 {% if need_login %}
 <p>Please <a href="/auth/login">log in</a> to see your history.</p>
 {% else %}
+  <form action="/history/clear" method="post" style="margin:8px 0;">
+    <button type="submit">Clear all</button>
+  </form>
   {% if videos|length == 0 %}
   <p>No watch history yet.</p>
   {% else %}
   <div class="video-grid">
     {% for v in videos %}
-    <a class="video-card" href="/watch?v={{ v['video_id'] }}">
-      <div class="thumb">
-        <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
-      </div>
-      <div class="meta">
-        <div class="title">{{ v['title'] }}</div>
-        <div class="author"><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></div>
-        {% if v['last_watched_at'] %}
-        <div class="time">{{ v['last_watched_at']|dt }}</div>
-        {% endif %}
-      </div>
-    </a>
+    <div class="video-card">
+      <a href="/watch?v={{ v['video_id'] }}">
+        <div class="thumb">
+          <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+        </div>
+        <div class="meta">
+          <div class="title">{{ v['title'] }}</div>
+          <div class="author">
+            <img class="mini-avatar" src="{{ v['author_avatar_url_small'] }}" alt="avatar"
+                 onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
+            {% if v['username'] %}
+              <a href="/@{{ v['username'] }}">@{{ v['username'] }}</a>
+            {% else %}
+              <a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a>
+            {% endif %}
+          </div>
+          {% if v['last_watched_at'] %}
+          <div class="time">{{ v['last_watched_at']|dt }}</div>
+          {% endif %}
+        </div>
+      </a>
+      <form action="/history/remove" method="post" style="margin-top:6px;">
+        <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+        <button type="submit">Remove</button>
+      </form>
+    </div>
     {% endfor %}
   </div>
   {% endif %}

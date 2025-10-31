@@ -4,22 +4,28 @@
 {% if need_login %}
 <p>Please <a href="/auth/login">log in</a> to see your subscriptions.</p>
 {% else %}
-  {% if videos|length == 0 %}
-  <p>No videos from your subscriptions yet.</p>
+  {% if channels|length == 0 %}
+  <p>You are not subscribed to any channels yet.</p>
   {% else %}
-  <div class="video-grid">
-    {% for v in videos %}
-    <a class="video-card" href="/watch?v={{ v['video_id'] }}">
-      <div class="thumb">
-        <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+  <ul style="list-style:none; padding:0; margin:0;">
+    {% for c in channels %}
+    <li style="display:flex; align-items:center; justify-content:space-between; padding:8px 0; border-bottom:1px solid #eee;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <img class="mini-avatar" src="{{ c['avatar_url_small'] }}" alt="avatar"
+             onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
+        {% if c['username'] %}
+          <a href="/@{{ c['username'] }}">@{{ c['username'] }}</a>
+        {% else %}
+          <a href="/c/{{ c['channel_id'] }}">{{ c['channel_id'] }}</a>
+        {% endif %}
       </div>
-      <div class="meta">
-        <div class="title">{{ v['title'] }}</div>
-        <div class="author"><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></div>
-      </div>
-    </a>
+      <form action="/channel/unsubscribe" method="post" style="margin:0;">
+        <input type="hidden" name="channel_uid" value="{{ c['user_uid'] }}">
+        <button type="submit">Unsubscribe</button>
+      </form>
+    </li>
     {% endfor %}
-  </div>
+  </ul>
   {% endif %}
 {% endif %}
 {% endblock %}

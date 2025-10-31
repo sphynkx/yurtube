@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Account</h1>
+
+<div style="display:flex; gap:24px; align-items:flex-start;">
+  <div>
+    <div>Avatar</div>
+    <div style="margin:8px 0;">
+      {% if avatar_url %}
+        <img src="{{ avatar_url }}" alt="avatar" class="avatar-img">
+      {% else %}
+        <img src="/static/img/avatar_default.svg" alt="avatar" class="avatar-img">
+      {% endif %}
+    </div>
+    <form action="/account/profile" method="post" enctype="multipart/form-data" style="margin-bottom:8px;">
+      <input type="file" name="avatar" accept="image/*" required>
+      <div style="margin-top:8px;">
+        <button type="submit">Upload avatar</button>
+      </div>
+    </form>
+    {% if avatar_url %}
+    <form action="/account/avatar/delete" method="post" onsubmit="return confirm('Delete avatar?');">
+      <button type="submit">Delete avatar</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div>
+    <h2>Profile</h2>
+    <p>You can customize your account here.</p>
+    <ul>
+      <li><a href="/channel/subscribers?channel_uid={{ current_user['user_uid'] }}">Subscribers</a></li>
+      <li><a href="/manage">My videos</a></li>
+      <li><a href="/subscriptions">My subscriptions</a></li>
+      <li><a href="/history">My history</a></li>
+    </ul>
+  </div>
+</div>
+{% endblock %}

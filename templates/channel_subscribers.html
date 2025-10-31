@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Subscribers</h1>
+
+<table style="width:100%; border-collapse:collapse;">
+  <thead>
+    <tr>
+      <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;">Channel</th>
+      <th style="text-align:left; border-bottom:1px solid #eee; padding:8px;">Since</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for u in subscribers %}
+    <tr>
+      <td style="padding:8px;">
+        {% if u['username'] %}
+          <a href="/@{{ u['username'] }}">@{{ u['username'] }}</a>
+        {% else %}
+          <a href="/c/{{ u['channel_id'] }}">{{ u['channel_id'] }}</a>
+        {% endif %}
+      </td>
+      <td style="padding:8px;">{{ u['created_at']|dt }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% if subscribers|length == 0 %}
+<p>No subscribers yet.</p>
+{% endif %}
+{% endblock %}

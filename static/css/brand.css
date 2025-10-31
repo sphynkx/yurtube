@@ -1,5 +1,130 @@
-/* Simple brand styles kept separate to avoid touching main.css */
+/* Brand and header layout (ASCII only) */
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.search-form {
+  flex: 1;
+}
+
+.user-nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .brand-logo {
   height: 50px;
   display: block;
+}
+
+/* Avatar styles */
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e0e0e0;
+  display: inline-block;
+  object-fit: cover;
+  border: 1px solid #ddd;
+}
+
+/* Small avatar used near names */
+.mini-avatar {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  object-fit: cover;
+  vertical-align: middle;
+  margin-right: 6px;
+  border: 1px solid #ddd;
+}
+
+/* Larger avatar on account page */
+.avatar-img {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: #e0e0e0;
+  display: inline-block;
+  object-fit: cover;
+  border: 1px solid #ddd;
+}
+
+/* User dropdown */
+.user-menu {
+  display: inline-block;
+  position: relative;
+}
+
+.user-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.user-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.user-menu[open] > ul {
+  display: block;
+}
+
+.user-menu > ul {
+  display: none;
+  position: absolute;
+  right: 0;
+  margin: 6px 0 0 0;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #ddd;
+  min-width: 180px;
+  z-index: 1000;
+}
+.user-menu > ul > li {
+  margin: 6px 0;
+}
+.user-menu > ul > li.menu-sep {
+  margin: 10px 0;
+}
+.user-menu > ul > li.menu-sep hr {
+  border: none;
+  border-top: 1px solid #eee;
+}
+
+/* Force vertical cards on listings and show author line inline */
+.video-grid .video-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.video-card .thumb {
+  margin-bottom: 6px;
+}
+
+.author-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 600px) {
+  .brand-logo {
+    height: 40px;
+  }
+  .avatar {
+    width: 28px;
+    height: 28px;
+  }
+}
+@media (max-width: 400px) {
+  .brand-logo {
+    height: 32px;
+  }
+  .avatar {
+    width: 24px;
+    height: 24px;
+  }
 }

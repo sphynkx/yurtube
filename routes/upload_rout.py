@@ -10,6 +10,7 @@ from config.config import settings
 from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset
 from db.categories_db import category_exists, list_categories
+from db.subscriptions_db import count_subscribers
 from db.videos_db import (
     create_video,
     delete_video,
@@ -49,6 +50,7 @@ async def manage_home(request: Request) -> Any:
     conn = await get_conn()
     try:
         rows = await list_my_videos(conn, user["user_uid"])
+        subs_count = await count_subscribers(conn, user["user_uid"])
     finally:
         await release_conn(conn)
 
@@ -61,7 +63,7 @@ async def manage_home(request: Request) -> Any:
 
     return templates.TemplateResponse(
         "manage/my_videos.html",
-        {"request": request, "current_user": user, "videos": videos},
+        {"request": request, "current_user": user, "videos": videos, "subscribers_count": subs_count},
     )
 
 
@@ -238,7 +240,7 @@ async def select_thumbnail(
             raise HTTPException(status_code=404, detail="Video not found")
 
         rel_storage = owned["storage_path"]
-        expected_prefix = os.path.join(rel_storage, "thumbs") + os.sep
+        expected_prefix = rel_storage.rstrip("/") + "/thumbs/"
 
         sel_norm = selected_rel.replace("\\", "/").lstrip("/")
         if not sel_norm.startswith(expected_prefix):

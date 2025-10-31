@@ -16,10 +16,22 @@ templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
 
 
+def _avatar_small_url(avatar_path: Optional[str]) -> str:
+    if not avatar_path:
+        return "/static/img/avatar_default.svg"
+    if avatar_path.endswith("avatar.png"):
+        small_rel = avatar_path[: -len("avatar.png")] + "avatar_small.png"
+    else:
+        small_rel = avatar_path
+    return build_storage_url(small_rel)
+
+
 def _augment_with_thumb(vrow: Dict[str, Any]) -> Dict[str, Any]:
-    thumb_path = vrow.get("thumb_asset_path")
     v = dict(vrow)
+    thumb_path = v.get("thumb_asset_path")
+    avatar_path = v.get("avatar_asset_path")
     v["thumb_url"] = build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
+    v["author_avatar_url_small"] = _avatar_small_url(avatar_path)
     return v
 
 

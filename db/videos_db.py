@@ -67,11 +67,15 @@ async def list_latest_public_videos(
 ) -> List[asyncpg.Record]:
     return await conn.fetch(
         """
-        SELECT v.*, u.username, a.path AS thumb_asset_path
+        SELECT v.*, u.username, u.channel_id,
+               a.path AS thumb_asset_path,
+               ua.path AS avatar_asset_path
         FROM videos v
         JOIN users u ON u.user_uid = v.author_uid
         LEFT JOIN video_assets a
           ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        LEFT JOIN user_assets ua
+          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
         WHERE v.status = 'public' AND v.processing_status = 'ready'
         ORDER BY v.created_at DESC
         LIMIT $1
@@ -82,51 +86,74 @@ async def list_latest_public_videos(
 
 async def list_trending_public_videos(
     conn: asyncpg.Connection,
-    limit: int = 20,
+    period: str,
+    limit: int,
+    offset: int,
 ) -> List[asyncpg.Record]:
+    if period == "day":
+        interval = "1 day"
+    elif period == "week":
+        interval = "7 days"
+    else:
+        interval = "30 days"
+
     return await conn.fetch(
-        """
-        SELECT v.*, u.username, a.path AS thumb_asset_path
+        f"""
+        SELECT v.*, u.username, u.channel_id,
+               a.path AS thumb_asset_path,
+               ua.path AS avatar_asset_path
         FROM videos v
         JOIN users u ON u.user_uid = v.author_uid
         LEFT JOIN video_assets a
           ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
-        WHERE v.status = 'public' AND v.processing_status = 'ready'
+        LEFT JOIN user_assets ua
+          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
+        WHERE v.status = 'public'
+          AND v.processing_status = 'ready'
+          AND v.created_at >= NOW() - INTERVAL '{interval}'
         ORDER BY v.views_count DESC, v.created_at DESC
-        LIMIT $1
+        LIMIT $1 OFFSET $2
         """,
         limit,
+        offset,
     )
 
 
 async def list_subscription_feed(
     conn: asyncpg.Connection,
     subscriber_uid: str,
-    limit: int = 50,
+    limit: int,
+    offset: int,
 ) -> List[asyncpg.Record]:
     return await conn.fetch(
         """
-        SELECT v.*, u.username, a.path AS thumb_asset_path
+        SELECT v.*, u.username, u.channel_id,
+               a.path AS thumb_asset_path,
+               ua.path AS avatar_asset_path
         FROM subscriptions s
         JOIN videos v ON v.author_uid = s.channel_uid
         JOIN users u ON u.user_uid = v.author_uid
         LEFT JOIN video_assets a
           ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        LEFT JOIN user_assets ua
+          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
         WHERE s.subscriber_uid = $1
           AND v.status = 'public'
           AND v.processing_status = 'ready'
         ORDER BY v.created_at DESC
-        LIMIT $2
+        LIMIT $2 OFFSET $3
         """,
         subscriber_uid,
         limit,
+        offset,
     )
 
 
 async def list_history_distinct_latest(
     conn: asyncpg.Connection,
     user_uid: str,
-    limit: int = 50,
+    limit: int,
+    offset: int,
 ) -> List[asyncpg.Record]:
     return await conn.fetch(
         """
@@ -136,17 +163,52 @@ async def list_history_distinct_latest(
           WHERE user_uid = $1
           GROUP BY video_id
         )
-        SELECT v.*, u.username, a.path AS thumb_asset_path, lv.last_watched_at
+        SELECT v.*, u.username, u.channel_id,
+               a.path AS thumb_asset_path,
+               ua.path AS avatar_asset_path,
+               lv.last_watched_at
         FROM last_view lv
         JOIN videos v ON v.video_id = lv.video_id
         JOIN users u ON u.user_uid = v.author_uid
         LEFT JOIN video_assets a
           ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        LEFT JOIN user_assets ua
+          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
         ORDER BY lv.last_watched_at DESC
-        LIMIT $2
+        LIMIT $2 OFFSET $3
         """,
         user_uid,
         limit,
+        offset,
+    )
+
+
+async def list_author_public_videos(
+    conn: asyncpg.Connection,
+    author_uid: str,
+    limit: int,
+    offset: int,
+) -> List[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        SELECT v.*, u.username, u.channel_id,
+               a.path AS thumb_asset_path,
+               ua.path AS avatar_asset_path
+        FROM videos v
+        JOIN users u ON u.user_uid = v.author_uid
+        LEFT JOIN video_assets a
+          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        LEFT JOIN user_assets ua
+          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
+        WHERE v.author_uid = $1
+          AND v.status = 'public'
+          AND v.processing_status = 'ready'
+        ORDER BY v.created_at DESC
+        LIMIT $2 OFFSET $3
+        """,
+        author_uid,
+        limit,
+        offset,
     )
 
 
@@ -156,9 +218,12 @@ async def get_video(
 ) -> Optional[asyncpg.Record]:
     return await conn.fetchrow(
         """
-        SELECT v.*, u.username
+        SELECT v.*, u.username, u.channel_id,
+               ua.path AS avatar_asset_path
         FROM videos v
         JOIN users u ON u.user_uid = v.author_uid
+        LEFT JOIN user_assets ua
+          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
         WHERE v.video_id = $1
         """,
         video_id,

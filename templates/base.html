@@ -6,13 +6,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="/static/css/main.css" rel="stylesheet">
   <link href="/static/css/brand.css" rel="stylesheet">
-  <!-- Brython runtime must be loaded before any type="text/python" scripts -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/img/YT_fav32.png">
+  <link rel="apple-touch-icon" href="/static/img/YT_fav128.png">
   <script src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js"></script>
   <script type="text/python" src="/static/brython/init.bry"></script>
   <script>
-    window.addEventListener("load", function(){ brython(); });
+    document.addEventListener("DOMContentLoaded", function(){ brython(); });
   </script>
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/img/YT_fav32.png">
 </head>
 <body>
   <header class="site-header">
@@ -26,11 +26,32 @@
     </form>
     <nav class="user-nav">
       {% if current_user %}
-        <a href="/upload">Upload</a>
-        <a href="/manage">My videos</a>
-        <form action="/auth/logout" method="post" style="display:inline">
-          <button type="submit">Logout</button>
-        </form>
+        <details class="user-menu">
+          <summary>
+            <img
+              id="nav-avatar"
+              src="/storage/users/{{ current_user['user_uid'] }}/avatar_small.png"
+              alt="me"
+              class="avatar"
+              data-cache-bust="1"
+              onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';"
+            >
+          </summary>
+          <ul>
+            <li><a href="/account">Account</a></li>
+            <li><a href="/manage">My videos</a></li>
+            <li><a href="/subscriptions">My subscriptions</a></li>
+            <li><a href="/history">My history</a></li>
+            <li class="menu-sep"><hr></li>
+            <li><a href="/upload">Upload</a></li>
+            <li class="menu-sep"><hr></li>
+            <li>
+              <form action="/auth/logout" method="post" style="display:inline">
+                <button type="submit">Logout</button>
+              </form>
+            </li>
+          </ul>
+        </details>
       {% else %}
         <a href="/auth/login">Login</a>
         <a href="/auth/register">Register</a>

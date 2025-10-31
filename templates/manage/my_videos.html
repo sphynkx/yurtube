@@ -2,6 +2,12 @@
 {% block content %}
 <h1>My videos</h1>
 
+<div style="margin:8px 0;">
+  Subscribers:
+  <strong>{{ subscribers_count }}</strong>
+  <a href="/channel/subscribers?channel_uid={{ current_user['user_uid'] }}" style="margin-left:8px;">View</a>
+</div>
+
 <table style="width:100%; border-collapse:collapse;">
   <thead>
     <tr>

@@ -7,11 +7,17 @@
   </video>
 </div>
 
-<h2>{{ video['title'] }}</h2>
+<h2 class="watch-title">{{ video['title'] }}</h2>
 
 <div class="video-info">
   <div class="author">
-    <a href="/@{{ video['username'] }}">@{{ video['username'] }}</a>
+    <img class="mini-avatar" src="{{ video['author_avatar_url_small'] }}" alt="avatar"
+         onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
+    {% if video['username'] %}
+      <a href="/@{{ video['username'] }}">@{{ video['username'] }}</a>
+    {% else %}
+      <a href="/c/{{ video['channel_id'] }}">{{ video['channel_id'] }}</a>
+    {% endif %}
   </div>
   <div class="counters">{{ video['views_count'] }} views</div>
   <div class="created-at">{{ video['created_at']|dt }}</div>

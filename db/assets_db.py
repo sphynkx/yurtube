@@ -4,7 +4,10 @@ import asyncpg
 
 
 async def upsert_video_asset(
-    conn: asyncpg.Connection, video_id: str, asset_type: str, path: str
+    conn: asyncpg.Connection,
+    video_id: str,
+    asset_type: str,
+    path: str,
 ) -> None:
     await conn.execute(
         """
@@ -23,7 +26,8 @@ async def upsert_video_asset(
 async def get_thumbnail_asset_path(conn: asyncpg.Connection, video_id: str) -> Optional[str]:
     row = await conn.fetchrow(
         """
-        SELECT path FROM video_assets
+        SELECT path
+        FROM video_assets
         WHERE video_id = $1 AND asset_type = 'thumbnail_default'
         """,
         video_id,

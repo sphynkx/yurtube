@@ -126,3 +126,36 @@ def generate_thumbnails(input_path: str, thumbs_dir: str, offsets_sec: List[int]
             pass
         index += 1
     return results
+
+
+def generate_image_thumbnail(input_path: str, out_path: str, max_size_px: int) -> bool:
+    """
+    Downscale image to fit within max_size_px, preserve aspect ratio.
+    Save as PNG/JPEG depending on out_path extension.
+    """
+    if not _have("ffmpeg"):
+        return False
+    if not os.path.exists(input_path):
+        return False
+
+    # Scale longest side to max_size_px, keep AR
+    # scale=iw:ih -> use conditional to cap longest side
+    vf = f"scale='if(gt(iw,ih),{max_size_px},-1)':'if(gt(iw,ih),-1,{max_size_px})':flags=lanczos"
+
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        input_path,
+        "-vf",
+        vf,
+        out_path,
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        return os.path.exists(out_path)
+    except subprocess.CalledProcessError:
+        return False

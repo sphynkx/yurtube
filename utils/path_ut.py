@@ -10,6 +10,13 @@ def build_video_storage_dir(root: str, video_id: str) -> str:
     return os.path.join(root, prefix, video_id)
 
 
+def build_user_storage_dir(root: str, user_uid: str) -> str:
+    """
+    Returns absolute path like: {root}/users/{user_uid}/
+    """
+    return os.path.join(root, "users", user_uid)
+
+
 def safe_remove_storage_relpath(root: str, rel_path: str) -> bool:
     """
     Remove directory at STORAGE_ROOT/rel_path safely if it exists.

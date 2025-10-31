@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Channel</h1>
+
+<div class="channel-header" style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+  <div class="channel-id">
+    {% if owner['username'] %}@{{ owner['username'] }}{% else %}{{ owner['channel_id'] }}{% endif %}
+  </div>
+  <div class="subs-count">{{ subscribers }} subscribers</div>
+  <div>
+    {% if current_user and current_user['user_uid'] != owner['user_uid'] %}
+      {% if subscribed %}
+      <form action="/channel/unsubscribe" method="post" style="display:inline;">
+        <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
+        <button type="submit">Unsubscribe</button>
+      </form>
+      {% else %}
+      <form action="/channel/subscribe" method="post" style="display:inline;">
+        <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
+        <button type="submit">Subscribe</button>
+      </form>
+      {% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<h2>Videos</h2>
+<div class="video-grid">
+  {% for v in videos %}
+  <a class="video-card" href="/watch?v={{ v['video_id'] }}">
+    <div class="thumb">
+      <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+    </div>
+    <div class="meta">
+      <div class="title">{{ v['title'] }}</div>
+      <div class="author">
+        <img class="mini-avatar" src="{{ v['author_avatar_url_small'] }}" alt="avatar"
+             onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
+        {% if v['username'] %}
+          <a href="/@{{ v['username'] }}">@{{ v['username'] }}</a>
+        {% else %}
+          <a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a>
+        {% endif %}
+      </div>
+    </div>
+  </a>
+  {% endfor %}
+  {% if videos|length == 0 %}
+  <p>No videos yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

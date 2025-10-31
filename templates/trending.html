@@ -1,20 +1,54 @@
 {% extends "base.html" %}
 {% block content %}
 <h1>Trending</h1>
+
+<form action="/trending" method="get" style="margin:8px 0;">
+  <label>Period:
+    <select name="period" onchange="this.form.submit()">
+      <option value="day" {{ 'selected' if period == 'day' else '' }}>Last 24h</option>
+      <option value="week" {{ 'selected' if period == 'week' else '' }}>Last 7 days</option>
+      <option value="month" {{ 'selected' if period == 'month' else '' }}>Last 30 days</option>
+    </select>
+  </label>
+  <input type="hidden" name="page" value="{{ page }}">
+</form>
+
 <div class="video-grid">
   {% for v in videos %}
-  <a class="video-card" href="/watch?v={{ v['video_id'] }}">
-    <div class="thumb">
+  <div class="video-card">
+    <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
       <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
-    </div>
+    </a>
     <div class="meta">
-      <div class="title">{{ v['title'] }}</div>
-      <div class="author"><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></div>
+      <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
+      <div class="author author-line">
+        <img class="mini-avatar"
+             src="{{ v.get('author_avatar_url_small', '/static/img/avatar_default.svg') }}"
+             alt="avatar"
+             onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
+        {% if v.get('username') %}
+          <span><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></span>
+        {% else %}
+          <span><a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a></span>
+        {% endif %}
+      </div>
     </div>
-  </a>
+  </div>
   {% endfor %}
   {% if videos|length == 0 %}
   <p>No videos yet.</p>
+  {% endif %}
+</div>
+
+<div class="pager" style="margin:12px 0;">
+  {% set prev = page - 1 %}
+  {% set next = page + 1 %}
+  {% if page > 1 %}
+    <a href="/trending?period={{ period }}&page={{ prev }}">Prev</a>
+  {% endif %}
+  <span style="margin:0 8px;">Page {{ page }}</span>
+  {% if videos|length == per_page %}
+    <a href="/trending?period={{ period }}&page={{ next }}">Next</a>
   {% endif %}
 </div>
 {% endblock %}

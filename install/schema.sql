@@ -22,6 +22,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_uidx ON users (lower(user
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_uidx ON users (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS users_channel_id_uidx ON users (channel_id);
 
+-- User assets (avatar)
+CREATE TABLE IF NOT EXISTS user_assets (
+    user_uid   TEXT NOT NULL REFERENCES users(user_uid) ON DELETE CASCADE,
+    asset_type TEXT NOT NULL CHECK (asset_type IN ('avatar')),
+    path       TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_uid, asset_type)
+);
+
 -- Categories (single category per video, optional)
 CREATE TABLE IF NOT EXISTS categories (
     category_id TEXT PRIMARY KEY,
