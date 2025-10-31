@@ -13,10 +13,8 @@ def generate_default_thumbnail(input_path: str, thumbs_dir: str) -> Optional[str
         return None
     if not os.path.exists(input_path):
         return None
-
     os.makedirs(thumbs_dir, exist_ok=True)
     out_path = os.path.join(thumbs_dir, "thumb_default.jpg")
-
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -35,9 +33,7 @@ def generate_default_thumbnail(input_path: str, thumbs_dir: str) -> Optional[str
     ]
     try:
         subprocess.run(cmd, check=True)
-        if os.path.exists(out_path):
-            return out_path
-        return None
+        return out_path if os.path.exists(out_path) else None
     except subprocess.CalledProcessError:
         return None
 
@@ -47,7 +43,6 @@ def probe_duration_seconds(input_path: str) -> Optional[int]:
         return None
     if not os.path.exists(input_path):
         return None
-
     cmd = [
         "ffprobe",
         "-v",
@@ -60,8 +55,6 @@ def probe_duration_seconds(input_path: str) -> Optional[int]:
     ]
     try:
         out = subprocess.check_output(cmd, text=True).strip()
-        if not out:
-            return None
         try:
             sec = float(out)
             return max(0, int(round(sec)))
@@ -80,15 +73,10 @@ def pick_thumbnail_offsets(duration_sec: Optional[int]) -> List[int]:
     offsets.add(first)
     for frac in (0.25, 0.5, 0.75):
         t = int(dur * frac)
-        if t <= 1:
-            t = 2
-        if t >= dur:
-            t = dur - 1
+        t = 2 if t <= 1 else (dur - 1 if t >= dur else t)
         offsets.add(t)
     res = sorted(x for x in offsets if 1 <= x < dur)
-    if not res:
-        res = [min(5, dur - 1)]
-    return res[:6]
+    return res[:6] if res else [min(5, dur - 1)]
 
 
 def generate_thumbnails(input_path: str, thumbs_dir: str, offsets_sec: List[int]) -> List[str]:
@@ -96,7 +84,6 @@ def generate_thumbnails(input_path: str, thumbs_dir: str, offsets_sec: List[int]
         return []
     if not os.path.exists(input_path):
         return []
-
     os.makedirs(thumbs_dir, exist_ok=True)
     results: List[str] = []
     index = 1
@@ -129,19 +116,11 @@ def generate_thumbnails(input_path: str, thumbs_dir: str, offsets_sec: List[int]
 
 
 def generate_image_thumbnail(input_path: str, out_path: str, max_size_px: int) -> bool:
-    """
-    Downscale image to fit within max_size_px, preserve aspect ratio.
-    Save as PNG/JPEG depending on out_path extension.
-    """
     if not _have("ffmpeg"):
         return False
     if not os.path.exists(input_path):
         return False
-
-    # Scale longest side to max_size_px, keep AR
-    # scale=iw:ih -> use conditional to cap longest side
     vf = f"scale='if(gt(iw,ih),{max_size_px},-1)':'if(gt(iw,ih),-1,{max_size_px})':flags=lanczos"
-
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -152,6 +131,51 @@ def generate_image_thumbnail(input_path: str, out_path: str, max_size_px: int) -
         input_path,
         "-vf",
         vf,
+        out_path,
+    ]
+    try:
+        subprocess.run(cmd, check=True)
+        return os.path.exists(out_path)
+    except subprocess.CalledProcessError:
+        return False
+
+
+def generate_animated_preview(input_path: str, out_path: str, start_sec: int, duration_sec: int = 3, fps: int = 12) -> bool:
+    """
+    Create a short animated webp preview.
+    start_sec: where to start the clip
+    duration_sec: duration of the animation (default 3s)
+    fps: frames per second
+    """
+    if not _have("ffmpeg"):
+        return False
+    if not os.path.exists(input_path):
+        return False
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    vf = f"fps={fps},scale=320:-1:flags=lanczos"
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        str(max(0, start_sec)),
+        "-t",
+        str(max(1, duration_sec)),
+        "-i",
+        input_path,
+        "-vf",
+        vf,
+        "-loop",
+        "0",
+        "-an",
+        "-lossless",
+        "0",
+        "-compression_level",
+        "6",
+        "-quality",
+        "75",
         out_path,
     ]
     try:

@@ -34,6 +34,12 @@ def _thumb_url(thumb_path: Optional[str]) -> str:
     return build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
 
 
+def _anim_url(thumb_path: Optional[str]) -> Optional[str]:
+    if thumb_path and "/" in thumb_path:
+        return build_storage_url(thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp")
+    return None
+
+
 def _page_args(page: int, per_page: int) -> Dict[str, int]:
     p = max(1, page)
     pp = max(1, min(per_page, 50))
@@ -56,6 +62,7 @@ async def trending(
             v = dict(r)
             v["author_avatar_url_small"] = _avatar_small_url(v.get("avatar_asset_path"))
             v["thumb_url"] = _thumb_url(v.get("thumb_asset_path"))
+            v["thumb_anim_url"] = _anim_url(v.get("thumb_asset_path"))
             videos.append(v)
     finally:
         await release_conn(conn)
@@ -133,6 +140,7 @@ async def history(
             v = dict(r)
             v["author_avatar_url_small"] = _avatar_small_url(v.get("avatar_asset_path"))
             v["thumb_url"] = _thumb_url(v.get("thumb_asset_path"))
+            v["thumb_anim_url"] = _anim_url(v.get("thumb_asset_path"))
             videos.append(v)
     finally:
         await release_conn(conn)

@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Optional
 
@@ -27,8 +26,20 @@ async def get_conn() -> asyncpg.Connection:
 
 
 async def release_conn(conn: asyncpg.Connection) -> None:
-    if _pool is not None:
-        await _pool.release(conn)
+    global _pool
+    if conn is None:
+        return
+    try:
+        if _pool is not None:
+            await _pool.release(conn)
+        else:
+            await conn.close()
+    except Exception as e:
+        try:
+            await conn.close()
+        except Exception:
+            pass
+        logger.warning("release_conn: safe-closed connection due to error: %s", e)
 
 
 async def shutdown_db_pool() -> None:

@@ -7,21 +7,22 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 .sidebar { width:220px; border-right:1px solid #eee; min-height:calc(100vh - 58px); padding:12px; }
 .content { flex:1; padding:16px; }
 
-/* Grid of cards */
+/* Grid */
 .video-grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap:16px; }
 
-/* Vertical cards: thumb on top, meta below */
+/* Cards */
 .video-card { display:block; color:inherit; text-decoration:none; }
 .video-grid .video-card { display:flex; flex-direction:column; }
 
-/* Clickable thumbnail on top */
-.video-card .thumb-link { display:block; background:#000; width:100%; aspect-ratio:16/9; overflow:hidden; }
-.video-card .thumb-link img { width:100%; height:100%; object-fit:cover; display:block; }
+.video-card .thumb-link { position:relative; display:block; background:#000; width:100%; aspect-ratio:16/9; overflow:hidden; }
+.thumb-img { position:absolute; left:0; top:0; width:100%; height:100%; object-fit:cover; display:block; transition:opacity .15s linear; }
+.thumb-still { opacity:1; }
+.thumb-anim { opacity:0; }
+.thumb-link:hover .thumb-anim { opacity:1; }
+.thumb-link:hover .thumb-still { opacity:0; }
 
-/* Meta under the thumbnail */
 .video-card .meta { padding:6px 0; }
 
-/* Title clamp in lists: 2 lines + ellipsis, prevent overflow into neighbors */
 .video-card .title {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -32,11 +33,11 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubunt
   min-height: calc(1.2em * 2);
 }
 
-/* Author line: mini avatar + name inline */
+/* Author line */
 .author-line { display:inline-flex; align-items:center; gap:6px; }
 .mini-avatar { width:16px; height:16px; border-radius:50%; object-fit:cover; vertical-align:middle; border:1px solid #ddd; }
 
-/* Watch page title: do not truncate, but allow wrap for very long tokens */
+/* Watch */
 .watch-title { overflow-wrap: anywhere; word-break: break-word; }
 
 .player-wrapper { margin-bottom:12px; }

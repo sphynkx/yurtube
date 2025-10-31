@@ -29,7 +29,10 @@
   {% for v in videos %}
   <div class="video-card">
     <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
-      <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+      <img class="thumb-img thumb-still" src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+      {% if v['thumb_anim_url'] %}
+      <img class="thumb-img thumb-anim" src="{{ v['thumb_anim_url'] }}" alt="{{ v['title'] }}">
+      {% endif %}
     </a>
     <div class="meta">
       <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>

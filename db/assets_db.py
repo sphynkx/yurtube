@@ -33,3 +33,15 @@ async def get_thumbnail_asset_path(conn: asyncpg.Connection, video_id: str) -> O
         video_id,
     )
     return row["path"] if row else None
+
+
+async def get_thumbnail_anim_asset_path(conn: asyncpg.Connection, video_id: str) -> Optional[str]:
+    row = await conn.fetchrow(
+        """
+        SELECT path
+        FROM video_assets
+        WHERE video_id = $1 AND asset_type = 'thumbnail_anim'
+        """,
+        video_id,
+    )
+    return row["path"] if row else None

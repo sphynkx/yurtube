@@ -19,6 +19,7 @@ from db.videos_db import (
     set_video_ready,
 )
 from services.ffmpeg_srv import (
+    generate_animated_preview,
     generate_thumbnails,
     pick_thumbnail_offsets,
     probe_duration_seconds,
@@ -201,6 +202,14 @@ async def upload_video(
         if selected_rel:
             await upsert_video_asset(conn, video_id, "thumbnail_default", selected_rel)
 
+        # Animated preview: 3 seconds
+        anim_abs = os.path.join(thumbs_dir, "thumb_anim.webp")
+        start_sec = offsets[0] if offsets else 1
+        generate_animated_preview(original_path, anim_abs, start_sec=start_sec, duration_sec=3, fps=12)
+        if os.path.exists(anim_abs):
+            anim_rel = os.path.relpath(anim_abs, settings.STORAGE_ROOT)
+            await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel)
+
         await set_video_ready(conn, video_id, duration)
 
         candidates: List[Dict[str, str]] = []
@@ -223,7 +232,11 @@ async def upload_video(
     )
 
 
+# Accept dashed/underscored and with/without trailing slash to avoid 404
 @router.post("/upload/select-thumbnail")
+@router.post("/upload/select-thumbnail/")
+@router.post("/upload/select_thumbnail")
+@router.post("/upload/select_thumbnail/")
 async def select_thumbnail(
     request: Request,
     video_id: str = Form(...),
@@ -233,24 +246,31 @@ async def select_thumbnail(
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
+    # Normalize selected_rel to a storage-relative path
+    sel = (selected_rel or "").strip()
+    if sel.startswith("http://") or sel.startswith("https://"):
+        idx = sel.find("/storage/")
+        if idx >= 0:
+            sel = sel[idx + len("/storage/") :]
+    sel = sel.replace("\\", "/").lstrip("/")
+
     conn = await get_conn()
     try:
         owned = await get_owned_video(conn, video_id, user["user_uid"])
         if not owned:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        rel_storage = owned["storage_path"]
-        expected_prefix = rel_storage.rstrip("/") + "/thumbs/"
+        rel_storage = owned["storage_path"].rstrip("/") + "/"
+        expected_prefix = rel_storage + "thumbs/"
 
-        sel_norm = selected_rel.replace("\\", "/").lstrip("/")
-        if not sel_norm.startswith(expected_prefix):
+        if not sel.startswith(expected_prefix):
             raise HTTPException(status_code=400, detail="Invalid thumbnail path")
 
-        abs_path = os.path.join(settings.STORAGE_ROOT, sel_norm)
+        abs_path = os.path.join(settings.STORAGE_ROOT, sel)
         if not os.path.isfile(abs_path):
             raise HTTPException(status_code=400, detail="Thumbnail not found on disk")
 
-        await upsert_video_asset(conn, video_id, "thumbnail_default", sel_norm)
+        await upsert_video_asset(conn, video_id, "thumbnail_default", sel)
     finally:
         await release_conn(conn)
 

@@ -26,12 +26,17 @@ def _avatar_small_url(avatar_path: Optional[str]) -> str:
     return build_storage_url(small_rel)
 
 
-def _augment_with_thumb(vrow: Dict[str, Any]) -> Dict[str, Any]:
+def _augment(vrow: Dict[str, Any]) -> Dict[str, Any]:
     v = dict(vrow)
     thumb_path = v.get("thumb_asset_path")
-    avatar_path = v.get("avatar_asset_path")
     v["thumb_url"] = build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
-    v["author_avatar_url_small"] = _avatar_small_url(avatar_path)
+    # Try to derive animated preview path in the same thumbs dir
+    if thumb_path and "/" in thumb_path:
+        anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
+        v["thumb_anim_url"] = build_storage_url(anim_rel)
+    else:
+        v["thumb_anim_url"] = None
+    v["author_avatar_url_small"] = _avatar_small_url(v.get("avatar_asset_path"))
     return v
 
 
@@ -39,17 +44,13 @@ def _augment_with_thumb(vrow: Dict[str, Any]) -> Dict[str, Any]:
 async def index(request: Request) -> Any:
     conn = await get_conn()
     try:
-        videos = await list_latest_public_videos(conn, limit=24)
+        rows = await list_latest_public_videos(conn, limit=24)
     finally:
         await release_conn(conn)
 
     user: Optional[Dict[str, str]] = get_current_user(request)
-    videos_aug = [_augment_with_thumb(dict(v)) for v in videos]
+    videos = [_augment(dict(r)) for r in rows]
     return templates.TemplateResponse(
         "index.html",
-        {
-            "request": request,
-            "videos": videos_aug,
-            "current_user": user,
-        },
+        {"request": request, "videos": videos, "current_user": user},
     )
