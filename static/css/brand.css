@@ -1,0 +1,5 @@
+/* Simple brand styles kept separate to avoid touching main.css */
+.brand-logo {
+  height: 50px;
+  display: block;
+}

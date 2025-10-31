@@ -80,6 +80,76 @@ async def list_latest_public_videos(
     )
 
 
+async def list_trending_public_videos(
+    conn: asyncpg.Connection,
+    limit: int = 20,
+) -> List[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        SELECT v.*, u.username, a.path AS thumb_asset_path
+        FROM videos v
+        JOIN users u ON u.user_uid = v.author_uid
+        LEFT JOIN video_assets a
+          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        WHERE v.status = 'public' AND v.processing_status = 'ready'
+        ORDER BY v.views_count DESC, v.created_at DESC
+        LIMIT $1
+        """,
+        limit,
+    )
+
+
+async def list_subscription_feed(
+    conn: asyncpg.Connection,
+    subscriber_uid: str,
+    limit: int = 50,
+) -> List[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        SELECT v.*, u.username, a.path AS thumb_asset_path
+        FROM subscriptions s
+        JOIN videos v ON v.author_uid = s.channel_uid
+        JOIN users u ON u.user_uid = v.author_uid
+        LEFT JOIN video_assets a
+          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        WHERE s.subscriber_uid = $1
+          AND v.status = 'public'
+          AND v.processing_status = 'ready'
+        ORDER BY v.created_at DESC
+        LIMIT $2
+        """,
+        subscriber_uid,
+        limit,
+    )
+
+
+async def list_history_distinct_latest(
+    conn: asyncpg.Connection,
+    user_uid: str,
+    limit: int = 50,
+) -> List[asyncpg.Record]:
+    return await conn.fetch(
+        """
+        WITH last_view AS (
+          SELECT video_id, MAX(watched_at) AS last_watched_at
+          FROM views
+          WHERE user_uid = $1
+          GROUP BY video_id
+        )
+        SELECT v.*, u.username, a.path AS thumb_asset_path, lv.last_watched_at
+        FROM last_view lv
+        JOIN videos v ON v.video_id = lv.video_id
+        JOIN users u ON u.user_uid = v.author_uid
+        LEFT JOIN video_assets a
+          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        ORDER BY lv.last_watched_at DESC
+        LIMIT $2
+        """,
+        user_uid,
+        limit,
+    )
+
+
 async def get_video(
     conn: asyncpg.Connection,
     video_id: str,
@@ -120,9 +190,6 @@ async def get_owned_video(
     video_id: str,
     owner_uid: str,
 ) -> Optional[asyncpg.Record]:
-    """
-    Return minimal info if the video belongs to owner_uid, else None.
-    """
     return await conn.fetchrow(
         """
         SELECT video_id, author_uid, storage_path
@@ -139,9 +206,6 @@ async def delete_video(
     video_id: str,
     owner_uid: str,
 ) -> bool:
-    """
-    Delete video owned by owner_uid. Returns True if a row was deleted.
-    """
     res = await conn.execute(
         """
         DELETE FROM videos

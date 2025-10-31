@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Trending</h1>
+<div class="video-grid">
+  {% for v in videos %}
+  <a class="video-card" href="/watch?v={{ v['video_id'] }}">
+    <div class="thumb">
+      <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+    </div>
+    <div class="meta">
+      <div class="title">{{ v['title'] }}</div>
+      <div class="author"><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></div>
+    </div>
+  </a>
+  {% endfor %}
+  {% if videos|length == 0 %}
+  <p>No videos yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

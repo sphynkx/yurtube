@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>History</h1>
+{% if need_login %}
+<p>Please <a href="/auth/login">log in</a> to see your history.</p>
+{% else %}
+  {% if videos|length == 0 %}
+  <p>No watch history yet.</p>
+  {% else %}
+  <div class="video-grid">
+    {% for v in videos %}
+    <a class="video-card" href="/watch?v={{ v['video_id'] }}">
+      <div class="thumb">
+        <img src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+      </div>
+      <div class="meta">
+        <div class="title">{{ v['title'] }}</div>
+        <div class="author"><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></div>
+        {% if v['last_watched_at'] %}
+        <div class="time">{{ v['last_watched_at']|dt }}</div>
+        {% endif %}
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}
