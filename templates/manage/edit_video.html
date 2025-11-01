@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Edit video</h1>
+
+{% set v = video %}
+{% set e = v.get('embed_params', {}) %}
+
+<div style="margin-bottom:12px;">
+  <div style="font-size:14px; color:#555;">
+    Video: <strong>{{ v.get('title','') }}</strong> ({{ v['video_id'] }})
+    &mdash; <a href="/watch?v={{ v['video_id'] }}">Watch</a>
+  </div>
+  <div class="player-wrap" id="edit-player-wrap" style="position:relative; max-width:960px; margin-top:8px;">
+    <video id="edit-player" controls preload="metadata" style="width:100%; max-height:60vh; background:#000;"
+      {% if v.get('thumb_url') %}poster="{{ v['thumb_url'] }}"{% endif %}>
+      <source src="/storage/{{ v['storage_path'] }}/original.webm" type="video/webm">
+      Your browser does not support the video tag.
+    </video>
+  </div>
+</div>
+
+<section style="margin-bottom:16px;">
+  <h2>Meta</h2>
+  <form action="/manage/edit/meta" method="post">
+    <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+    <div><label>Title<br><input type="text" name="title" value="{{ v.get('title','') }}" style="width:100%;"></label></div>
+    <div><label>Description<br><textarea name="description" rows="5" style="width:100%;">{{ v.get('description','') }}</textarea></label></div>
+    <div>
+      <label>Status
+        <select name="status">
+          <option value="public" {{ 'selected' if v.get('status')=='public' else '' }}>public</option>
+          <option value="unlisted" {{ 'selected' if v.get('status')=='unlisted' else '' }}>unlisted</option>
+          <option value="private" {{ 'selected' if v.get('status')=='private' else '' }}>private</option>
+        </select>
+      </label>
+      <label style="margin-left:12px;">Category
+        <select name="category_id">
+          <option value="" {{ 'selected' if not v.get('category_id') else '' }}>(none)</option>
+          {% for c in categories %}
+            <option value="{{ c['category_id'] }}" {{ 'selected' if v.get('category_id') == c['category_id'] else '' }}>
+              {{ c['name'] }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <div style="margin-top:6px;">
+      <label><input type="checkbox" name="is_age_restricted" {{ 'checked' if v.get('is_age_restricted') else '' }}> Age restricted</label>
+      <label style="margin-left:12px;"><input type="checkbox" name="is_made_for_kids" {{ 'checked' if v.get('is_made_for_kids') else '' }}> Made for kids</label>
+      <label style="margin-left:12px;"><input type="checkbox" name="allow_comments" {{ 'checked' if v.get('allow_comments', True) else '' }}> Allow comments</label>
+      <label style="margin-left:12px;"><input type="checkbox" name="allow_embed" {{ 'checked' if v.get('allow_embed', True) else '' }}> Allow embed</label>
+      <label style="margin-left:12px;">License
+        <select name="license">
+          <option value="standard" {{ 'selected' if v.get('license','standard')=='standard' else '' }}>standard</option>
+          <option value="creative_commons" {{ 'selected' if v.get('license')=='creative_commons' else '' }}>creative commons</option>
+        </select>
+      </label>
+    </div>
+    <div style="margin-top:8px;"><button type="submit">Save meta</button></div>
+  </form>
+</section>
+
+<section style="margin-bottom:16px;">
+  <h2>Thumbnails</h2>
+  {% if v.get('thumb_url') %}
+    <div style="width:320px; aspect-ratio:16/9; background:#000; overflow:hidden; margin-bottom:8px;">
+      <img src="{{ v['thumb_url'] }}" alt="thumb" style="width:100%; height:100%; object-fit:cover;">
+    </div>
+  {% endif %}
+
+  <form action="/manage/edit/thumb/regen" method="post" style="margin-bottom:8px;">
+    <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+    <label>Offset, sec
+      <input type="number" id="offset_sec" name="offset_sec" value="{{ v.get('thumb_pref_offset', 0) }}" min="0" step="1" style="width:100px;">
+    </label>
+    <button type="button" id="btn_set_from_player" style="margin-left:8px;">Set from player time</button>
+    <label style="margin-left:12px;"><input type="checkbox" name="animate"> Also regenerate animated</label>
+    <button type="submit" style="margin-left:12px;">Re-generate</button>
+  </form>
+
+  <form action="/manage/edit/thumb/upload" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+    <div>
+      <label>Upload static JPG <input type="file" name="thumb_static" accept=".jpg,.jpeg,image/jpeg"></label>
+      <label style="margin-left:12px;">Upload animated WEBP <input type="file" name="thumb_anim" accept=".webp,image/webp"></label>
+      <button type="submit" style="margin-left:12px;">Upload</button>
+    </div>
+  </form>
+
+  <div style="margin-top:8px;">
+    <a href="/manage/edit/thumb/pick?v={{ v['video_id'] }}">Pick from existing thumbs</a>
+  </div>
+</section>
+
+<section style="margin-bottom:16px;">
+  <h2>Renditions</h2>
+  <form action="/manage/edit/renditions" method="post">
+    <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+    <input type="hidden" name="presets" id="presets-input" value="">
+    <label>Codec
+      <select name="codec">
+        <option value="vp9">vp9</option>
+        <option value="av1">av1</option>
+        <option value="h264">h264</option>
+      </select>
+    </label>
+    <div style="margin-top:6px;">
+      {% for p in presets %}
+        <label style="margin-right:12px;"><input type="checkbox" class="preset-box" value="{{ p }}"> {{ p }}</label>
+      {% endfor %}
+    </div>
+    <div style="margin-top:8px;"><button type="submit" onclick="
+      (function(){
+        var vals=[], boxes=document.querySelectorAll('.preset-box');
+        boxes.forEach(function(b){ if(b.checked){ vals.push(b.value); }});
+        document.getElementById('presets-input').value = vals.join(',');
+      })();
+    ">Queue selected</button></div>
+  </form>
+  <div style="margin-top:8px;">
+    <strong>Current renditions:</strong>
+    {% if renditions and renditions|length > 0 %}
+      <ul>
+        {% for r in renditions %}
+          <li>{{ r['preset'] }} {{ r['codec'] }} &mdash; {{ r['status'] }}{% if r.get('error_message') %} ({{ r['error_message'] }}){% endif %}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <span>none</span>
+    {% endif %}
+    <div style="font-size:12px; color:#555; margin-top:4px;">
+      Note: queue only. Processing requires a background worker. No files will appear until the worker is implemented.
+    </div>
+  </div>
+</section>
+
+<section style="margin-bottom:16px;">
+  <h2>Embed</h2>
+  <form action="/manage/edit/embed" method="post">
+    <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+    <label><input type="checkbox" name="allow_embed" {{ 'checked' if v.get('allow_embed', True) else '' }}> Allow embed</label>
+    <div style="margin-top:6px;">
+      <label><input type="checkbox" name="autoplay" {{ 'checked' if e.get('autoplay', 0)==1 else '' }}> autoplay</label>
+      <label style="margin-left:12px;"><input type="checkbox" name="mute" {{ 'checked' if e.get('mute', 0)==1 else '' }}> mute</label>
+      <label style="margin-left:12px;"><input type="checkbox" name="loop" {{ 'checked' if e.get('loop', 0)==1 else '' }}> loop</label>
+      <label style="margin-left:12px;">start sec <input type="number" name="start_default" min="0" value="{{ e.get('start', 0) }}" style="width:80px;"></label>
+    </div>
+    <div style="margin-top:8px;"><button type="submit">Save embed defaults</button></div>
+  </form>
+</section>
+
+<section style="margin-bottom:16px;">
+  <h2>Subtitles (future)</h2>
+  <p>Planned: upload and manage subtitles (VTT/SRT), auto-generate with external service.</p>
+</section>
+
+<section style="margin-bottom:16px;">
+  <h2>Comments (toggle only)</h2>
+  <p>Use the checkbox "Allow comments" in Meta section above.</p>
+</section>
+
+<section style="margin-bottom:16px;">
+  <h2>Stats (future)</h2>
+  <p>Planned: separate page for views/likes counters and resets.</p>
+</section>
+
+<div style="margin-top:16px;">
+  <a href="/manage">Back to My videos</a>
+</div>
+
+<script>
+(function(){
+  var video = document.getElementById("edit-player");
+  var inp = document.getElementById("offset_sec");
+  var btn = document.getElementById("btn_set_from_player");
+  if (video && inp && btn) {
+    btn.addEventListener("click", function(){
+      try {
+        var t = Math.floor(video.currentTime || 0);
+        if (!isFinite(t) || t < 0) t = 0;
+        inp.value = String(t);
+      } catch(e) {}
+    });
+  }
+})();
+</script>
+{% endblock %}

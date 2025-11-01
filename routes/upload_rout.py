@@ -19,10 +19,10 @@ from db.videos_db import (
     set_video_ready,
 )
 from services.ffmpeg_srv import (
-    generate_animated_preview,
     generate_thumbnails,
     pick_thumbnail_offsets,
     probe_duration_seconds,
+    generate_animated_preview,
 )
 from utils.idgen_ut import gen_id
 from utils.path_ut import build_video_storage_dir, safe_remove_storage_relpath
@@ -65,6 +65,7 @@ async def manage_home(request: Request) -> Any:
     return templates.TemplateResponse(
         "manage/my_videos.html",
         {"request": request, "current_user": user, "videos": videos, "subscribers_count": subs_count},
+        headers={"Cache-Control": "no-store"},
     )
 
 
@@ -232,7 +233,6 @@ async def upload_video(
     )
 
 
-# Accept dashed/underscored and with/without trailing slash to avoid 404
 @router.post("/upload/select-thumbnail")
 @router.post("/upload/select-thumbnail/")
 @router.post("/upload/select_thumbnail")
@@ -246,7 +246,6 @@ async def select_thumbnail(
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
-    # Normalize selected_rel to a storage-relative path
     sel = (selected_rel or "").strip()
     if sel.startswith("http://") or sel.startswith("https://"):
         idx = sel.find("/storage/")

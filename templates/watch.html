@@ -2,7 +2,7 @@
 {% block content %}
 <div class="player-wrapper">
   <div class="player-wrap" id="watch-player-wrap">
-    <video id="watch-player" controls preload="metadata" {% if poster_url %}poster="{{ poster_url }}"{% endif %} style="max-height:70vh; width:100%;">
+    <video id="watch-player" controls preload="metadata" style="width:100%;max-height:70vh" {% if poster_url %}poster="{{ poster_url }}"{% endif %}>
       <source src="/storage/{{ video['storage_path'] }}/original.webm" type="video/webm">
       Your browser does not support the video tag.
     </video>
@@ -37,10 +37,6 @@
     <div style="margin-top:8px;">
       <button id="copy-embed">Copy to clipboard</button>
     </div>
-    <p style="margin-top:8px; font-size:12px; color:#555;">
-      Options: add query params to the iframe src, for example:
-      ?autoplay=1&amp;mute=1&amp;loop=1&amp;start=10
-    </p>
   </div>
 </details>
 
@@ -49,26 +45,34 @@
   var wrap = document.getElementById("watch-player-wrap");
   var video = document.getElementById("watch-player");
   var overlay = document.getElementById("watch-overlay");
-  if (!wrap || !video || !overlay) return;
+  var copyBtn = document.getElementById("copy-embed");
+  var code = document.getElementById("embed-code");
 
-  function sync() {
-    if (video.paused) {
-      wrap.classList.remove("playing");
-    } else {
-      wrap.classList.add("playing");
+  if (overlay && video && wrap) {
+    function sync() {
+      if (video.paused) {
+        wrap.classList.remove("playing");
+      } else {
+        wrap.classList.add("playing");
+      }
     }
+    overlay.addEventListener("click", function(){
+      if (video.paused) { video.play(); } else { video.pause(); }
+    });
+    video.addEventListener("play", sync);
+    video.addEventListener("pause", sync);
+    video.addEventListener("ended", sync);
+    sync();
   }
 
-  overlay.addEventListener("click", function(){
-    if (video.paused) { video.play(); } else { video.pause(); }
-  });
-
-  video.addEventListener("play", sync);
-  video.addEventListener("pause", sync);
-  video.addEventListener("ended", sync);
-
-  // initial state
-  sync();
+  if (copyBtn && code) {
+    copyBtn.addEventListener("click", function(){
+      try {
+        code.select();
+        document.execCommand("copy");
+      } catch(e) {}
+    });
+  }
 })();
 </script>
 {% endblock %}

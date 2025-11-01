@@ -1,4 +1,6 @@
-from typing import Any, Optional
+from typing import Any, Optional, Dict
+import json
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -29,15 +31,29 @@ def _avatar_small_url(avatar_path: Optional[str]) -> str:
 
 
 def _base_url(request: Request) -> str:
+    """
+    Build external base URL. Prefer BASE_URL, else trust X-Forwarded-Proto/Host,
+    and strip default ports (:443 for https, :80 for http).
+    """
     if settings.BASE_URL:
         return settings.BASE_URL.rstrip("/")
+
     xf_proto = request.headers.get("x-forwarded-proto")
     xf_host = request.headers.get("x-forwarded-host")
     if xf_host:
         scheme = (xf_proto or "https").split(",")[0].strip()
         host = xf_host.split(",")[0].strip()
+        # strip default ports
+        if (scheme == "https" and host.endswith(":443")) or (scheme == "http" and host.endswith(":80")):
+            host = host.rsplit(":", 1)[0]
         return f"{scheme}://{host}"
-    return f"{request.url.scheme}://{request.url.netloc}"
+
+    # fallback to request URL
+    scheme = request.url.scheme
+    host = request.url.netloc
+    if (scheme == "https" and host.endswith(":443")) or (scheme == "http" and host.endswith(":80")):
+        host = host.rsplit(":", 1)[0]
+    return f"{scheme}://{host}"
 
 
 def _boolish(val: Optional[str]) -> bool:
@@ -48,10 +64,9 @@ def _boolish(val: Optional[str]) -> bool:
         return True
     if s in ("0", "false", "no", "off", "n", "f"):
         return False
-    # numeric strings
     try:
         return int(s) != 0
-    except ValueError:
+    except Exception:
         return False
 
 
@@ -60,6 +75,34 @@ def _int_or_zero(val: Optional[str]) -> int:
         return max(0, int(str(val).strip()))
     except Exception:
         return 0
+
+
+def _embed_defaults_from_row(vrow: Dict[str, Any]) -> Dict[str, int]:
+    """
+    Extract saved embed defaults from video row, coercing to a compact dict of ints.
+    Falls back to config defaults.
+    """
+    params = vrow.get("embed_params")
+    if isinstance(params, str):
+        try:
+            params = json.loads(params) if params.strip() else {}
+        except Exception:
+            params = {}
+    if not isinstance(params, dict):
+        params = {}
+
+    def pick_int(k: str, default_int: int) -> int:
+        val = params.get(k, default_int)
+        try:
+            return int(val)
+        except Exception:
+            return default_int
+
+    ap = pick_int("autoplay", getattr(settings, "EMBED_DEFAULT_AUTOPLAY", 0))
+    mu = pick_int("mute", getattr(settings, "EMBED_DEFAULT_MUTE", 0))
+    lo = pick_int("loop", getattr(settings, "EMBED_DEFAULT_LOOP", 0))
+    st = pick_int("start", 0)
+    return {"autoplay": 1 if ap else 0, "mute": 1 if mu else 0, "loop": 1 if lo else 0, "start": max(0, st)}
 
 
 @router.get("/watch", response_class=HTMLResponse)
@@ -80,17 +123,38 @@ async def watch(request: Request, v: str = Query(..., min_length=12, max_length=
     finally:
         await release_conn(conn)
 
-    user = get_current_user(request)
     vdict = dict(video)
     vdict["author_avatar_url_small"] = _avatar_small_url(vdict.get("avatar_asset_path"))
-    embed_url = _base_url(request) + f"/embed?v={v}"
-    embed_code = f'<iframe src="{embed_url}" width="560" height="315" frameborder="0" allowfullscreen></iframe>'
+
+    # Build embed URL with saved defaults
+    base = _base_url(request)
+    query_params = _embed_defaults_from_row(vdict)
+    # include only non-zero flags, and start>0
+    q: Dict[str, str] = {}
+    if query_params.get("autoplay"):
+        q["autoplay"] = "1"
+    if query_params.get("mute"):
+        q["mute"] = "1"
+    if query_params.get("loop"):
+        q["loop"] = "1"
+    if query_params.get("start", 0) > 0:
+        q["start"] = str(query_params["start"])
+
+    qs = ("&" + urlencode(q)) if q else ""
+    embed_src = f"{base}/embed?v={v}{qs}"
+
+    # For autoplay capability, add allow="autoplay; fullscreen"
+    allow_attr = ' allow="autoplay; fullscreen"' if query_params.get("autoplay") else ""
+
+    embed_code = f'<iframe src="{embed_src}" width="560" height="315" frameborder="0"{allow_attr} allowfullscreen></iframe>'
+
+    user_ctx = get_current_user(request)
     return templates.TemplateResponse(
         "watch.html",
         {
             "request": request,
             "video": vdict,
-            "current_user": user,
+            "current_user": user_ctx,
             "embed_code": embed_code,
             "poster_url": poster_url,
         },
@@ -123,13 +187,21 @@ async def embed(
         if is_valid_id:
             video_row = await get_video(conn, v)  # type: ignore[arg-type]
             if video_row:
-                thumb_rel = await get_thumbnail_asset_path(conn, v)  # type: ignore[arg-type]
-                if thumb_rel:
-                    poster_url = build_storage_url(thumb_rel)
-                src_url = f"/storage/{video_row['storage_path']}/original.webm"
-                start_sec = _int_or_zero(start)
-                if start_sec > 0:
-                    src_url = f"{src_url}#t={start_sec}"
+                # if embed disabled, do not expose media
+                if not video_row.get("allow_embed", True):
+                    video_row = dict(video_row)
+                    thumb_rel = await get_thumbnail_asset_path(conn, v)  # type: ignore[arg-type]
+                    if thumb_rel:
+                        poster_url = build_storage_url(thumb_rel)
+                    src_url = None
+                else:
+                    thumb_rel = await get_thumbnail_asset_path(conn, v)  # type: ignore[arg-type]
+                    if thumb_rel:
+                        poster_url = build_storage_url(thumb_rel)
+                    src_url = f"/storage/{video_row['storage_path']}/original.webm"
+                    start_sec = _int_or_zero(start)
+                    if start_sec > 0:
+                        src_url = f"{src_url}#t={start_sec}"
     finally:
         await release_conn(conn)
 

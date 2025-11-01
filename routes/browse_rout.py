@@ -1,9 +1,11 @@
 from typing import Any, Dict, Optional
+import os
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from config.config import settings
 from db import get_conn, release_conn
 from db.subscriptions_db import list_subscriptions
 from db.videos_db import (
@@ -34,9 +36,12 @@ def _thumb_url(thumb_path: Optional[str]) -> str:
     return build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
 
 
-def _anim_url(thumb_path: Optional[str]) -> Optional[str]:
+def _anim_url_existing(thumb_path: Optional[str]) -> Optional[str]:
     if thumb_path and "/" in thumb_path:
-        return build_storage_url(thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp")
+        anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
+        abs_anim = os.path.join(settings.STORAGE_ROOT, anim_rel)
+        if os.path.isfile(abs_anim):
+            return build_storage_url(anim_rel)
     return None
 
 
@@ -62,7 +67,7 @@ async def trending(
             v = dict(r)
             v["author_avatar_url_small"] = _avatar_small_url(v.get("avatar_asset_path"))
             v["thumb_url"] = _thumb_url(v.get("thumb_asset_path"))
-            v["thumb_anim_url"] = _anim_url(v.get("thumb_asset_path"))
+            v["thumb_anim_url"] = _anim_url_existing(v.get("thumb_asset_path"))
             videos.append(v)
     finally:
         await release_conn(conn)
@@ -140,7 +145,7 @@ async def history(
             v = dict(r)
             v["author_avatar_url_small"] = _avatar_small_url(v.get("avatar_asset_path"))
             v["thumb_url"] = _thumb_url(v.get("thumb_asset_path"))
-            v["thumb_anim_url"] = _anim_url(v.get("thumb_asset_path"))
+            v["thumb_anim_url"] = _anim_url_existing(v.get("thumb_asset_path"))
             videos.append(v)
     finally:
         await release_conn(conn)

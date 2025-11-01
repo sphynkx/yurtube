@@ -1,9 +1,11 @@
 from typing import Any, Dict, Optional
+import os
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from config.config import settings
 from db import get_conn, release_conn
 from db.videos_db import list_latest_public_videos
 from utils.format_ut import fmt_dt
@@ -30,12 +32,14 @@ def _augment(vrow: Dict[str, Any]) -> Dict[str, Any]:
     v = dict(vrow)
     thumb_path = v.get("thumb_asset_path")
     v["thumb_url"] = build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
-    # Try to derive animated preview path in the same thumbs dir
+
     if thumb_path and "/" in thumb_path:
         anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
-        v["thumb_anim_url"] = build_storage_url(anim_rel)
+        abs_anim = os.path.join(settings.STORAGE_ROOT, anim_rel)
+        v["thumb_anim_url"] = build_storage_url(anim_rel) if os.path.isfile(abs_anim) else None
     else:
         v["thumb_anim_url"] = None
+
     v["author_avatar_url_small"] = _avatar_small_url(v.get("avatar_asset_path"))
     return v
 

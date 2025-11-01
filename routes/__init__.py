@@ -9,7 +9,7 @@ from .root_rout import router as root_router
 from .static_rout import router as static_router
 from .upload_rout import router as upload_router
 from .watch_rout import router as watch_router
-
+from .edit_rout import router as edit_router
 
 def register_routes(app: FastAPI) -> None:
     app.include_router(root_router)
@@ -21,3 +21,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(history_router)
     app.include_router(account_router)
     app.include_router(static_router)
+    app.include_router(edit_router)
