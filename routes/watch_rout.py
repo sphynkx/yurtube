@@ -43,12 +43,10 @@ def _base_url(request: Request) -> str:
     if xf_host:
         scheme = (xf_proto or "https").split(",")[0].strip()
         host = xf_host.split(",")[0].strip()
-        # strip default ports
         if (scheme == "https" and host.endswith(":443")) or (scheme == "http" and host.endswith(":80")):
             host = host.rsplit(":", 1)[0]
         return f"{scheme}://{host}"
 
-    # fallback to request URL
     scheme = request.url.scheme
     host = request.url.netloc
     if (scheme == "https" and host.endswith(":443")) or (scheme == "http" and host.endswith(":80")):
@@ -79,7 +77,7 @@ def _int_or_zero(val: Optional[str]) -> int:
 
 def _embed_defaults_from_row(vrow: Dict[str, Any]) -> Dict[str, int]:
     """
-    Extract saved embed defaults from video row, coercing to a compact dict of ints.
+    Extract saved embed defaults from video row, coercing to ints.
     Falls back to config defaults.
     """
     params = vrow.get("embed_params")
@@ -125,28 +123,25 @@ async def watch(request: Request, v: str = Query(..., min_length=12, max_length=
 
     vdict = dict(video)
     vdict["author_avatar_url_small"] = _avatar_small_url(vdict.get("avatar_asset_path"))
+    can_embed = bool(vdict.get("allow_embed", True))
 
-    # Build embed URL with saved defaults
-    base = _base_url(request)
-    query_params = _embed_defaults_from_row(vdict)
-    # include only non-zero flags, and start>0
-    q: Dict[str, str] = {}
-    if query_params.get("autoplay"):
-        q["autoplay"] = "1"
-    if query_params.get("mute"):
-        q["mute"] = "1"
-    if query_params.get("loop"):
-        q["loop"] = "1"
-    if query_params.get("start", 0) > 0:
-        q["start"] = str(query_params["start"])
-
-    qs = ("&" + urlencode(q)) if q else ""
-    embed_src = f"{base}/embed?v={v}{qs}"
-
-    # For autoplay capability, add allow="autoplay; fullscreen"
-    allow_attr = ' allow="autoplay; fullscreen"' if query_params.get("autoplay") else ""
-
-    embed_code = f'<iframe src="{embed_src}" width="560" height="315" frameborder="0"{allow_attr} allowfullscreen></iframe>'
+    embed_code = ""
+    if can_embed:
+        base = _base_url(request)
+        query_params = _embed_defaults_from_row(vdict)
+        q: Dict[str, str] = {}
+        if query_params.get("autoplay"):
+            q["autoplay"] = "1"
+        if query_params.get("mute"):
+            q["mute"] = "1"
+        if query_params.get("loop"):
+            q["loop"] = "1"
+        if query_params.get("start", 0) > 0:
+            q["start"] = str(query_params["start"])
+        qs = ("&" + urlencode(q)) if q else ""
+        embed_src = f"{base}/embed?v={v}{qs}"
+        allow_attr = ' allow="autoplay; fullscreen"' if query_params.get("autoplay") else ""
+        embed_code = f'<iframe src="{embed_src}" width="560" height="315" frameborder="0"{allow_attr} allowfullscreen></iframe>'
 
     user_ctx = get_current_user(request)
     return templates.TemplateResponse(
@@ -157,6 +152,7 @@ async def watch(request: Request, v: str = Query(..., min_length=12, max_length=
             "current_user": user_ctx,
             "embed_code": embed_code,
             "poster_url": poster_url,
+            "can_embed": can_embed,
         },
     )
 
@@ -187,7 +183,6 @@ async def embed(
         if is_valid_id:
             video_row = await get_video(conn, v)  # type: ignore[arg-type]
             if video_row:
-                # if embed disabled, do not expose media
                 if not video_row.get("allow_embed", True):
                     video_row = dict(video_row)
                     thumb_rel = await get_thumbnail_asset_path(conn, v)  # type: ignore[arg-type]

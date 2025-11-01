@@ -30,6 +30,7 @@
 
 <p>{{ video['description'] }}</p>
 
+{% if can_embed %}
 <details style="margin-top:16px;">
   <summary>Embed</summary>
   <div style="margin-top:8px;">
@@ -39,6 +40,7 @@
     </div>
   </div>
 </details>
+{% endif %}
 
 <script>
 (function(){
