@@ -1,6 +1,7 @@
 -- PostgreSQL schema for MVP (UTC timestamps).
 -- Incorporates: case-insensitive username uniqueness, anonymous views,
 -- content flags (age/kids), tags, categories, and video assets for sprites/VTT.
+-- Adds: video editing fields, embed defaults, renditions table.
 -- IDs are text; length checks where applicable.
 
 BEGIN;
@@ -54,6 +55,12 @@ CREATE TABLE IF NOT EXISTS videos (
     is_made_for_kids   BOOLEAN NOT NULL DEFAULT FALSE,
     category_id        TEXT NULL REFERENCES categories(category_id) ON DELETE SET NULL,
     storage_path       TEXT NOT NULL,
+    allow_comments     BOOLEAN NOT NULL DEFAULT TRUE,
+    allow_embed        BOOLEAN NOT NULL DEFAULT TRUE,
+    embed_params       JSONB   NOT NULL DEFAULT '{}'::jsonb,
+    license            TEXT    NOT NULL DEFAULT 'standard',
+    thumb_pref_offset  INTEGER NOT NULL DEFAULT 0 CHECK (thumb_pref_offset >= 0),
+
     CONSTRAINT videos_video_id_len CHECK (char_length(video_id) = 12)
 );
 
@@ -139,11 +146,28 @@ CREATE TABLE IF NOT EXISTS video_tags (
 CREATE TABLE IF NOT EXISTS video_assets (
     asset_id    TEXT PRIMARY KEY,
     video_id    TEXT NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
-    asset_type  TEXT NOT NULL, -- 'storyboard_vtt' | 'sprite_sheet' | 'thumbnail_default' | 'subtitle_vtt' | ...
+    asset_type  TEXT NOT NULL, -- 'storyboard_vtt' | 'sprite_sheet' | 'thumbnail_default' | 'thumbnail_anim' | 'subtitle_vtt' | ...
     path        TEXT NOT NULL, -- relative to storage root
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS video_assets_video_type_uidx ON video_assets (video_id, asset_type);
+
+-- Video renditions (per-quality outputs, queued/processed by worker)
+CREATE TABLE IF NOT EXISTS video_renditions (
+  rendition_id  BIGSERIAL PRIMARY KEY,
+  video_id      TEXT NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
+  preset        TEXT NOT NULL,                      -- e.g. 1080p, 720p, 480p
+  codec         TEXT NOT NULL DEFAULT 'vp9',        -- e.g. vp9, av1, h264
+  status        TEXT NOT NULL DEFAULT 'queued',     -- queued, processing, ready, error
+  storage_path  TEXT,                               -- set when ready
+  error_message TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (video_id, preset, codec)
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_renditions_video ON video_renditions(video_id);
+CREATE INDEX IF NOT EXISTS idx_video_renditions_status ON video_renditions(status);
 
 COMMIT;
