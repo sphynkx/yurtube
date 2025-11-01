@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block content %}
+<link rel="stylesheet" href="/static/css/edit.css">
+
 <h1>Edit video</h1>
+<h3>Back to <a href="/manage">My videos</a></h3>
 
 {% set v = video %}
 {% set e = v.get('embed_params', {}) %}
@@ -16,6 +19,9 @@
       <source src="/storage/{{ v['storage_path'] }}/original.webm" type="video/webm">
       Your browser does not support the video tag.
     </video>
+    <div class="video-overlay" id="edit-overlay" title="Play/Pause">
+      <img src="/static/img/YT_fav128.png" alt="Play">
+    </div>
   </div>
 </div>
 
@@ -69,14 +75,14 @@
     </div>
   {% endif %}
 
-  <form action="/manage/edit/thumb/regen" method="post" style="margin-bottom:8px;">
+  <form id="form_regen" action="/manage/edit/thumb/regen" method="post" style="margin-bottom:8px;">
     <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
     <label>Offset, sec
       <input type="number" id="offset_sec" name="offset_sec" value="{{ v.get('thumb_pref_offset', 0) }}" min="0" step="1" style="width:100px;">
     </label>
     <button type="button" id="btn_set_from_player" style="margin-left:8px;">Set from player time</button>
-    <label style="margin-left:12px;"><input type="checkbox" name="animate"> Also regenerate animated</label>
-    <button type="submit" style="margin-left:12px;">Re-generate</button>
+    <label style="margin-left:12px;"><input type="checkbox" id="animate_chk" name="animate" checked> Also regenerate animated</label>
+    <button type="submit" id="btn_regen" style="margin-left:12px;">Re-generate</button>
   </form>
 
   <form action="/manage/edit/thumb/upload" method="post" enctype="multipart/form-data">
@@ -169,20 +175,10 @@
   <a href="/manage">Back to My videos</a>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/brython@3.12.3/brython.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/brython@3.12.3/brython_stdlib.js"></script>
+<script type="text/python" src="/static/brython/edit_video.bry"></script>
 <script>
-(function(){
-  var video = document.getElementById("edit-player");
-  var inp = document.getElementById("offset_sec");
-  var btn = document.getElementById("btn_set_from_player");
-  if (video && inp && btn) {
-    btn.addEventListener("click", function(){
-      try {
-        var t = Math.floor(video.currentTime || 0);
-        if (!isFinite(t) || t < 0) t = 0;
-        inp.value = String(t);
-      } catch(e) {}
-    });
-  }
-})();
+  window.addEventListener("load", function(){ if (window.brython) { brython(); }});
 </script>
 {% endblock %}

@@ -1,0 +1,87 @@
+# Brython script for Edit Video page
+# - Set offset from player currentTime
+# - Toggle site logo overlay on play/pause
+# - On regenerate submit, disable button and show spinner (esp. for animated)
+
+from browser import document, html
+
+def setup_offset_from_player():
+    btn = document.getElementById("btn_set_from_player")
+    video = document.getElementById("edit-player")
+    inp = document.getElementById("offset_sec")
+    if not (btn and video and inp):
+        return
+    def on_click(ev):
+        try:
+            t = int(video.currentTime) if video.currentTime else 0
+            if t < 0:
+                t = 0
+            inp.value = str(t)
+        except Exception:
+            pass
+    btn.bind("click", on_click)
+
+def setup_player_overlay():
+    wrap = document.getElementById("edit-player-wrap")
+    video = document.getElementById("edit-player")
+    overlay = document.getElementById("edit-overlay")
+    if not (wrap and video and overlay):
+        return
+
+    def sync(ev=None):
+        try:
+            if video.paused:
+                if "playing" in wrap.classList:
+                    wrap.classList.remove("playing")
+            else:
+                if "playing" not in wrap.classList:
+                    wrap.classList.add("playing")
+        except Exception:
+            pass
+
+    def overlay_click(ev):
+        try:
+            if video.paused:
+                video.play()
+            else:
+                video.pause()
+        except Exception:
+            pass
+
+    overlay.bind("click", overlay_click)
+    video.bind("play", sync)
+    video.bind("pause", sync)
+    video.bind("ended", sync)
+    sync()
+
+def setup_regen_spinner():
+    form = document.getElementById("form_regen")
+    btn = document.getElementById("btn_regen")
+    animate = document.getElementById("animate_chk")
+    if not (form and btn):
+        return
+
+    def on_submit(ev):
+        try:
+            # prevent double submit
+            btn.setAttribute("disabled", "disabled")
+            # show spinner; always show for clarity
+            btn.classList.add("btn-waiting")
+            while btn.firstChild:
+                btn.removeChild(btn.firstChild)
+            spinner = html.SPAN(Class="spin")
+            text = html.SPAN("Processing...")
+            btn <= spinner
+            btn <= text
+        except Exception:
+            pass
+        # allow form to continue submit
+
+    form.bind("submit", on_submit)
+
+def main():
+    setup_offset_from_player()
+    setup_player_overlay()
+    setup_regen_spinner()
+
+main()
