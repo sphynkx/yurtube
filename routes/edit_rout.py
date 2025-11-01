@@ -89,7 +89,6 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        # normalize embed_params to dict for template
         e = video.get("embed_params")
         if isinstance(e, str):
             try:
@@ -100,7 +99,6 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
             e = {}
         video["embed_params"] = e
 
-        # defaults
         for key, default_val in (
             ("title", ""),
             ("description", ""),
@@ -154,7 +152,6 @@ async def edit_meta(
     is_age_restricted: Optional[str] = Form(None),
     is_made_for_kids: Optional[str] = Form(None),
     allow_comments: Optional[str] = Form(None),
-    allow_embed: Optional[str] = Form(None),
     license: str = Form("standard"),
 ) -> Any:
     user = get_current_user(request)
@@ -177,7 +174,6 @@ async def edit_meta(
         b_age = _bool_from_form(is_age_restricted)
         b_kids = _bool_from_form(is_made_for_kids)
         b_comments = _bool_from_form(allow_comments)
-        b_embed = _bool_from_form(allow_embed)
 
         await conn.execute(
             """
@@ -189,8 +185,7 @@ async def edit_meta(
                 is_age_restricted = $6,
                 is_made_for_kids = $7,
                 allow_comments = $8,
-                allow_embed = $9,
-                license = $10
+                license = $9
             WHERE video_id = $1
             """,
             video_id,
@@ -201,7 +196,6 @@ async def edit_meta(
             b_age,
             b_kids,
             b_comments,
-            b_embed,
             (license or "standard").strip(),
         )
     finally:

@@ -48,8 +48,9 @@
       <label><input type="checkbox" name="is_age_restricted" {{ 'checked' if v.get('is_age_restricted') else '' }}> Age restricted</label>
       <label style="margin-left:12px;"><input type="checkbox" name="is_made_for_kids" {{ 'checked' if v.get('is_made_for_kids') else '' }}> Made for kids</label>
       <label style="margin-left:12px;"><input type="checkbox" name="allow_comments" {{ 'checked' if v.get('allow_comments', True) else '' }}> Allow comments</label>
-      <label style="margin-left:12px;"><input type="checkbox" name="allow_embed" {{ 'checked' if v.get('allow_embed', True) else '' }}> Allow embed</label>
-      <label style="margin-left:12px;">License
+    </div>
+    <div style="margin-top:6px;">
+      <label>License
         <select name="license">
           <option value="standard" {{ 'selected' if v.get('license','standard')=='standard' else '' }}>standard</option>
           <option value="creative_commons" {{ 'selected' if v.get('license')=='creative_commons' else '' }}>creative commons</option>
