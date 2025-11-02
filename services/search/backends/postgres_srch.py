@@ -1,60 +1,105 @@
-from typing import Any, Dict, List
+import math
+from typing import Any, Dict, List, Tuple
 
 from db import get_conn, release_conn
 
+
+def _norm_query(q: str) -> str:
+    return (q or "").strip()
+
+
 class PostgresBackend:
-    def __init__(self) -> None:
-        pass
+    """
+    PostgreSQL search backend:
+      - Full-text search over title and description (EN+RU)
+      - Author search via username (trigram-accelerated ILIKE)
+      - Ranking combines FTS rank, popularity, and recency tiebreaker
+      - Suggest titles by prefix (ILIKE)
+    """
 
     async def search_videos(self, q: str, limit: int, offset: int) -> List[Dict[str, Any]]:
-        sql = """
-        WITH q AS (
-          SELECT websearch_to_tsquery($1) AS tsq, $1::text AS rawq
-        )
-        SELECT
-          v.video_id,
-          v.title,
-          v.description,
-          u.username AS author,
-          c.name AS category,
-          v.views_count,
-          v.likes_count,
-          EXTRACT(EPOCH FROM v.created_at)::bigint AS created_at_unix,
-          ts_rank_cd(v.search_vec, q.tsq, 1) AS rank_ts,
-          similarity(v.title, q.rawq) AS rank_sim
-        FROM videos v
-        JOIN users u ON u.user_uid = v.author_uid
-        LEFT JOIN categories c ON c.category_id = v.category_id,
-        q
-        WHERE
-          v.status = 'public'
-          AND (
-            v.search_vec @@ q.tsq
-            OR (q.rawq <> '' AND v.title % q.rawq)
-          )
-        ORDER BY
-          (ts_rank_cd(v.search_vec, q.tsq, 1) * 1.0)
-          + (similarity(v.title, q.rawq) * 0.7)
-          + (LEAST(EXTRACT(EPOCH FROM (NOW() - v.created_at)) / 86400.0, 365.0) * -0.001)
-          + (LN(GREATEST(v.views_count,1)) * 0.05) DESC
-        LIMIT $2 OFFSET $3
-        """
+        q = _norm_query(q)
+        limit = max(1, min(int(limit or 10), 50))
+        offset = max(0, int(offset or 0))
+
         conn = await get_conn()
         try:
-            rows = await conn.fetch(sql, q, limit, offset)
+            if not q:
+                rows = await conn.fetch(
+                    """
+                    SELECT v.video_id, v.title, v.description, u.username AS author,
+                           c.name AS category, v.views_count AS views, v.likes_count AS likes,
+                           EXTRACT(EPOCH FROM v.created_at)::bigint AS created_at
+                    FROM videos v
+                    JOIN users u ON u.user_uid = v.author_uid
+                    LEFT JOIN categories c ON c.category_id = v.category_id
+                    WHERE v.status='public'
+                    ORDER BY v.created_at DESC
+                    LIMIT $1 OFFSET $2
+                    """,
+                    limit,
+                    offset,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    WITH q AS (
+                      SELECT
+                        websearch_to_tsquery('simple', $1) AS qs,
+                        websearch_to_tsquery('russian', $1) AS qr
+                    )
+                    SELECT
+                      v.video_id,
+                      v.title,
+                      v.description,
+                      u.username AS author,
+                      c.name AS category,
+                      v.views_count AS views,
+                      v.likes_count AS likes,
+                      EXTRACT(EPOCH FROM v.created_at)::bigint AS created_at,
+                      GREATEST(
+                        ts_rank_cd(
+                          setweight(to_tsvector('simple', coalesce(v.title,'')), 'A') ||
+                          setweight(to_tsvector('simple', coalesce(v.description,'')), 'B'),
+                          (SELECT qs FROM q)
+                        ),
+                        ts_rank_cd(
+                          setweight(to_tsvector('russian', coalesce(v.title,'')), 'A') ||
+                          setweight(to_tsvector('russian', coalesce(v.description,'')), 'B'),
+                          (SELECT qr FROM q)
+                        )
+                      ) AS fts_rank
+                    FROM videos v
+                    JOIN users u ON u.user_uid = v.author_uid
+                    LEFT JOIN categories c ON c.category_id = v.category_id
+                    WHERE v.status='public' AND (
+                      to_tsvector('simple', coalesce(v.title,'') || ' ' || coalesce(v.description,'')) @@ (SELECT qs FROM q)
+                      OR to_tsvector('russian', coalesce(v.title,'') || ' ' || coalesce(v.description,'')) @@ (SELECT qr FROM q)
+                      OR u.username ILIKE ('%' || $1 || '%')
+                    )
+                    ORDER BY
+                      fts_rank DESC,
+                      (log(1 + COALESCE(v.views_count,0) + 5*COALESCE(v.likes_count,0))) DESC,
+                      v.created_at DESC
+                    LIMIT $2 OFFSET $3
+                    """,
+                    q,
+                    limit,
+                    offset,
+                )
+
             out: List[Dict[str, Any]] = []
             for r in rows:
-                d = dict(r)
                 out.append(
                     {
-                        "video_id": d.get("video_id"),
-                        "title": d.get("title", ""),
-                        "description": d.get("description", ""),
-                        "author": d.get("author", ""),
-                        "category": d.get("category", ""),
-                        "views_count": d.get("views_count", 0),
-                        "likes_count": d.get("likes_count", 0),
-                        "created_at_unix": int(d.get("created_at_unix", 0)),
+                        "video_id": r["video_id"],
+                        "title": r["title"] or "",
+                        "description": r["description"] or "",
+                        "author": r["author"] or "",
+                        "category": r["category"] or "",
+                        "views_count": int(r["views"] or 0),
+                        "likes_count": int(r["likes"] or 0),
+                        "created_at_unix": int(r["created_at"] or 0),
                     }
                 )
             return out
@@ -62,22 +107,29 @@ class PostgresBackend:
             await release_conn(conn)
 
     async def suggest_titles(self, prefix: str, limit: int = 10) -> List[Dict[str, Any]]:
-        sql = """
-        SELECT video_id, title
-        FROM videos
-        WHERE status = 'public' AND title ILIKE $1 || '%'
-        ORDER BY similarity(title, $1) DESC
-        LIMIT $2
-        """
+        s = _norm_query(prefix)
+        if not s:
+            return []
+        limit = max(1, min(int(limit or 10), 25))
         conn = await get_conn()
         try:
-            rows = await conn.fetch(sql, prefix, limit)
-            return [{"video_id": r["video_id"], "title": r["title"]} for r in rows]
+            rows = await conn.fetch(
+                """
+                SELECT v.video_id, v.title
+                FROM videos v
+                WHERE v.status='public' AND v.title ILIKE ($1 || '%')
+                ORDER BY v.created_at DESC, v.views_count DESC
+                LIMIT $2
+                """,
+                s,
+                limit,
+            )
+            return [{"video_id": r["video_id"], "title": r["title"] or ""} for r in rows]
         finally:
             await release_conn(conn)
 
-    async def index_video(self, video: Dict[str, Any]) -> None:
-        return
+    async def index_video(self, video: Dict[str, Any]) -> Tuple[bool, str]:
+        return True, ""
 
-    async def delete_video(self, video_id: str) -> None:
-        return
+    async def delete_video(self, video_id: str) -> Tuple[bool, str]:
+        return True, ""
