@@ -9,5 +9,8 @@ class SearchSettings:
     MANTICORE_INDEX_VIDEOS: str = os.getenv("MANTICORE_INDEX_VIDEOS", "videos_rt")
     MANTICORE_INDEX_SUBTITLES: str = os.getenv("MANTICORE_INDEX_SUBTITLES", "subtitles_rt")
     PG_DEFAULT_TS_LANG: str = os.getenv("PG_DEFAULT_TS_LANG", "russian")
+    # New:
+    PG_TS_CONFIG: str = os.getenv("PG_TS_CONFIG", "yt_multi")
+    TRGM_THRESHOLD: str = os.getenv("TRGM_THRESHOLD", "0.15")
 
 settings = SearchSettings()

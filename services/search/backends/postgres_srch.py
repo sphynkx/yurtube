@@ -2,6 +2,7 @@ import math
 from typing import Any, Dict, List, Tuple
 
 from db import get_conn, release_conn
+from services.search.settings_srch import settings
 
 
 def _norm_query(q: str) -> str:
@@ -11,11 +12,22 @@ def _norm_query(q: str) -> str:
 class PostgresBackend:
     """
     PostgreSQL search backend:
-      - Full-text search over title and description (EN+RU)
-      - Author search via username (trigram-accelerated ILIKE)
-      - Ranking combines FTS rank, popularity, and recency tiebreaker
-      - Suggest titles by prefix (ILIKE)
+      - FTS over title_norm + description_norm with custom TS config (settings.PG_TS_CONFIG, default 'yt_multi')
+      - Author search via username (ILIKE + trigram index)
+      - Fuzzy via pg_trgm on fuzzy-normalized fields (title_fuzzy/description_fuzzy):
+          * word_similarity (in-text) with configurable threshold
+          * % operator (threshold via set_limit)
+          * ILIKE fallback
+      - IMPORTANT: the query string is normalized to qf with the same rules as *_fuzzy fields
+      - Ranking: FTS desc, then word-sim desc, then trigram sim desc, then popularity, then recency
     """
+
+    def __init__(self) -> None:
+        self.ts_config = getattr(settings, "PG_TS_CONFIG", "yt_multi")
+        try:
+            self.trgm_threshold = float(getattr(settings, "TRGM_THRESHOLD", "0.22"))
+        except Exception:
+            self.trgm_threshold = 0.22
 
     async def search_videos(self, q: str, limit: int, offset: int) -> List[Dict[str, Any]]:
         q = _norm_query(q)
@@ -24,6 +36,12 @@ class PostgresBackend:
 
         conn = await get_conn()
         try:
+            # per-session trigram threshold for % operator
+            try:
+                await conn.execute("SELECT set_limit($1)", self.trgm_threshold)
+            except Exception:
+                pass
+
             if not q:
                 rows = await conn.fetch(
                     """
@@ -41,12 +59,28 @@ class PostgresBackend:
                     offset,
                 )
             else:
+                # NOTE: qf is the query normalized with the same rules as *_fuzzy fields
                 rows = await conn.fetch(
-                    """
-                    WITH q AS (
+                    f"""
+                    WITH params AS (
                       SELECT
-                        websearch_to_tsquery('simple', $1) AS qs,
-                        websearch_to_tsquery('russian', $1) AS qr
+                        websearch_to_tsquery('{self.ts_config}', $1) AS qt,
+                        -- qf = lower( replace(replace( translate($1, 'ЁёЭэ' -> 'ЕеЕе'), 'эй'->'ей'), 'йо'->'ио') )
+                        lower(
+                          replace(
+                            replace(
+                              translate(
+                                $1,
+                                U&'\\0401\\0451\\042D\\044D',  -- Ё ё Э э
+                                U&'\\0415\\0435\\0415\\0435'   -- Е е Е е
+                              ),
+                              U&'\\044D\\0439',                -- 'эй'
+                              U&'\\0435\\0439'                 -- 'ей'
+                            ),
+                            U&'\\0439\\043E',                  -- 'йо'
+                            U&'\\0438\\043E'                   -- 'ио'
+                          )
+                        ) AS qf
                     )
                     SELECT
                       v.video_id,
@@ -57,28 +91,38 @@ class PostgresBackend:
                       v.views_count AS views,
                       v.likes_count AS likes,
                       EXTRACT(EPOCH FROM v.created_at)::bigint AS created_at,
+                      ts_rank_cd(
+                        to_tsvector('{self.ts_config}', coalesce(v.title_norm,'') || ' ' || coalesce(v.description_norm,'')),
+                        (SELECT qt FROM params)
+                      ) AS fts_rank,
                       GREATEST(
-                        ts_rank_cd(
-                          setweight(to_tsvector('simple', coalesce(v.title,'')), 'A') ||
-                          setweight(to_tsvector('simple', coalesce(v.description,'')), 'B'),
-                          (SELECT qs FROM q)
-                        ),
-                        ts_rank_cd(
-                          setweight(to_tsvector('russian', coalesce(v.title,'')), 'A') ||
-                          setweight(to_tsvector('russian', coalesce(v.description,'')), 'B'),
-                          (SELECT qr FROM q)
-                        )
-                      ) AS fts_rank
+                        word_similarity(v.title_fuzzy, (SELECT qf FROM params)),
+                        word_similarity(v.description_fuzzy, (SELECT qf FROM params))
+                      ) AS wsim,
+                      GREATEST(
+                        similarity(v.title_fuzzy, (SELECT qf FROM params)),
+                        similarity(v.description_fuzzy, (SELECT qf FROM params))
+                      ) AS sim
                     FROM videos v
                     JOIN users u ON u.user_uid = v.author_uid
                     LEFT JOIN categories c ON c.category_id = v.category_id
                     WHERE v.status='public' AND (
-                      to_tsvector('simple', coalesce(v.title,'') || ' ' || coalesce(v.description,'')) @@ (SELECT qs FROM q)
-                      OR to_tsvector('russian', coalesce(v.title,'') || ' ' || coalesce(v.description,'')) @@ (SELECT qr FROM q)
+                      -- FTS on normalized fields with custom config
+                      to_tsvector('{self.ts_config}', coalesce(v.title_norm,'') || ' ' || coalesce(v.description_norm,'')) @@ (SELECT qt FROM params)
+                      -- author fuzzy (username)
                       OR u.username ILIKE ('%' || $1 || '%')
+                      -- fuzzy on fuzzy-normalized fields, comparing with normalized query qf
+                      OR v.title_fuzzy % (SELECT qf FROM params)
+                      OR v.description_fuzzy % (SELECT qf FROM params)
+                      OR word_similarity(v.title_fuzzy, (SELECT qf FROM params)) >= $4
+                      OR word_similarity(v.description_fuzzy, (SELECT qf FROM params)) >= $4
+                      OR v.title_fuzzy ILIKE ('%' || (SELECT qf FROM params) || '%')
+                      OR v.description_fuzzy ILIKE ('%' || (SELECT qf FROM params) || '%')
                     )
                     ORDER BY
                       fts_rank DESC,
+                      wsim DESC,
+                      sim DESC,
                       (log(1 + COALESCE(v.views_count,0) + 5*COALESCE(v.likes_count,0))) DESC,
                       v.created_at DESC
                     LIMIT $2 OFFSET $3
@@ -86,6 +130,7 @@ class PostgresBackend:
                     q,
                     limit,
                     offset,
+                    self.trgm_threshold,
                 )
 
             out: List[Dict[str, Any]] = []
@@ -117,7 +162,7 @@ class PostgresBackend:
                 """
                 SELECT v.video_id, v.title
                 FROM videos v
-                WHERE v.status='public' AND v.title ILIKE ($1 || '%')
+                WHERE v.status='public' AND v.title_fuzzy ILIKE ($1 || '%')
                 ORDER BY v.created_at DESC, v.views_count DESC
                 LIMIT $2
                 """,

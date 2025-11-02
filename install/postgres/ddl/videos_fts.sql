@@ -18,3 +18,10 @@ USING GIN (
 -- Trigram for author search by username
 CREATE INDEX IF NOT EXISTS users_username_trgm ON users
 USING GIN (username gin_trgm_ops);
+
+-- NEW: Trigram for fuzzy title and description
+CREATE INDEX IF NOT EXISTS videos_title_trgm ON videos
+USING GIN (title gin_trgm_ops);
+
+CREATE INDEX IF NOT EXISTS videos_description_trgm ON videos
+USING GIN (description gin_trgm_ops);

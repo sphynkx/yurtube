@@ -183,13 +183,47 @@ def _run_select(sql: str) -> List[Dict[str, Any]]:
     return _normalize_rows(res)
 
 
+def _ru_variants(s: str) -> List[str]:
+    """
+    Generate simple Russian variants to catch common spelling differences:
+    - 'ё' <-> 'е'
+    - 'эй' <-> 'ей'
+    """
+    out = {s}
+    if "ё" in s:
+        out.add(s.replace("ё", "е"))
+    if "е" in s:
+        out.add(s.replace("е", "ё"))
+    if "эй" in s:
+        out.add(s.replace("эй", "ей"))
+    if "ей" in s:
+        out.add(s.replace("ей", "эй"))
+    return list(out)
+
+
+def _expand_query_terms(q: str) -> str:
+    """
+    Build boolean expression with OR-ed variants for each token.
+    Example: 'бэйс рок' -> '(бэйс | бейс) (рок)'
+    """
+    parts = [t for t in q.strip().split() if t]
+    groups: List[str] = []
+    for t in parts:
+        vars = _ru_variants(t)
+        if len(vars) == 1:
+            groups.append(vars[0])
+        else:
+            groups.append("(" + " | ".join(vars) + ")")
+    return " ".join(groups)
+
+
 def _build_match_advanced(q: str) -> str:
-    s = q.strip()
-    return f"@title {s} | @tags {s} | @description {s} | @author {s}"
+    s = _expand_query_terms(q)
+    return f"@title {s} | @description {s} | @author {s}"
 
 
 def _build_match_simple(q: str) -> str:
-    return q.strip()
+    return _expand_query_terms(q)
 
 
 class ManticoreBackend:
@@ -208,7 +242,7 @@ class ManticoreBackend:
                     f"SELECT id, video_id, title, description, author, category, views, likes, created_at, WEIGHT() AS w "
                     f"FROM {self.index} WHERE MATCH('{match_adv}') AND status='public' "
                     f"ORDER BY w DESC, created_at DESC LIMIT {int(limit)} OFFSET {int(offset)} "
-                    f"OPTION ranker=bm25, field_weights=(title=6, tags=4, description=2, author=3)"
+                    f"OPTION ranker=bm25, field_weights=(title=6, description=2, author=3)"
                 )
                 rows = _run_select(sql1)
             if not rows:
@@ -216,7 +250,7 @@ class ManticoreBackend:
                     f"SELECT id, video_id, title, description, author, category, views, likes, created_at, WEIGHT() AS w "
                     f"FROM {self.index} WHERE MATCH('{match_simple}') AND status='public' "
                     f"ORDER BY w DESC, created_at DESC LIMIT {int(limit)} OFFSET {int(offset)} "
-                    f"OPTION ranker=bm25, field_weights=(title=6, tags=4, description=2, author=3)"
+                    f"OPTION ranker=bm25, field_weights=(title=6, description=2, author=3)"
                 )
                 rows = _run_select(sql2)
         else:

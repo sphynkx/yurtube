@@ -55,11 +55,15 @@ Create role and database. Replace SECRET with `yt_user`'s password:
 ```bash
 sudo -u postgres psql -v db_pass='SECRET' -f install/prep.sql
 ```
+Set user password for DB user (replace "SECRET" with actual password):
+```bash
+export PGPASSWORD='SECRET'
+```
 
 Apply schema creation and seed data (initial categories/tags):
 ```bash
-PGPASSWORD='SECRET' psql -U yt_user -h 127.0.0.1 -d yt_db -f install/schema.sql
-PGPASSWORD='SECRET' psql -U yt_user -h 127.0.0.1 -d yt_db -f install/seed.sql
+psql -U yt_user -h 127.0.0.1 -d yt_db -f install/schema.sql
+psql -U yt_user -h 127.0.0.1 -d yt_db -f install/seed.sql
 ```
 
 
@@ -86,12 +90,25 @@ Enter username, email, password for admin-user.
 ## Search engines
 Application supports two search engines. You may configure both of them and switch via `.env` parameter. Default is Postgres FTS.
 
+At first:
+```bash
+sudo dnf install hunspell-ru hunspell-en postgresql-contrib postgresql-devel
+install/dicts_prep.sh
+```
 
 ### Postgres FTS
-Apply schema:
+Apply schemas:
 ```bash
-PGPASSWORD='SECRET' psql -U yt_user -h 127.0.0.1 -d yt_db -f install/postgres/ddl/videos_fts.sql
+psql -U yt_user -h 127.0.0.1 -d yt_db -f install/postgres/ddl/videos_fts.sql
+psql -U yt_user -h 127.0.0.1 -d yt_db -f install/postgres/ddl/fts_config.sql
+psql -U yt_user -h 127.0.0.1 -d yt_db -f install/postgres/ddl/videos_norm_fts.sql
+psql -U yt_user -h 127.0.0.1 -d yt_db -f install/postgres/ddl/videos_fuzzy_norm.sql
 ```
+or via single script:
+```bash
+install/postgres/apply_db_schema.sh
+```
+
 In the `.env` set `SEARCH_BACKEND` to "postgres". Restart app.
 
 
