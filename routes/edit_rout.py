@@ -2,8 +2,9 @@ from typing import Any, Dict, List, Optional
 import os
 import re
 import json
+import asyncio
 
-from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File, Query
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -15,8 +16,10 @@ from services.ffmpeg_srv import (
     generate_thumbnails,
     generate_animated_preview,
 )
+from services.search.indexer_srch import fire_and_forget_reindex, reindex_video
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
+
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -144,6 +147,7 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
 @router.post("/manage/edit/meta")
 async def edit_meta(
     request: Request,
+    background_tasks: BackgroundTasks,
     video_id: str = Form(...),
     title: str = Form(""),
     description: str = Form(""),
@@ -200,6 +204,8 @@ async def edit_meta(
         )
     finally:
         await release_conn(conn)
+
+    background_tasks.add_task(reindex_video, video_id)
 
     return RedirectResponse(f"/manage/edit?v={video_id}", status_code=302)
 

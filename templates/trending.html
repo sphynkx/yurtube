@@ -2,56 +2,125 @@
 {% block content %}
 <h1>Trending</h1>
 
-<form action="/trending" method="get" style="margin:8px 0;">
-  <label>Period:
-    <select name="period" onchange="this.form.submit()">
-      <option value="day" {{ 'selected' if period == 'day' else '' }}>Last 24h</option>
-      <option value="week" {{ 'selected' if period == 'week' else '' }}>Last 7 days</option>
-      <option value="month" {{ 'selected' if period == 'month' else '' }}>Last 30 days</option>
-    </select>
-  </label>
-  <input type="hidden" name="page" value="{{ page }}">
-</form>
+<div style="display:flex; align-items:center; gap:12px; margin:8px 0 16px;">
+  <span style="font-size:13px; color:#666;">Period:</span>
+  <a href="/trending?days=1&per_page={{ per_page }}&page=1"
+     style="padding:4px 8px; border-radius:12px; text-decoration:none; {% if days == 1 %}background:#111; color:#fff;{% else %}background:#f2f2f2; color:#111;{% endif %}">
+     1d
+  </a>
+  <a href="/trending?days=7&per_page={{ per_page }}&page=1"
+     style="padding:4px 8px; border-radius:12px; text-decoration:none; {% if days == 7 %}background:#111; color:#fff;{% else %}background:#f2f2f2; color:#111;{% endif %}">
+     7d
+  </a>
+  <a href="/trending?days=30&per_page={{ per_page }}&page=1"
+     style="padding:4px 8px; border-radius:12px; text-decoration:none; {% if days == 30 %}background:#111; color:#fff;{% else %}background:#f2f2f2; color:#111;{% endif %}">
+     30d
+  </a>
+  {% if total is defined %}
+    <span style="margin-left:auto; font-size:12px; color:#666;">Total: {{ total }}</span>
+  {% endif %}
+</div>
 
-<div class="video-grid">
-  {% for v in videos %}
-  <div class="video-card">
-    <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
-      <img class="thumb-img thumb-still" src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
-      {% if v['thumb_anim_url'] %}
-      <img class="thumb-img thumb-anim" src="{{ v['thumb_anim_url'] }}" alt="{{ v['title'] }}">
-      {% endif %}
-    </a>
-    <div class="meta">
-      <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
-      <div class="author author-line">
-        <img class="mini-avatar"
-             src="{{ v.get('author_avatar_url_small', '/static/img/avatar_default.svg') }}"
-             alt="avatar"
-             onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
-        {% if v.get('username') %}
-          <span><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></span>
+{% if videos_count and videos_count > 0 %}
+  <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap:16px;">
+    {% for v in videos %}
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <a href="/watch?v={{ v['video_id'] }}" style="display:block; width:100%; aspect-ratio:16/9; background:#000; border-radius:8px; overflow:hidden;">
+          <img
+            class="trend-thumb"
+            src="{{ v.get('thumb_url') or '/static/img/thumb_default.svg' }}"
+            {% if v.get('thumb_url_anim') %} data-anim="{{ v['thumb_url_anim'] }}" {% endif %}
+            {% if v.get('thumb_url') %} data-static="{{ v['thumb_url'] }}" {% endif %}
+            alt="thumb"
+            style="width:100%; height:100%; object-fit:cover;"
+            loading="lazy"
+            onerror="this.onerror=null;this.src='/static/img/thumb_default.svg';"
+          >
+        </a>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <img
+            src="{{ v.get('avatar_url') or '/static/img/avatar_default.svg' }}"
+            alt="avatar"
+            style="width:24px; height:24px; border-radius:50%; object-fit:cover;"
+            loading="lazy"
+            onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';"
+          >
+          <div style="min-width:0;">
+            <div style="font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              <a href="/watch?v={{ v['video_id'] }}" style="color:#111; text-decoration:none;">{{ v['title'] }}</a>
+            </div>
+            <div style="color:#666; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+              {{ v.get('author','') }}
+              {% if v.get('uploaded_at') %}&middot; {{ v['uploaded_at'] }}{% endif %}
+              &middot; {{ v.get('views_count',0) }} views
+              {% if v.get('views_window') is not none %}&middot; {{ v['views_window'] }} views in {{ days }}d{% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div style="display:flex; align-items:center; gap:8px; justify-content:space-between; margin:18px 0;">
+    <span style="font-size:12px; color:#666;">Page {{ page }} of {{ last_page }}</span>
+    {% if last_page and last_page > 1 %}
+      <div style="display:flex; align-items:center; gap:8px;">
+        {% if page > 1 %}
+          <a href="/trending?days={{ days }}&per_page={{ per_page }}&page={{ page - 1 }}"
+             style="padding:6px 10px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">Prev</a>
         {% else %}
-          <span><a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a></span>
+          <span style="padding:6px 10px; border:1px solid #eee; border-radius:6px; color:#aaa;">Prev</span>
+        {% endif %}
+
+        {% for n in page_numbers %}
+          {% if n == page %}
+            <span style="padding:6px 10px; border:1px solid #111; border-radius:6px; background:#111; color:#fff;">{{ n }}</span>
+          {% else %}
+            <a href="/trending?days={{ days }}&per_page={{ per_page }}&page={{ n }}"
+               style="padding:6px 10px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">{{ n }}</a>
+          {% endif %}
+        {% endfor %}
+
+        {% if page < last_page %}
+          <a href="/trending?days={{ days }}&per_page={{ per_page }}&page={{ page + 1 }}"
+             style="padding:6px 10px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">Next</a>
+        {% else %}
+          <span style="padding:6px 10px; border:1px solid #eee; border-radius:6px; color:#aaa;">Next</span>
         {% endif %}
       </div>
-    </div>
+    {% endif %}
   </div>
-  {% endfor %}
-  {% if videos|length == 0 %}
-  <p>No videos yet.</p>
-  {% endif %}
-</div>
 
-<div class="pager" style="margin:12px 0;">
-  {% set prev = page - 1 %}
-  {% set next = page + 1 %}
-  {% if page > 1 %}
-    <a href="/trending?period={{ period }}&page={{ prev }}">Prev</a>
-  {% endif %}
-  <span style="margin:0 8px;">Page {{ page }}</span>
-  {% if videos|length == per_page %}
-    <a href="/trending?period={{ period }}&page={{ next }}">Next</a>
-  {% endif %}
-</div>
+  <script>
+  (function() {
+    var mql = window.matchMedia("(hover: hover)");
+    if (!mql || !mql.matches) return;
+
+    function onEnter(e) {
+      var img = e.currentTarget;
+      var anim = img.getAttribute("data-anim");
+      if (!anim) return;
+      if (!img._animPrefetched) {
+        var pre = new Image();
+        pre.src = anim;
+        img._animPrefetched = true;
+      }
+      img._staticSrc = img.getAttribute("data-static") || img.src;
+      img.src = anim;
+    }
+    function onLeave(e) {
+      var img = e.currentTarget;
+      var st = img._staticSrc || img.getAttribute("data-static");
+      if (st) img.src = st;
+    }
+    var imgs = document.querySelectorAll("img.trend-thumb[data-anim]");
+    imgs.forEach(function(img) {
+      img.addEventListener("mouseenter", onEnter);
+      img.addEventListener("mouseleave", onLeave);
+    });
+  })();
+  </script>
+{% else %}
+  <p>No items for the selected period.</p>
+{% endif %}
 {% endblock %}

@@ -34,6 +34,37 @@ which ffmpeg && ffmpeg -version
 which ffprobe && ffprobe -version
 ```
 
+## Install and configure Manticore (Search engine)
+For Fedora distribution:
+```bash
+sudo rpm --import https://repo.manticoresearch.com/GPG-KEY-manticore
+sudo dnf install https://repo.manticoresearch.com/manticore-repo.noarch.rpm
+```
+Edit `/etc/yum.repos.d/manticore.repo` - replace "$releasever" to "9". Install packages:
+```bash
+sudo dnf install manticore
+```
+
+Create tables and check them:
+```bash
+mysql -h 127.0.0.1 -P 9306 -e "SOURCE install/manticore/ddl/videos_rt.sql"
+mysql -h 127.0.0.1 -P 9306 -e "SOURCE install/manticore/ddl/subtitles_rt.sql"
+mysql -h 127.0.0.1 -P 9306 -e "SHOW TABLES"
+curl -s 'http://127.0.0.1:9308/sql?mode=raw&query=SHOW%20TABLES'
+```
+Next check. Edit some video - do some modification in Meta section (for example Description) and save. Next run 
+```bash
+mysql -h 127.0.0.1 -P 9306 -e "SELECT video_id,title,status FROM videos_rt WHERE video_id='XXXXXXXXXXXX'"
+```
+where "XXXXXXXXXXXX" id ID of edited video. You could get record about modified video.
+
+To force reindex search DB use script `install/manticore/reindex_all.py`:
+```bash
+source ../../.venv/bin/activate
+python3 reindex_all.py
+deactivate
+```
+
 
 ## Create and configure DB (Postgres)
 
