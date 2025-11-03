@@ -1,0 +1,77 @@
+<div class="yrp-container" data-yrp="1" tabindex="0">
+  <div class="yrp-video-wrap">
+    <video class="yrp-video" preload="metadata">
+      <source>
+      <!-- Tracks will be injected by JS if provided -->
+      Your browser does not support the video tag.
+    </video>
+
+    <button class="yrp-center-play" aria-label="Play/Pause" title="Play/Pause">
+      <img class="yrp-center-logo" src="/static/players/yurtube/img/logo.png" alt="Play">
+    </button>
+
+    <div class="yrp-controls" role="group" aria-label="Player controls">
+      <div class="yrp-progress" aria-label="Seek">
+        <div class="yrp-progress-rail"></div>
+        <div class="yrp-progress-buffer"></div>
+        <div class="yrp-progress-played"></div>
+        <div class="yrp-progress-handle"></div>
+        <div class="yrp-progress-tooltip" hidden>00:00</div>
+      </div>
+      <div class="yrp-bar">
+        <div class="yrp-left">
+          <button class="yrp-btn yrp-play" aria-label="Play/Pause" title="Play/Pause">Play</button>
+          <button class="yrp-btn yrp-prev" aria-label="Previous" title="Previous" disabled>Prev</button>
+          <button class="yrp-btn yrp-next" aria-label="Next" title="Next" disabled>Next</button>
+
+          <div class="yrp-volume">
+            <button class="yrp-btn yrp-vol-btn" aria-label="Mute/Unmute" title="Volume">Vol</button>
+            <div class="yrp-vol-slider-wrap">
+              <input class="yrp-vol-slider" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume">
+            </div>
+          </div>
+
+          <div class="yrp-time">
+            <span class="yrp-time-current">00:00</span>
+            <span class="yrp-time-sep">/</span>
+            <span class="yrp-time-total">00:00</span>
+          </div>
+        </div>
+
+        <div class="yrp-right">
+          <button class="yrp-btn yrp-subtitles" aria-label="Subtitles" title="Subtitles" disabled>CC</button>
+          <div class="yrp-menu-wrap">
+            <button class="yrp-btn yrp-settings" aria-haspopup="true" aria-expanded="false" title="Settings">Settings</button>
+            <div class="yrp-menu" role="menu" hidden>
+              <div class="yrp-menu-section" data-section="speed">
+                <div class="yrp-menu-title">Speed</div>
+                <button class="yrp-menu-item" data-speed="0.5">0.5x</button>
+                <button class="yrp-menu-item" data-speed="0.75">0.75x</button>
+                <button class="yrp-menu-item" data-speed="1" data-default="1">1.0x</button>
+                <button class="yrp-menu-item" data-speed="1.25">1.25x</button>
+                <button class="yrp-menu-item" data-speed="1.5">1.5x</button>
+                <button class="yrp-menu-item" data-speed="2">2.0x</button>
+              </div>
+              <div class="yrp-menu-section" data-section="quality" data-disabled="1">
+                <div class="yrp-menu-title">Quality (future)</div>
+              </div>
+              <div class="yrp-menu-section" data-section="subtitles" data-disabled="1">
+                <div class="yrp-menu-title">Subtitles (future)</div>
+              </div>
+            </div>
+          </div>
+          <button class="yrp-btn yrp-pip" aria-label="Mini player" title="Mini">Mini</button>
+          <button class="yrp-btn yrp-theater" aria-label="Theater mode" title="Theater">Theater</button>
+          <button class="yrp-btn yrp-fullscreen" aria-label="Fullscreen" title="Fullscreen">Full</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="yrp-context" role="menu" hidden>
+      <button class="yrp-ctx-item" data-action="pip">Mini player</button>
+      <button class="yrp-ctx-item" data-action="copy-url">Copy Video URL</button>
+      <button class="yrp-ctx-item" data-action="copy-url-time">Copy URL with time</button>
+      <button class="yrp-ctx-item" data-action="copy-embed">Copy embed code</button>
+    </div>
+  </div>
+</div>

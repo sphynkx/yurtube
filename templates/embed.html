@@ -1,68 +1,36 @@
-<!doctype html>
+<!DOCTYPE html>
+<!-- Expects:
+     player_name, video_src, poster_url, video_id, subtitles, player_options
+-->
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ video['title'] if video else 'Video' }}</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>{% if video and video.title %}{{ video.title }}{% else %}Embed Video{% endif %}</title>
   <style>
-    html, body { margin:0; padding:0; background:#000; }
-    .wrap { display:flex; align-items:center; justify-content:center; width:100vw; height:100vh; }
-    .player-wrap { position: relative; width:100%; height:100%; max-width:100vw; max-height:100vh; }
-    .player-wrap video { width:100%; height:100%; display:block; object-fit:contain; background:#000; }
-    .video-overlay {
-      position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
-      width:64px; height:64px; opacity:.9; transition:opacity .2s ease; cursor:pointer; user-select:none;
-    }
-    .video-overlay img { width:100%; height:100%; display:block; }
-    .player-wrap.playing .video-overlay { opacity:0; pointer-events:none; }
-    .placeholder { width:100%; height:100%; background:#000; display:flex; align-items:center; justify-content:center; }
-    .placeholder img { max-width:60%; height:auto; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #000; }
+    .embed-root { min-height: 100%; width: 100%; background: #000; }
+    .player-wrapper { width: 100%; background: #000; }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    {% if src_url %}
-      <div class="player-wrap" id="embed-player-wrap">
-        <video id="embed-player" controls preload="metadata" poster="{{ poster_url }}" {{ auto_attr }} {{ mute_attr }} {{ loop_attr }}>
-          <source src="{{ src_url }}" type="video/webm">
-          Your browser does not support the video tag.
-        </video>
-        <div class="video-overlay" id="embed-overlay" title="Play/Pause">
-          <img src="/static/img/YT_fav128.png" alt="Play">
-        </div>
-      </div>
-    {% else %}
-      <div class="placeholder">
-        <img src="{{ poster_url }}" alt="No video">
-      </div>
-    {% endif %}
+  {% import "players_macros.html" as pm %}
+  <div class="embed-root">
+    <div class="player-wrapper">
+      {{ pm.render_player(
+           player_name=player_name,
+           video_src=video_src,
+           poster_url=poster_url,
+           video_id=video_id,
+           subtitles=subtitles,
+           options=player_options
+         ) }}
+    </div>
   </div>
-
-  <script>
-  (function(){
-    var wrap = document.getElementById("embed-player-wrap");
-    var video = document.getElementById("embed-player");
-    var overlay = document.getElementById("embed-overlay");
-    if (!wrap || !video || !overlay) return;
-
-    function sync() {
-      if (video.paused) {
-        wrap.classList.remove("playing");
-      } else {
-        wrap.classList.add("playing");
-      }
-    }
-
-    overlay.addEventListener("click", function(){
-      if (video.paused) { video.play(); } else { video.pause(); }
-    });
-
-    video.addEventListener("play", sync);
-    video.addEventListener("pause", sync);
-    video.addEventListener("ended", sync);
-
-    sync();
-  })();
-  </script>
+  <noscript>
+    <div style="color:#fff;padding:12px;font-family:system-ui,Arial,sans-serif;">
+      JavaScript is required to play this video.
+    </div>
+  </noscript>
 </body>
 </html>

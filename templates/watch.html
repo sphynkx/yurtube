@@ -1,80 +1,89 @@
 {% extends "base.html" %}
+{% import "players_macros.html" as pm %}
+
 {% block content %}
+
 <div class="player-wrapper">
-  <div class="player-wrap" id="watch-player-wrap">
-    <video id="watch-player" controls preload="metadata" style="width:100%;max-height:70vh" {% if poster_url %}poster="{{ poster_url }}"{% endif %}>
-      <source src="/storage/{{ video['storage_path'] }}/original.webm" type="video/webm">
-      Your browser does not support the video tag.
-    </video>
-    <div class="video-overlay" id="watch-overlay" title="Play/Pause">
-      <img src="/static/img/YT_fav128.png" alt="Play">
-    </div>
-  </div>
+  {{ pm.render_player(
+       player_name=player_name,
+       video_src=video_src,
+       poster_url=poster_url,
+       video_id=video['video_id'],
+       subtitles=subtitles,
+       options=player_options
+     ) }}
 </div>
 
 <h2 class="watch-title">{{ video['title'] }}</h2>
 
 <div class="video-info">
-  <div class="author">
-    <img class="mini-avatar" src="{{ video['author_avatar_url_small'] }}" alt="avatar"
-         onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
-    {% if video['username'] %}
-      <a href="/@{{ video['username'] }}">@{{ video['username'] }}</a>
-    {% else %}
-      <a href="/c/{{ video['channel_id'] }}">{{ video['channel_id'] }}</a>
-    {% endif %}
+  <div class="watch-meta" style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
+    <!-- Line 1: avatar + author (link to channel if available) -->
+    <div class="author-line" style="display:inline-flex;align-items:center;gap:8px;">
+      {% if avatar_url %}
+        <img class="mini-avatar" src="{{ avatar_url }}" alt="avatar">
+      {% endif %}
+      {% if video.channel_id %}
+        <a class="author-name" href="/channel/{{ video.channel_id }}">{{ (video.username or video.channel_id) or "" }}</a>
+      {% elif video.username %}
+        <a class="author-name" href="/user/{{ video.username }}">{{ video.username }}</a>
+      {% else %}
+        <span class="author-name">{{ (video.username or video.channel_id) or "" }}</span>
+      {% endif %}
+    </div>
+
+    <!-- Line 2: date -->
+    <div class="watch-date">
+      {% if video.created_at %}
+        {% if video.created_at.__class__.__name__ == 'datetime' %}
+          {{ video.created_at.strftime("%Y-%m-%d") }}
+        {% else %}
+          {{ video.created_at }}
+        {% endif %}
+      {% endif %}
+    </div>
+
+    <!-- Line 3: views (+likes and category if present) -->
+    <div class="watch-stats" style="display:inline-flex;align-items:center;gap:10px;">
+      <span class="views">{{ video.views_count or 0 }} views</span>
+      {% if video.likes_count %}
+        <span class="likes">{{ video.likes_count }} likes</span>
+      {% endif %}
+      {% if video.category %}
+        <span class="category">in {{ video.category }}</span>
+      {% endif %}
+    </div>
   </div>
-  <div class="counters">{{ video['views_count'] }} views</div>
-  <div class="created-at">{{ video['created_at']|dt }}</div>
 </div>
 
 <p>{{ video['description'] }}</p>
 
-{% if can_embed %}
-<details style="margin-top:16px;">
-  <summary>Embed</summary>
-  <div style="margin-top:8px;">
-    <textarea id="embed-code" readonly style="width:100%;height:100px;">{{ embed_code }}</textarea>
+{% if allow_embed %}
+  <details class="embed-box" style="margin-top:10px;">
+    <summary>Embed</summary>
     <div style="margin-top:8px;">
-      <button id="copy-embed">Copy to clipboard</button>
+      <label for="embed-code">Iframe:</label>
+      <textarea id="embed-code" class="embed-code" readonly rows="3" style="width:100%;font-family:monospace;">&lt;iframe width="560" height="315" src="{{ embed_url }}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen&gt;&lt;/iframe&gt;</textarea>
+      <button type="button" class="btn-copy-embed" style="margin-top:6px;">Copy</button>
     </div>
-  </div>
-</details>
+  </details>
+  <script>
+  (function(){
+    var box=document.querySelector(".embed-box");
+    if(!box) return;
+    var btn=box.querySelector(".btn-copy-embed");
+    var ta=box.querySelector(".embed-code");
+    if(btn && ta){
+      btn.addEventListener("click",function(){
+        try{
+          ta.select();
+          document.execCommand("copy");
+        }catch(e){}
+        ta.blur();
+      });
+    }
+  })();
+  </script>
 {% endif %}
 
-<script>
-(function(){
-  var wrap = document.getElementById("watch-player-wrap");
-  var video = document.getElementById("watch-player");
-  var overlay = document.getElementById("watch-overlay");
-  var copyBtn = document.getElementById("copy-embed");
-  var code = document.getElementById("embed-code");
-
-  if (overlay && video && wrap) {
-    function sync() {
-      if (video.paused) {
-        wrap.classList.remove("playing");
-      } else {
-        wrap.classList.add("playing");
-      }
-    }
-    overlay.addEventListener("click", function(){
-      if (video.paused) { video.play(); } else { video.pause(); }
-    });
-    video.addEventListener("play", sync);
-    video.addEventListener("pause", sync);
-    video.addEventListener("ended", sync);
-    sync();
-  }
-
-  if (copyBtn && code) {
-    copyBtn.addEventListener("click", function(){
-      try {
-        code.select();
-        document.execCommand("copy");
-      } catch(e) {}
-    });
-  }
-})();
-</script>
 {% endblock %}

@@ -56,6 +56,7 @@ class Settings:
     EMBED_DEFAULT_AUTOPLAY: int = _getenv_int("EMBED_DEFAULT_AUTOPLAY", 0)
     EMBED_DEFAULT_MUTE: int = _getenv_int("EMBED_DEFAULT_MUTE", 0)
     EMBED_DEFAULT_LOOP: int = _getenv_int("EMBED_DEFAULT_LOOP", 0)
+    VIDEO_PLAYER: str = os.getenv("VIDEO_PLAYER", "yurtube").strip() or "yurtube"
 
 
 settings = Settings()

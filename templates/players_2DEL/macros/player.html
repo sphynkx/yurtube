@@ -1,0 +1,14 @@
+{% macro render_player(player_name="standard", video_src="", poster_url=None, video_id=None, subtitles=[], options={}) -%}
+  {# Try app templates first, then static/players/<name>/templates/ #}
+  {% set tmpl_candidates = [
+    'players/' ~ player_name ~ '/player.html',
+    'static/players/' ~ player_name ~ '/templates/player.html'
+  ] %}
+  {% set fallback_candidates = [
+    'players/standard/player.html',
+    'static/players/standard/templates/player.html'
+  ] %}
+
+  {# Include chosen player template; it should read video_src/poster_url/etc from context #}
+  {% include tmpl_candidates + fallback_candidates ignore missing %}
+{%- endmacro %}

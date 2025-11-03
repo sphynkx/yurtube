@@ -1,0 +1,32 @@
+{# ASCII ONLY #}
+{% macro render_player(player_name="standard", video_src="", poster_url=None, video_id=None, subtitles=[], options={}) -%}
+  {% set _video_src = video_src or "" %}
+  {% set _poster = poster_url or "" %}
+  {% set _vid = video_id or "" %}
+  {% set _subs = subtitles or [] %}
+  {% set _opts = options or {} %}
+
+  {% if player_name == "yurtube" %}
+    <link rel="stylesheet" href="/static/players/yurtube/css/player.css">
+    <div class="player-host"
+         data-player="yurtube"
+         data-video-src="{{ _video_src }}"
+         data-poster-url="{{ _poster }}"
+         data-video-id="{{ _vid }}"
+         data-subtitles='{{ _subs|tojson }}'
+         data-options='{{ _opts|tojson }}'>
+    </div>
+    <script type="module" src="/static/players/yurtube/js/player.js"></script>
+  {% else %}
+    <link rel="stylesheet" href="/static/players/standard/css/player.css">
+    <div class="player-host"
+         data-player="standard"
+         data-video-src="{{ _video_src }}"
+         data-poster-url="{{ _poster }}"
+         data-video-id="{{ _vid }}"
+         data-subtitles='{{ _subs|tojson }}'
+         data-options='{{ _opts|tojson }}'>
+    </div>
+    <script type="module" src="/static/players/standard/js/player.js"></script>
+  {% endif %}
+{%- endmacro %}

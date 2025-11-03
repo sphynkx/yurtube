@@ -1,4 +1,5 @@
-from typing import Any, Optional, Dict
+from typing import Any, Dict, List, Optional
+import os
 import json
 from urllib.parse import urlencode
 
@@ -104,115 +105,138 @@ def _embed_defaults_from_row(vrow: Dict[str, Any]) -> Dict[str, int]:
 
 
 @router.get("/watch", response_class=HTMLResponse)
-async def watch(request: Request, v: str = Query(..., min_length=12, max_length=12)) -> Any:
+async def watch_page(request: Request, v: str) -> Any:
+    user = get_current_user(request)
     conn = await get_conn()
     try:
-        video = await get_video(conn, v)
-        if not video:
+        row = await conn.fetchrow(
+            """
+            SELECT
+              v.video_id,
+              v.title,
+              v.description,
+              v.storage_path,
+              v.created_at,
+              v.views_count,
+              v.likes_count,
+              v.allow_embed,
+              v.embed_params,
+              u.username,
+              u.channel_id,
+              vcat.name AS category,
+              vthumb.path AS thumb_asset_path,
+              vanim.path  AS thumb_anim_asset_path,
+              uava.path   AS avatar_asset_path
+            FROM videos v
+            JOIN users u ON u.user_uid = v.author_uid
+            LEFT JOIN categories vcat ON vcat.category_id = v.category_id
+            LEFT JOIN LATERAL (
+              SELECT path
+              FROM video_assets
+              WHERE video_id = v.video_id AND asset_type = 'thumbnail_default'
+              LIMIT 1
+            ) vthumb ON true
+            LEFT JOIN LATERAL (
+              SELECT path
+              FROM video_assets
+              WHERE video_id = v.video_id AND asset_type = 'thumbnail_anim'
+              LIMIT 1
+            ) vanim ON true
+            LEFT JOIN LATERAL (
+              SELECT path
+              FROM user_assets
+              WHERE user_uid = v.author_uid AND asset_type = 'avatar'
+              LIMIT 1
+            ) uava ON true
+            WHERE v.video_id = $1
+            """,
+            v,
+        )
+        if not row:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        thumb_rel = await get_thumbnail_asset_path(conn, v)
-        poster_url = build_storage_url(thumb_rel) if thumb_rel else None
+        video: Dict[str, Any] = dict(row)
 
-        user = get_current_user(request)
-        user_uid: Optional[str] = user["user_uid"] if user else None
-        await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
-        await increment_video_views_counter(conn, video_id=v)
+        video_src = "/storage/" + video["storage_path"].strip("/").rstrip("/") + "/original.webm"
+        poster_url = build_storage_url(video["thumb_asset_path"]) if video.get("thumb_asset_path") else None
+        thumb_anim_url = build_storage_url(video["thumb_anim_asset_path"]) if video.get("thumb_anim_asset_path") else None
+        avatar_url = build_storage_url(video["avatar_asset_path"]) if video.get("avatar_asset_path") else None
+        video["avatar_url"] = avatar_url
+
+        subtitles: List[Dict[str, Any]] = []
+        player_options: Dict[str, Any] = {
+            "autoplay": False,
+            "muted": False,
+            "loop": False,
+            "start": 0,
+        }
+
+        allow_embed = bool(video.get("allow_embed"))
+        embed_url = f"/embed?v={video['video_id']}"
+
+        return templates.TemplateResponse(
+            "watch.html",
+            {
+                "request": request,
+                "current_user": user,
+                "video": video,
+                "player_name": settings.VIDEO_PLAYER,
+                "video_src": video_src,
+                "poster_url": poster_url,
+                "thumb_anim_url": thumb_anim_url,
+                "avatar_url": avatar_url,
+                "allow_embed": allow_embed,
+                "embed_url": embed_url,
+                "subtitles": subtitles,
+                "player_options": player_options,
+            },
+        )
     finally:
         await release_conn(conn)
-
-    vdict = dict(video)
-    vdict["author_avatar_url_small"] = _avatar_small_url(vdict.get("avatar_asset_path"))
-    can_embed = bool(vdict.get("allow_embed", True))
-
-    embed_code = ""
-    if can_embed:
-        base = _base_url(request)
-        query_params = _embed_defaults_from_row(vdict)
-        q: Dict[str, str] = {}
-        if query_params.get("autoplay"):
-            q["autoplay"] = "1"
-        if query_params.get("mute"):
-            q["mute"] = "1"
-        if query_params.get("loop"):
-            q["loop"] = "1"
-        if query_params.get("start", 0) > 0:
-            q["start"] = str(query_params["start"])
-        qs = ("&" + urlencode(q)) if q else ""
-        embed_src = f"{base}/embed?v={v}{qs}"
-        allow_attr = ' allow="autoplay; fullscreen"' if query_params.get("autoplay") else ""
-        embed_code = f'<iframe src="{embed_src}" width="560" height="315" frameborder="0"{allow_attr} allowfullscreen></iframe>'
-
-    user_ctx = get_current_user(request)
-    return templates.TemplateResponse(
-        "watch.html",
-        {
-            "request": request,
-            "video": vdict,
-            "current_user": user_ctx,
-            "embed_code": embed_code,
-            "poster_url": poster_url,
-            "can_embed": can_embed,
-        },
-    )
 
 
 @router.get("/embed", response_class=HTMLResponse)
-async def embed(
-    request: Request,
-    v: Optional[str] = Query(None),
-    autoplay: Optional[str] = Query(None),
-    mute: Optional[str] = Query(None),
-    loop: Optional[str] = Query(None),
-    start: Optional[str] = Query(None),
-    width: Optional[str] = Query(None),
-    height: Optional[str] = Query(None),
-) -> Any:
-    """
-    Minimal embed page.
-    Accepts bool-like params: 1/0, true/false, yes/no, on/off, y/n, t/f.
-    No JSON errors to end-users: show placeholder if invalid.
-    """
-    is_valid_id = isinstance(v, str) and len(v) == 12
-    video_row = None
-    poster_url: str = "/static/img/embed_missing.svg"
-    src_url: Optional[str] = None
-
+async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, muted: int = 0, loop: int = 0) -> Any:
     conn = await get_conn()
     try:
-        if is_valid_id:
-            video_row = await get_video(conn, v)  # type: ignore[arg-type]
-            if video_row:
-                if not video_row.get("allow_embed", True):
-                    video_row = dict(video_row)
-                    thumb_rel = await get_thumbnail_asset_path(conn, v)  # type: ignore[arg-type]
-                    if thumb_rel:
-                        poster_url = build_storage_url(thumb_rel)
-                    src_url = None
-                else:
-                    thumb_rel = await get_thumbnail_asset_path(conn, v)  # type: ignore[arg-type]
-                    if thumb_rel:
-                        poster_url = build_storage_url(thumb_rel)
-                    src_url = f"/storage/{video_row['storage_path']}/original.webm"
-                    start_sec = _int_or_zero(start)
-                    if start_sec > 0:
-                        src_url = f"{src_url}#t={start_sec}"
+        row = await conn.fetchrow(
+            """
+            SELECT v.video_id, v.title, v.storage_path,
+                   a.path AS thumb_asset_path
+            FROM videos v
+            LEFT JOIN video_assets a
+              ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+            WHERE v.video_id = $1
+            """,
+            v,
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        video: Dict[str, Any] = dict(row)
+        video_src = "/storage/" + video["storage_path"].strip("/").rstrip("/") + "/original.webm"
+        poster_url = build_storage_url(video["thumb_asset_path"]) if video.get("thumb_asset_path") else None
+
+        subtitles: List[Dict[str, Any]] = []
+        player_options: Dict[str, Any] = {
+            "autoplay": bool(autoplay),
+            "muted": bool(muted),
+            "loop": bool(loop),
+            "start": max(0, int(t or 0)),
+        }
+
+        return templates.TemplateResponse(
+            "embed.html",
+            {
+                "request": request,
+                "video": video,
+                "player_name": settings.VIDEO_PLAYER,
+                "video_src": video_src,
+                "poster_url": poster_url,
+                "video_id": video["video_id"],
+                "subtitles": subtitles,
+                "player_options": player_options,
+            },
+        )
     finally:
         await release_conn(conn)
-
-    auto_attr = "autoplay" if _boolish(autoplay) else ""
-    mute_attr = "muted" if _boolish(mute) else ""
-    loop_attr = "loop" if _boolish(loop) else ""
-
-    return templates.TemplateResponse(
-        "embed.html",
-        {
-            "request": request,
-            "video": dict(video_row) if video_row else None,
-            "poster_url": poster_url,
-            "src_url": src_url,
-            "auto_attr": auto_attr,
-            "mute_attr": mute_attr,
-            "loop_attr": loop_attr,
-        },
-    )
