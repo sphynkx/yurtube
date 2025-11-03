@@ -13,8 +13,8 @@ from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset
 from db.categories_db import list_categories
 from services.ffmpeg_srv import (
-    generate_thumbnails,
-    generate_animated_preview,
+    async_generate_thumbnails,
+    async_generate_animated_preview,
 )
 from services.search.indexer_srch import fire_and_forget_reindex, reindex_video
 from utils.security_ut import get_current_user
@@ -233,7 +233,7 @@ async def regen_thumbs(
         thumbs_dir = os.path.join(storage_dir, "thumbs")
         os.makedirs(thumbs_dir, exist_ok=True)
 
-        tmp = generate_thumbnails(original_path, thumbs_dir, [max(0, int(offset_sec))])
+        tmp = await async_generate_thumbnails(original_path, thumbs_dir, [max(0, int(offset_sec))])
         if tmp:
             gen_path = tmp[0]
             out_static = os.path.join(thumbs_dir, "thumb_custom.jpg")
@@ -249,14 +249,14 @@ async def regen_thumbs(
 
         if _bool_from_form(animate):
             anim_path = os.path.join(thumbs_dir, "thumb_anim.webp")
-            generate_animated_preview(
+            ok_anim = await async_generate_animated_preview(
                 original_path,
                 anim_path,
                 start_sec=max(0, int(offset_sec)),
                 duration_sec=3,
                 fps=12,
             )
-            if os.path.exists(anim_path):
+            if ok_anim and os.path.exists(anim_path):
                 rel_anim = os.path.relpath(anim_path, settings.STORAGE_ROOT)
                 await upsert_video_asset(conn, video_id, "thumbnail_anim", rel_anim)
 

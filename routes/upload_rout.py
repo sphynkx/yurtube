@@ -19,10 +19,10 @@ from db.videos_db import (
     set_video_ready,
 )
 from services.ffmpeg_srv import (
-    generate_thumbnails,
+    async_generate_thumbnails,
     pick_thumbnail_offsets,
-    probe_duration_seconds,
-    generate_animated_preview,
+    async_probe_duration_seconds,
+    async_generate_animated_preview,
 )
 from utils.idgen_ut import gen_id
 from utils.path_ut import build_video_storage_dir, safe_remove_storage_relpath
@@ -191,10 +191,10 @@ async def upload_video(
             is_made_for_kids=is_made_for_kids,
         )
 
-        duration = probe_duration_seconds(original_path)
+        duration = await async_probe_duration_seconds(original_path)
         offsets = pick_thumbnail_offsets(duration)
         thumbs_dir = os.path.join(storage_dir, "thumbs")
-        candidates_abs = generate_thumbnails(original_path, thumbs_dir, offsets)
+        candidates_abs = await async_generate_thumbnails(original_path, thumbs_dir, offsets)
 
         selected_abs: Optional[str] = candidates_abs[0] if candidates_abs else None
         selected_rel: Optional[str] = (
@@ -206,8 +206,10 @@ async def upload_video(
         # Animated preview: 3 seconds
         anim_abs = os.path.join(thumbs_dir, "thumb_anim.webp")
         start_sec = offsets[0] if offsets else 1
-        generate_animated_preview(original_path, anim_abs, start_sec=start_sec, duration_sec=3, fps=12)
-        if os.path.exists(anim_abs):
+        ok_anim = await async_generate_animated_preview(
+            original_path, anim_abs, start_sec=start_sec, duration_sec=3, fps=12
+        )
+        if ok_anim and os.path.exists(anim_abs):
             anim_rel = os.path.relpath(anim_abs, settings.STORAGE_ROOT)
             await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel)
 

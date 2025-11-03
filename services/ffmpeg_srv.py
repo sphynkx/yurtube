@@ -1,3 +1,4 @@
+import asyncio
 import os
 import subprocess
 from shutil import which
@@ -9,6 +10,7 @@ def _have(cmd: str) -> bool:
 
 
 def generate_default_thumbnail(input_path: str, thumbs_dir: str) -> Optional[str]:
+    # Legacy sync helper (kept for compatibility)
     if not _have("ffmpeg"):
         return None
     if not os.path.exists(input_path):
@@ -39,6 +41,7 @@ def generate_default_thumbnail(input_path: str, thumbs_dir: str) -> Optional[str
 
 
 def probe_duration_seconds(input_path: str) -> Optional[int]:
+    # Legacy sync helper (kept for compatibility)
     if not _have("ffprobe"):
         return None
     if not os.path.exists(input_path):
@@ -80,6 +83,7 @@ def pick_thumbnail_offsets(duration_sec: Optional[int]) -> List[int]:
 
 
 def generate_thumbnails(input_path: str, thumbs_dir: str, offsets_sec: List[int]) -> List[str]:
+    # Legacy sync helper (kept for compatibility)
     if not _have("ffmpeg"):
         return []
     if not os.path.exists(input_path):
@@ -116,6 +120,7 @@ def generate_thumbnails(input_path: str, thumbs_dir: str, offsets_sec: List[int]
 
 
 def generate_image_thumbnail(input_path: str, out_path: str, max_size_px: int) -> bool:
+    # Legacy sync helper (kept for compatibility)
     if not _have("ffmpeg"):
         return False
     if not os.path.exists(input_path):
@@ -141,12 +146,7 @@ def generate_image_thumbnail(input_path: str, out_path: str, max_size_px: int) -
 
 
 def generate_animated_preview(input_path: str, out_path: str, start_sec: int, duration_sec: int = 3, fps: int = 12) -> bool:
-    """
-    Create a short animated webp preview.
-    start_sec: where to start the clip
-    duration_sec: duration of the animation (default 3s)
-    fps: frames per second
-    """
+    # Legacy sync helper (kept for compatibility)
     if not _have("ffmpeg"):
         return False
     if not os.path.exists(input_path):
@@ -183,3 +183,114 @@ def generate_animated_preview(input_path: str, out_path: str, start_sec: int, du
         return os.path.exists(out_path)
     except subprocess.CalledProcessError:
         return False
+
+
+async def _run_proc(cmd: List[str]) -> int:
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    _, _ = await proc.communicate()
+    return proc.returncode
+
+
+async def async_probe_duration_seconds(input_path: str) -> Optional[int]:
+    if not _have("ffprobe"):
+        return None
+    if not os.path.exists(input_path):
+        return None
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        input_path,
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.DEVNULL,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    out, _ = await proc.communicate()
+    if proc.returncode != 0:
+        return None
+    try:
+        sec = float(out.decode("utf-8", errors="ignore").strip())
+        return max(0, int(round(sec)))
+    except Exception:
+        return None
+
+
+async def async_generate_thumbnails(input_path: str, thumbs_dir: str, offsets_sec: List[int]) -> List[str]:
+    if not _have("ffmpeg"):
+        return []
+    if not os.path.exists(input_path):
+        return []
+    os.makedirs(thumbs_dir, exist_ok=True)
+    results: List[str] = []
+    index = 1
+    for off in offsets_sec:
+        out_path = os.path.join(thumbs_dir, f"thumb_{index}.jpg")
+        cmd = [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+            str(off),
+            "-i",
+            input_path,
+            "-frames:v",
+            "1",
+            "-vf",
+            "scale=320:-1:flags=bicubic",
+            out_path,
+        ]
+        rc = await _run_proc(cmd)
+        if rc == 0 and os.path.exists(out_path):
+            results.append(out_path)
+        index += 1
+    return results
+
+
+async def async_generate_animated_preview(input_path: str, out_path: str, start_sec: int, duration_sec: int = 3, fps: int = 12) -> bool:
+    if not _have("ffmpeg"):
+        return False
+    if not os.path.exists(input_path):
+        return False
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    vf = f"fps={fps},scale=320:-1:flags=lanczos"
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        str(max(0, start_sec)),
+        "-t",
+        str(max(1, duration_sec)),
+        "-i",
+        input_path,
+        "-vf",
+        vf,
+        "-loop",
+        "0",
+        "-an",
+        "-lossless",
+        "0",
+        "-compression_level",
+        "6",
+        "-quality",
+        "75",
+        out_path,
+    ]
+    rc = await _run_proc(cmd)
+    return rc == 0 and os.path.exists(out_path)
