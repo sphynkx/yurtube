@@ -2,16 +2,16 @@
   <div class="yrp-video-wrap">
     <video class="yrp-video" preload="metadata">
       <source>
-      <!-- Tracks will be injected by JS if provided -->
+      <!-- Tracks injected by JS -->
       Your browser does not support the video tag.
     </video>
 
-    <button class="yrp-center-play" aria-label="Play/Pause" title="Play/Pause">
+    <button class="yrp-center-play" aria-label="Play/Pause (Space, K, Enter)" title="Play/Pause (Space, K, Enter)">
       <img class="yrp-center-logo" src="/static/players/yurtube/img/logo.png" alt="Play">
     </button>
 
     <div class="yrp-controls" role="group" aria-label="Player controls">
-      <div class="yrp-progress" aria-label="Seek">
+      <div class="yrp-progress" aria-label="Seek (Arrow Left/Right, J/L)">
         <div class="yrp-progress-rail"></div>
         <div class="yrp-progress-buffer"></div>
         <div class="yrp-progress-played"></div>
@@ -20,18 +20,18 @@
       </div>
       <div class="yrp-bar">
         <div class="yrp-left">
-          <button class="yrp-btn yrp-play" aria-label="Play/Pause" title="Play/Pause">Play</button>
-          <button class="yrp-btn yrp-prev" aria-label="Previous" title="Previous" disabled>Prev</button>
-          <button class="yrp-btn yrp-next" aria-label="Next" title="Next" disabled>Next</button>
+          <button class="yrp-btn yrp-play" aria-label="Play/Pause (Space, K, Enter)" title="Play/Pause (Space, K, Enter)">Play</button>
+          <button class="yrp-btn yrp-prev" aria-label="Previous" title="Previous">Prev</button>
+          <button class="yrp-btn yrp-next" aria-label="Next" title="Next">Next</button>
 
-          <div class="yrp-volume">
-            <button class="yrp-btn yrp-vol-btn" aria-label="Mute/Unmute" title="Volume">Vol</button>
+          <div class="yrp-volume" title="Volume (wheel), Mute (M)">
+            <button class="yrp-btn yrp-vol-btn" aria-label="Mute/Unmute (M)" title="Mute/Unmute (M)">Vol</button>
             <div class="yrp-vol-slider-wrap">
               <input class="yrp-vol-slider" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume">
             </div>
           </div>
 
-          <div class="yrp-time">
+          <div class="yrp-time" aria-label="Current/Total time">
             <span class="yrp-time-current">00:00</span>
             <span class="yrp-time-sep">/</span>
             <span class="yrp-time-total">00:00</span>
@@ -40,6 +40,7 @@
 
         <div class="yrp-right">
           <button class="yrp-btn yrp-subtitles" aria-label="Subtitles" title="Subtitles" disabled>CC</button>
+          <button class="yrp-btn yrp-pip" aria-label="Mini player (I)" title="Mini player (I)">Mini</button>
           <div class="yrp-menu-wrap">
             <button class="yrp-btn yrp-settings" aria-haspopup="true" aria-expanded="false" title="Settings">Settings</button>
             <div class="yrp-menu" role="menu" hidden>
@@ -60,9 +61,8 @@
               </div>
             </div>
           </div>
-          <button class="yrp-btn yrp-pip" aria-label="Mini player" title="Mini">Mini</button>
-          <button class="yrp-btn yrp-theater" aria-label="Theater mode" title="Theater">Theater</button>
-          <button class="yrp-btn yrp-fullscreen" aria-label="Fullscreen" title="Fullscreen">Full</button>
+          <button class="yrp-btn yrp-theater" aria-label="Theater (T)" title="Theater (T)">Theater</button>
+          <button class="yrp-btn yrp-fullscreen" aria-label="Fullscreen (F)" title="Fullscreen (F)">Full</button>
         </div>
       </div>
     </div>

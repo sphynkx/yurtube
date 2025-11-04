@@ -102,6 +102,16 @@
     var seeking = false;
     var duration = 0;
 
+    // PiP state bookkeeping
+    var pipInSystem = false;
+    var pipWasPlayingOrig = false;
+    var pipWasMutedOrig = false;
+    var pipUserState = null; // last play/pause inside PiP (true=playing, false=paused, null=unknown)
+
+    // Pop-out fallback window (kept but does not affect main playback state)
+    var popWin = null;
+    var popWinTimer = null;
+
     function showControls() {
       root.classList.remove("autohide");
       if (hideTimer) clearTimeout(hideTimer);
@@ -118,7 +128,6 @@
       var frac = d > 0 ? clamp(ct / d, 0, 1) : 0;
       if (played) played.style.width = (frac * 100).toFixed(3) + "%";
       if (handle) handle.style.left = (frac * 100).toFixed(3) + "%";
-
       var b = 0;
       if (video.buffered && video.buffered.length > 0) {
         try { b = video.buffered.end(video.buffered.length - 1); } catch (e) { b = 0; }
@@ -157,17 +166,14 @@
       root.classList.remove("vol-open");
     }
 
-    // Compute minimal width needed for controls (left + right)
     function measureControlsMinWidth() {
       var lw = leftGrp ? leftGrp.getBoundingClientRect().width : 0;
       var rw = rightGrp ? rightGrp.getBoundingClientRect().width : 0;
-      var pad = 24; // small gap
+      var pad = 24;
       var minW = Math.ceil(lw + rw + pad);
       if (!isFinite(minW) || minW <= 0) minW = 480;
       return minW;
     }
-
-    // Constrain width by aspect and minimal controls width
     function adjustWidthByAspect() {
       if (root.classList.contains("yrp-theater")) return;
       var csVideo = getComputedStyle(video);
@@ -177,15 +183,70 @@
       var aspect = vh > 0 ? (vw / vh) : (16 / 9);
       var targetH = Math.min(maxH || video.clientHeight || 0, window.innerHeight * 0.9);
       if (!targetH || !isFinite(targetH)) return;
-
       var targetW = Math.floor(targetH * aspect);
       var maxPage = Math.floor(window.innerWidth * 0.95);
       var controlsMin = measureControlsMinWidth();
       var finalW = Math.max(controlsMin, Math.min(targetW, maxPage));
-
       root.style.maxWidth = finalW + "px";
       root.style.minWidth = controlsMin + "px";
       root.style.width = "100%";
+    }
+
+    // Enter standard Video PiP preserving paused/mute state (no forced play)
+    function enterVideoPiP() {
+      pipWasPlayingOrig = !video.paused;
+      pipWasMutedOrig = !!video.muted;
+      pipUserState = null;
+
+      var needTempPlay = video.paused;
+      var prevMuted = video.muted;
+
+      var startPlayPromise = Promise.resolve();
+      if (needTempPlay) {
+        video.muted = true;
+        startPlayPromise = video.play().catch(function(){});
+      }
+
+      return startPlayPromise.then(function () {
+        return video.requestPictureInPicture();
+      }).catch(function(){ /* ignore */ }).then(function(){
+        if (needTempPlay) {
+          video.pause();
+          video.muted = prevMuted;
+        }
+      });
+    }
+
+    // Toggle mini: prefer Video PiP, else pop-out; never touch playing/paused on toggle
+    function toggleMini() {
+      try {
+        if (document.pictureInPictureEnabled && video.requestPictureInPicture && !video.disablePictureInPicture) {
+          if (document.pictureInPictureElement === video) {
+            document.exitPictureInPicture().catch(function(){});
+          } else {
+            enterVideoPiP();
+          }
+          return;
+        }
+        // Fallback: pop-out embed window (keeps main playback state intact)
+        if (popWin && !popWin.closed) { try { popWin.close(); } catch(e) {} return; }
+        var vid = root.getAttribute("data-video-id") || "";
+        var url = (window.location.origin || "") + "/embed?v=" + encodeURIComponent(vid) + "&autoplay=1&muted=1";
+        var w = Math.round(Math.min(640, window.innerWidth * 0.6));
+        var h = Math.round(w * 9 / 16);
+        var left = Math.max(0, Math.floor((window.screen.width - w) / 2));
+        var top = Math.max(0, Math.floor((window.screen.height - h) / 2));
+        var feat = "popup=yes,resizable=yes,scrollbars=no,menubar=no,toolbar=no,location=no,status=no"
+                 + ",width=" + w + ",height=" + h + ",left=" + left + ",top=" + top;
+        popWin = window.open(url, "yurtube-popout-" + vid, feat);
+        if (popWinTimer) clearInterval(popWinTimer);
+        popWinTimer = setInterval(function(){
+          if (!popWin || popWin.closed) {
+            clearInterval(popWinTimer); popWinTimer = null;
+            setTimeout(function(){ adjustWidthByAspect(); }, 0);
+          }
+        }, 1000);
+      } catch (ex) {}
     }
 
     // Metadata and initial layout
@@ -202,8 +263,52 @@
     // Playback state
     video.addEventListener("timeupdate", function(){ updateTimes(); updateProgress(); });
     video.addEventListener("progress", function(){ updateProgress(); });
-    video.addEventListener("play", function(){ root.classList.add("playing"); showControls(); });
-    video.addEventListener("pause", function(){ root.classList.remove("playing"); showControls(); });
+    video.addEventListener("play", function(){
+      root.classList.add("playing");
+      showControls();
+      if (pipInSystem) pipUserState = true;
+    });
+    video.addEventListener("pause", function(){
+      root.classList.remove("playing");
+      showControls();
+      if (pipInSystem) pipUserState = false;
+    });
+
+    // System PiP enter/leave
+    video.addEventListener("enterpictureinpicture", function(){
+      pipInSystem = true;
+      root.classList.add("pip");
+      if (!pipWasPlayingOrig && !video.paused) {
+        video.pause();
+        video.muted = pipWasMutedOrig;
+        pipUserState = false;
+      }
+    });
+    video.addEventListener("leavepictureinpicture", function(){
+      pipInSystem = false;
+      root.classList.remove("pip");
+      if (pipUserState === true) {
+        video.play().catch(function(){});
+      } else if (pipUserState === false) {
+        video.pause();
+      } else {
+        if (pipWasPlayingOrig) video.play().catch(function(){});
+        else video.pause();
+      }
+      video.muted = pipWasMutedOrig;
+      pipUserState = null;
+    });
+
+    // Media Session: hw-buttons
+    if ("mediaSession" in navigator) {
+      try {
+        navigator.mediaSession.setActionHandler("play", function(){ video.play().catch(function(){}); });
+        navigator.mediaSession.setActionHandler("pause", function(){ video.pause(); });
+        navigator.mediaSession.setActionHandler("seekbackward", function(){ video.currentTime = clamp((video.currentTime||0) - 5, 0, duration||0); });
+        navigator.mediaSession.setActionHandler("seekforward", function(){ video.currentTime = clamp((video.currentTime||0) + 5, 0, duration||0); });
+        navigator.mediaSession.setActionHandler("stop", function(){ video.pause(); });
+      } catch (e) {}
+    }
 
     // Click to toggle play
     video.addEventListener("click", function(){ playToggle(); });
@@ -222,7 +327,7 @@
     if (btnPrev) btnPrev.addEventListener("click", function(){ root.dispatchEvent(new CustomEvent("yrp-prev",{bubbles:true})); });
     if (btnNext) btnNext.addEventListener("click", function(){ root.dispatchEvent(new CustomEvent("yrp-next",{bubbles:true})); });
 
-    // Volume: hover shows slider (CSS). Click toggles mute/unmute.
+    // Volume: hover shows slider (CSS). Click => mute/unmute. Wheel => volume up/down.
     if (btnVol) {
       btnVol.addEventListener("click", function(e){
         e.preventDefault();
@@ -243,6 +348,19 @@
         refreshVolIcon();
       });
     }
+    function onWheelVolume(e) {
+      e.preventDefault();
+      var step = 0.05;
+      var v = video.muted ? 0 : video.volume;
+      var nv = clamp(v + (e.deltaY < 0 ? step : -step), 0, 1);
+      video.volume = nv;
+      if (nv > 0) video.muted = false;
+      if (volSlider) volSlider.value = String(nv);
+      refreshVolIcon();
+      showControls();
+    }
+    if (vol) vol.addEventListener("wheel", onWheelVolume, { passive: false });
+    if (volSlider) volSlider.addEventListener("wheel", onWheelVolume, { passive: false });
     refreshVolIcon();
 
     // Seeking on progress rail
@@ -293,7 +411,6 @@
         root.classList.toggle("yrp-theater");
         var inTheater = root.classList.contains("yrp-theater");
         if (inTheater) {
-          // Clear inline widths to let CSS stretch
           root.style.maxWidth = "";
           root.style.minWidth = "";
           root.style.width = "";
@@ -317,31 +434,10 @@
 
     // Mini (PiP) button
     if (btnPip) {
-      video.addEventListener("enterpictureinpicture", function(){ root.classList.add("pip"); });
-      video.addEventListener("leavepictureinpicture", function(){ root.classList.remove("pip"); });
       btnPip.addEventListener("click", function(e){
         e.preventDefault();
         e.stopPropagation();
-        try {
-          if ("pictureInPictureEnabled" in document && video.requestPictureInPicture && !video.disablePictureInPicture) {
-            if (document.pictureInPictureElement === video) {
-              document.exitPictureInPicture().catch(function(){});
-            } else {
-              video.requestPictureInPicture().catch(function(){});
-            }
-          } else {
-            // Fallback: pop-out embed window
-            var vid = root.getAttribute("data-video-id") || "";
-            var url = (window.location.origin || "") + "/embed?v=" + encodeURIComponent(vid) + "&autoplay=1&muted=1";
-            var w = Math.round(Math.min(640, window.innerWidth * 0.6));
-            var h = Math.round(w * 9 / 16);
-            var left = Math.max(0, Math.floor((window.screen.width - w) / 2));
-            var top = Math.max(0, Math.floor((window.screen.height - h) / 2));
-            var feat = "popup=yes,resizable=yes,scrollbars=no,menubar=no,toolbar=no,location=no,status=no"
-                     + ",width=" + w + ",height=" + h + ",left=" + left + ",top=" + top;
-            window.open(url, "yurtube-popout-" + vid, feat);
-          }
-        } catch (ex) {}
+        toggleMini();
       });
     }
 
@@ -361,9 +457,7 @@
         var at = Math.floor(video.currentTime || 0);
         var vid = root.getAttribute("data-video-id") || "";
         if (act === "pip") {
-          if (document.pictureInPictureEnabled && video.requestPictureInPicture) {
-            video.requestPictureInPicture().catch(function(){});
-          }
+          toggleMini();
         } else if (act === "copy-url") {
           var u = new URL(window.location.href);
           u.searchParams.delete("t");
@@ -380,22 +474,47 @@
         ctx.hidden = true;
       };
       document.addEventListener("click", function (e2) {
-        if (!ctx.hidden && !ctx.contains(e2.target)) ctx.hidden = true;
+        var ctx = root.querySelector(".yrp-context");
+        if (ctx && !ctx.hidden && !ctx.contains(e2.target)) ctx.hidden = true;
       }, { once: true });
+      document.addEventListener("keydown", function escClose(ev){
+        if (ev.code === "Escape" || (ev.key||"").toLowerCase() === "escape") {
+          var c = root.querySelector(".yrp-context");
+          if (c && !c.hidden) c.hidden = true;
+          document.removeEventListener("keydown", escClose);
+        }
+      });
     });
 
-    // Keyboard shortcuts (minimal)
-    root.addEventListener("keydown", function (e) {
-      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
-      var k = e.key.toLowerCase();
-      if (k === " " || k === "k") { if (video.paused) video.play().catch(function(){}); else video.pause(); e.preventDefault(); }
-      else if (k === "arrowleft" || k === "j") { video.currentTime = clamp((video.currentTime || 0) - 5, 0, duration || 0); }
-      else if (k === "arrowright" || k === "l") { video.currentTime = clamp((video.currentTime || 0) + 5, 0, duration || 0); }
-      else if (k === "m") { setMutedToggle(); }
-      else if (k === "f") { btnFull && btnFull.click(); }
-      else if (k === "t") { btnTheater && btnTheater.click(); }
-      showControls();
-    });
+    // Keyboard shortcuts (global; layout-agnostic via e.code)
+    function handleHotkey(e) {
+      var t = e.target;
+      var tag = t && t.tagName ? t.tagName.toUpperCase() : "";
+      var editable = t && (t.isContentEditable || tag === "INPUT" || tag === "TEXTAREA");
+      if (editable) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      var code = e.code;
+      var key = (e.key || "").toLowerCase();
+
+      if (code === "Space" || code === "Enter" || code === "NumpadEnter" ||
+          code === "MediaPlayPause" ||
+          code === "KeyK" || key === "k" || key === "к") {
+        playToggle(); e.preventDefault(); return;
+      }
+      if (code === "ArrowLeft" || key === "arrowleft" || code === "KeyJ" || key === "j" || key === "л") {
+        video.currentTime = clamp((video.currentTime || 0) - 5, 0, duration || 0); e.preventDefault(); return;
+      }
+      if (code === "ArrowRight" || key === "arrowright" || code === "KeyL" || key === "l" || key === "д") {
+        video.currentTime = clamp((video.currentTime || 0) + 5, 0, duration || 0); e.preventDefault(); return;
+      }
+      if (code === "KeyM" || key === "m" || key === "ь") { setMutedToggle(); e.preventDefault(); return; }
+      if (code === "KeyF" || key === "f" || key === "а") { btnFull && btnFull.click(); e.preventDefault(); return; }
+      if (code === "KeyT" || key === "t" || key === "е") { btnTheater && btnTheater.click(); e.preventDefault(); return; }
+      if (code === "KeyI" || key === "i" || key === "ш") { toggleMini(); e.preventDefault(); return; }
+      if (code === "Escape" || key === "escape") { hideMenus(); return; }
+    }
+    document.addEventListener("keydown", handleHotkey);
 
     // Final pass after layout settles
     setTimeout(adjustWidthByAspect, 200);
