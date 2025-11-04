@@ -32,10 +32,6 @@ def _avatar_small_url(avatar_path: Optional[str]) -> str:
 
 
 def _base_url(request: Request) -> str:
-    """
-    Build external base URL. Prefer BASE_URL, else trust X-Forwarded-Proto/Host,
-    and strip default ports (:443 for https, :80 for http).
-    """
     if settings.BASE_URL:
         return settings.BASE_URL.rstrip("/")
 
@@ -77,10 +73,6 @@ def _int_or_zero(val: Optional[str]) -> int:
 
 
 def _embed_defaults_from_row(vrow: Dict[str, Any]) -> Dict[str, int]:
-    """
-    Extract saved embed defaults from video row, coercing to ints.
-    Falls back to config defaults.
-    """
     params = vrow.get("embed_params")
     if isinstance(params, str):
         try:
@@ -157,6 +149,16 @@ async def watch_page(request: Request, v: str) -> Any:
 
         video: Dict[str, Any] = dict(row)
 
+        # Record view and increment counters (count everyone, including author)
+        user_uid: Optional[str] = user["user_uid"] if user else None
+        await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
+        await increment_video_views_counter(conn, video_id=v)
+        # Reflect +1 immediately in template without refetch
+        try:
+            video["views_count"] = int(video.get("views_count") or 0) + 1
+        except Exception:
+            pass
+
         video_src = "/storage/" + video["storage_path"].strip("/").rstrip("/") + "/original.webm"
         poster_url = build_storage_url(video["thumb_asset_path"]) if video.get("thumb_asset_path") else None
         thumb_anim_url = build_storage_url(video["thumb_anim_asset_path"]) if video.get("thumb_anim_asset_path") else None
@@ -190,6 +192,7 @@ async def watch_page(request: Request, v: str) -> Any:
                 "subtitles": subtitles,
                 "player_options": player_options,
             },
+            headers={"Cache-Control": "no-store"},
         )
     finally:
         await release_conn(conn)
@@ -197,6 +200,7 @@ async def watch_page(request: Request, v: str) -> Any:
 
 @router.get("/embed", response_class=HTMLResponse)
 async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, muted: int = 0, loop: int = 0) -> Any:
+    user = get_current_user(request)
     conn = await get_conn()
     try:
         row = await conn.fetchrow(
@@ -212,6 +216,11 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
         )
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
+
+        # Count embed views as well
+        user_uid: Optional[str] = user["user_uid"] if user else None
+        await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
+        await increment_video_views_counter(conn, video_id=v)
 
         video: Dict[str, Any] = dict(row)
         video_src = "/storage/" + video["storage_path"].strip("/").rstrip("/") + "/original.webm"
@@ -237,6 +246,7 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
                 "subtitles": subtitles,
                 "player_options": player_options,
             },
+            headers={"Cache-Control": "no-store"},
         )
     finally:
         await release_conn(conn)
