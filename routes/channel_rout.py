@@ -128,7 +128,9 @@ async def channel_by_username(request: Request, username: str) -> Any:
     return await _render_channel(request, owner)
 
 
+# Support both the new path "/c/{channel_id}" and the legacy "/channel/{channel_id}"
 @router.get("/c/{channel_id}", response_class=HTMLResponse)
+@router.get("/channel/{channel_id}", response_class=HTMLResponse)
 async def channel_by_id(request: Request, channel_id: str) -> Any:
     conn = await get_conn()
     try:
@@ -138,8 +140,10 @@ async def channel_by_id(request: Request, channel_id: str) -> Any:
     return await _render_channel(request, owner)
 
 
+# Subscribers lists: support @username, /c/{id} and legacy /channel/{id}
 @router.get("/@{name}/subscribers", response_class=HTMLResponse)
 @router.get("/c/{name}/subscribers", response_class=HTMLResponse)
+@router.get("/channel/{name}/subscribers", response_class=HTMLResponse)
 async def channel_subscribers(request: Request, name: str) -> Any:
     """
     Simple subscribers list page without a dedicated template.
