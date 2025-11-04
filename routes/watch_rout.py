@@ -173,7 +173,6 @@ async def watch_page(request: Request, v: str) -> Any:
         }
 
         allow_embed = bool(video.get("allow_embed"))
-        # FIX: make absolute URL for embed
         embed_url = f"{_base_url(request)}/embed?v={video['video_id']}"
 
         return templates.TemplateResponse(
@@ -217,7 +216,7 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
         if not row:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        # Count embed views as well
+        # Count embed views as well!!
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)

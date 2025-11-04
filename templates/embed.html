@@ -7,30 +7,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>{% if video and video.title %}{{ video.title }}{% else %}Embed Video{% endif %}</title>
+  <link rel="stylesheet" href="/static/players/{{ player_name }}/css/embed.css">
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; background: #000; }
-    .embed-root { min-height: 100%; width: 100%; background: #000; }
-    .player-wrapper { width: 100%; background: #000; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
   </style>
 </head>
-<body>
-  {% import "players_macros.html" as pm %}
+<body class="is-embed">
   <div class="embed-root">
     <div class="player-wrapper">
-      {{ pm.render_player(
-           player_name=player_name,
-           video_src=video_src,
-           poster_url=poster_url,
-           video_id=video_id,
-           subtitles=subtitles,
-           options=player_options
-         ) }}
+      <div class="player-host"
+           data-player="{{ player_name }}"
+           data-video-src="/storage/{{ video['storage_path'] }}/original.webm"
+           {% if poster_url %} data-poster-url="{{ poster_url }}" {% endif %}
+           data-video-id="{{ video['video_id'] }}"
+           data-subtitles='{{ subtitles|tojson }}'
+           data-options='{{ player_options|tojson }}'>
+      </div>
     </div>
   </div>
+  <script type="module" src="/static/players/{{ player_name }}/js/embed.js"></script>
   <noscript>
-    <div style="color:#fff;padding:12px;font-family:system-ui,Arial,sans-serif;">
-      JavaScript is required to play this video.
-    </div>
+    <div class="nojs">JavaScript is required to play this video.</div>
   </noscript>
 </body>
 </html>

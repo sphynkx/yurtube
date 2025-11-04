@@ -12,14 +12,11 @@
   --yrp-min-width: 480px;
   --yrp-radius: 12px;
 
-  /* control color */
   --yrp-icon-color: #6cc9fa;
-
-  /* knob color for both video and volume sliders */
   --yrp-knob-color: #6cc9fa;
 }
 
-/* left-aligned player */
+/* base container */
 .yrp-container {
   position: relative;
   width: 100%;
@@ -31,47 +28,54 @@
   user-select: none;
   border-radius: var(--yrp-radius);
   overflow: hidden;
+  box-sizing: border-box;
 }
 
-/* keep controls interactive */
-.yrp-container.vol-open .yrp-controls {
-  opacity: 1 !important;
-  pointer-events: auto !important;
+/* EMBED MODE: flex layout — video area (flex:1) + controls (auto) */
+.yrp-container.yrp-embed {
+  display: flex;
+  flex-direction: column;
+  height: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  width: 100% !important;
 }
+.yrp-container.yrp-embed .yrp-video-wrap {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;  /* allow child to shrink */
+}
+.yrp-container.yrp-embed .yrp-video {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  object-fit: contain; /* correct letterbox/pillarbox for any aspect */
+}
+/* controls pinned at the bottom as a normal block (not overlay) */
+.yrp-container.yrp-embed .yrp-controls {
+  position: static;                 /* no absolute in embed */
+  background: var(--yrp-bg);
+  padding: 6px 8px;
+  opacity: 1;                       /* always visible in embed */
+  pointer-events: auto;
+}
+.yrp-container.yrp-embed.autohide .yrp-controls { opacity: 1; pointer-events: auto; } /* disable autohide in embed */
+.yrp-container.yrp-embed .yrp-progress { height: 8px; margin: 4px 4px 6px 4px; }
+.yrp-container.yrp-embed .yrp-bar { flex-wrap: nowrap; gap: 8px; overflow: hidden; }
+.yrp-container.yrp-embed .yrp-left, .yrp-container.yrp-embed .yrp-right { gap: 6px; }
+.yrp-container.yrp-embed .yrp-btn { padding: 0 6px; }
+.yrp-container.yrp-embed .yrp-time { font-size: 11px; }
 
-/* rounded visual area */
+/* keep controls active when needed on non-embed */
+.yrp-container.vol-open .yrp-controls { opacity: 1 !important; pointer-events: auto !important; }
+
+/* visual area (non-embed baseline) */
 .yrp-video-wrap { position: relative; width: 100%; height: 100%; border-radius: var(--yrp-radius); overflow: hidden; }
 .yrp-video { display: block; width: 100%; height: auto; background: #000; max-height: var(--yrp-max-height); border-radius: var(--yrp-radius); }
 
-/* fullscreen: fill entire screen */
-.yrp-container:fullscreen { width: 100% !important; max-width: 100% !important; min-width: 0 !important; height: 100%; }
-.yrp-container:fullscreen .yrp-video-wrap { width: 100%; height: 100%; }
-.yrp-container:fullscreen .yrp-video { width: 100%; height: 100%; max-height: none; object-fit: contain; }
-
-.yrp-container.yrp-theater {
-  max-width: 100% !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  background: #000;
-}
-.yrp-container.yrp-theater .yrp-video-wrap {
-  width: 100%;
-  height: auto;
-}
-
-.yrp-container.yrp-theater .yrp-video {
-  width: 100%;
-  height: auto;
-  max-height: 80vh;
-  object-fit: contain;
-}
-
-/* center play logo */
-.yrp-center-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 84px; height: 84px; border: none; background: transparent; padding: 0; cursor: pointer; z-index: 5; }
-.yrp-center-logo { display: block; width: 84px; height: 84px; object-fit: contain; }
-.yrp-container.playing .yrp-center-play { opacity: 0; pointer-events: none; }
-
-/* controls */
+/* controls overlay (non-embed) */
 .yrp-controls { position: absolute; left: 0; right: 0; bottom: 0; background: var(--yrp-bg); padding: 6px 8px; opacity: 1; transition: opacity .2s ease; z-index: 10; }
 .yrp-container.autohide .yrp-controls { opacity: 0; pointer-events: none; }
 
@@ -81,7 +85,6 @@
 .yrp-progress-rail   { width: 100%; background: var(--yrp-rail); }
 .yrp-progress-buffer { width: 0%;   background: var(--yrp-buffer); }
 .yrp-progress-played { width: 0%;   background: var(--yrp-played); }
-/* knob color */
 .yrp-progress-handle { position: absolute; top: 50%; transform: translate(-50%,-50%); width: 16px; height: 16px; border-radius: 8px; background: var(--yrp-knob-color); left: 0%; }
 .yrp-progress-tooltip { position: absolute; bottom: 120%; transform: translateX(-50%); background: rgba(0,0,0,0.8); color: #fff; padding: 3px 6px; border-radius: 4px; font-size: 12px; white-space: nowrap; }
 
@@ -92,48 +95,37 @@
 /* buttons */
 .yrp-btn { appearance:none; border:none; cursor:pointer; background:transparent; color: var(--yrp-icon-color); height:28px; border-radius:4px; padding: 0 8px; font-weight:700; letter-spacing:.02em; }
 .yrp-btn:hover, .yrp-btn:focus { outline: 1px solid var(--yrp-outline); }
+.yrp-vol-btn { position: relative; z-index: 26; }
 
-/* volume: hover shows slider; popover overlays neighbors; bridge prevents gap */
+/* volume popover */
 .yrp-volume { position:relative; display:inline-flex; align-items:center; }
-.yrp-vol-slider-wrap {
-  position:absolute; left:40px; bottom:2px;
-  background: rgba(0,0,0,0.45);
-  padding:4px 6px; border-radius:6px; width:160px; display:none; z-index:25;
-}
+.yrp-vol-slider-wrap { position:absolute; left:40px; bottom:2px; background: rgba(0,0,0,0.45); padding:4px 6px; border-radius:6px; width:160px; display:none; z-index:25; }
 .yrp-vol-slider-wrap::before { content:""; position:absolute; left:-40px; top:0; bottom:0; width:40px; background: transparent; }
 .yrp-volume:hover .yrp-vol-slider-wrap, .yrp-vol-slider-wrap:hover { display:block; }
-.yrp-vol-btn {
-  position: relative;     /* create stacking context */
-  z-index: 26;            /* above .yrp-vol-slider-wrap (z-index:25) */
-}
-
-/* volume slider color and knob */
 .yrp-vol-slider { width:150px; accent-color: var(--yrp-icon-color); }
-/* WebKit/Blink thumb */
 .yrp-vol-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 7px; background: var(--yrp-knob-color); cursor: pointer; }
-/* Firefox thumb */
 .yrp-vol-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 7px; background: var(--yrp-knob-color); cursor: pointer; }
 
+/* time */
 .yrp-time { font-variant-numeric: tabular-nums; font-size:12px; opacity:.95; color: var(--yrp-icon-color); white-space: nowrap; margin-left:6px; }
-.yrp-time-sep { margin: 0 4px; }
 
-/* settings menu */
-.yrp-menu-wrap { position:relative; }
-.yrp-menu { position:absolute; right:0; bottom:36px; min-width:180px; background:rgba(0,0,0,0.9); color:#fff; border:1px solid rgba(255,255,255,0.1); border-radius:6px; padding:6px; z-index:20; }
-.yrp-menu[hidden] { display:none; }
-.yrp-menu-title { font-size:12px; opacity:.8; margin:4px 0; }
-.yrp-menu-item { display:block; width:100%; text-align:left; padding:6px 8px; border:none; background:transparent; color:#fff; cursor:pointer; border-radius:4px; }
-.yrp-menu-item:hover { background: rgba(255,255,255,0.1); }
+/* fullscreen */
+.yrp-container:fullscreen { width: 100% !important; max-width: 100% !important; min-width: 0 !important; height: 100%; }
+.yrp-container:fullscreen .yrp-video-wrap { width: 100%; height: 100%; }
+.yrp-container:fullscreen .yrp-video { width: 100%; height: 100%; max-height: none; object-fit: contain; }
+
+/* theater */
+.yrp-container.yrp-theater .yrp-video { max-height: 80vh; }
+
+/* center play */
+.yrp-center-play { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%); width: 84px; height: 84px; border: none; background: transparent; padding: 0; cursor: pointer; z-index: 5; }
+.yrp-center-logo { display: block; width: 84px; height: 84px; object-fit: contain; }
+.yrp-container.playing .yrp-center-play { opacity: 0; pointer-events: none; }
 
 /* context menu */
-.yrp-context { position:absolute; left:8px; top:8px; background:rgba(0,0,0,0.9); color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:6px; z-index:30; min-width:200px; }
-.yrp-context[hidden] { display:none; }
-.yrp-ctx-item { display:block; width:100%; text-align:left; padding:6px 8px; border:none; background:transparent; color:#fff; cursor:pointer; border-radius:4px; }
+.yrp-context { position: absolute; left: 8px; top: 8px; background: rgba(0,0,0,0.9); color: #fff; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px; z-index: 30; min-width: 200px; }
+.yrp-context[hidden] { display: none; }
+.yrp-ctx-item { display: block; width: 100%; text-align: left; padding: 6px 8px; border: none; background: transparent; color: #fff; cursor: pointer; border-radius: 4px; }
 .yrp-ctx-item:hover { background: rgba(255,255,255,0.1); }
 
 .yrp-container.yrp-theater { background:#000; }
-
-/* Highlight when in PiP */
-.yrp-container.pip .yrp-pip {
-  outline: 1px solid var(--yrp-outline);
-}

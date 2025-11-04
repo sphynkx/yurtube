@@ -32,7 +32,6 @@
     return isFinite(v) ? v : 0;
   }
 
-  // Mount a single host
   function mountOne(host, templateHTML) {
     host.innerHTML = templateHTML;
 
@@ -54,7 +53,7 @@
     if (vid) root.setAttribute("data-video-id", vid);
 
     if (Array.isArray(subs)) {
-      subs.forEach(function(t) {
+      subs.forEach(function (t) {
         if (!t || !t.src) return;
         var tr = document.createElement("track");
         tr.setAttribute("kind", "subtitles");
@@ -66,14 +65,24 @@
       });
     }
 
-    var startAt = 0;
-    if (opts && typeof opts.start === "number" && opts.start > 0) startAt = Math.max(0, opts.start);
+    // Autodetect embed mode: inside iframe or body.has('is-embed')
+    var isEmbed = false;
+    try { isEmbed = (window.top !== window.self); } catch (e) { isEmbed = true; }
+    if (!isEmbed && document.body) isEmbed = document.body.classList.contains("is-embed");
+    if (isEmbed) {
+      root.classList.add("yrp-embed");
+      root.style.height = "100%";  // fill iframe height via CSS; JS keeps out of sizing logic
+    }
 
-    wire(root, startAt);
+    var startAt = 0;
+    if (opts && typeof opts.start === "number" && opts.start > 0) {
+      startAt = Math.max(0, opts.start);
+    }
+
+    wire(root, startAt, isEmbed);
   }
 
-  // Wire behavior for a single player
-  function wire(root, startAt) {
+  function wire(root, startAt, isEmbed) {
     var video = root.querySelector(".yrp-video");
     var centerPlay = root.querySelector(".yrp-center-play");
     var btnPlay = root.querySelector(".yrp-play");
@@ -102,17 +111,18 @@
     var seeking = false;
     var duration = 0;
 
-    // PiP state bookkeeping
+    // PiP bookkeeping (system PiP)
     var pipInSystem = false;
     var pipWasPlayingOrig = false;
     var pipWasMutedOrig = false;
-    var pipUserState = null; // last play/pause inside PiP (true=playing, false=paused, null=unknown)
-
-    // Pop-out fallback window (kept but does not affect main playback state)
-    var popWin = null;
-    var popWinTimer = null;
+    var pipUserState = null;
 
     function showControls() {
+      // In embed we do not autohide to keep panel pinned at the bottom without jumps
+      if (isEmbed) {
+        root.classList.remove("autohide");
+        return;
+      }
       root.classList.remove("autohide");
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(function () { root.classList.add("autohide"); }, 2000);
@@ -174,8 +184,15 @@
       if (!isFinite(minW) || minW <= 0) minW = 480;
       return minW;
     }
+
     function adjustWidthByAspect() {
       if (root.classList.contains("yrp-theater")) return;
+
+      // In EMBED we do not control size by JS: the iframe defines the box.
+      // CSS flex makes: video area (flex:1) + controls (auto) — stable for any aspect.
+      if (isEmbed) return;
+
+      // Normal page sizing by aspect with toolbar min width
       var csVideo = getComputedStyle(video);
       var maxH = cssPxToNum(csVideo.getPropertyValue("max-height")) || video.clientHeight || 0;
       var vw = video.videoWidth || 16;
@@ -183,16 +200,43 @@
       var aspect = vh > 0 ? (vw / vh) : (16 / 9);
       var targetH = Math.min(maxH || video.clientHeight || 0, window.innerHeight * 0.9);
       if (!targetH || !isFinite(targetH)) return;
+
       var targetW = Math.floor(targetH * aspect);
       var maxPage = Math.floor(window.innerWidth * 0.95);
+
       var controlsMin = measureControlsMinWidth();
       var finalW = Math.max(controlsMin, Math.min(targetW, maxPage));
+
       root.style.maxWidth = finalW + "px";
       root.style.minWidth = controlsMin + "px";
       root.style.width = "100%";
     }
 
-    // Enter standard Video PiP preserving paused/mute state (no forced play)
+    // Lifecycle
+    video.addEventListener("loadedmetadata", function () {
+      if (startAt && startAt > 0) {
+        try { video.currentTime = Math.min(startAt, Math.floor(video.duration || startAt)); } catch (e) {}
+      }
+      setTimeout(adjustWidthByAspect, 0);
+      updateTimes();
+      updateProgress();
+    });
+    window.addEventListener("resize", function(){ adjustWidthByAspect(); });
+
+    video.addEventListener("timeupdate", function(){ updateTimes(); updateProgress(); });
+    video.addEventListener("progress", function(){ updateProgress(); });
+    video.addEventListener("play", function(){
+      root.classList.add("playing");
+      showControls();
+      if (pipInSystem) pipUserState = true;
+    });
+    video.addEventListener("pause", function(){
+      root.classList.remove("playing");
+      showControls();
+      if (pipInSystem) pipUserState = false;
+    });
+
+    // PiP (system)
     function enterVideoPiP() {
       pipWasPlayingOrig = !video.paused;
       pipWasMutedOrig = !!video.muted;
@@ -217,7 +261,6 @@
       });
     }
 
-    // Toggle mini: prefer Video PiP, else pop-out; never touch playing/paused on toggle
     function toggleMini() {
       try {
         if (document.pictureInPictureEnabled && video.requestPictureInPicture && !video.disablePictureInPicture) {
@@ -228,53 +271,9 @@
           }
           return;
         }
-        // Fallback: pop-out embed window (keeps main playback state intact)
-        if (popWin && !popWin.closed) { try { popWin.close(); } catch(e) {} return; }
-        var vid = root.getAttribute("data-video-id") || "";
-        var url = (window.location.origin || "") + "/embed?v=" + encodeURIComponent(vid) + "&autoplay=1&muted=1";
-        var w = Math.round(Math.min(640, window.innerWidth * 0.6));
-        var h = Math.round(w * 9 / 16);
-        var left = Math.max(0, Math.floor((window.screen.width - w) / 2));
-        var top = Math.max(0, Math.floor((window.screen.height - h) / 2));
-        var feat = "popup=yes,resizable=yes,scrollbars=no,menubar=no,toolbar=no,location=no,status=no"
-                 + ",width=" + w + ",height=" + h + ",left=" + left + ",top=" + top;
-        popWin = window.open(url, "yurtube-popout-" + vid, feat);
-        if (popWinTimer) clearInterval(popWinTimer);
-        popWinTimer = setInterval(function(){
-          if (!popWin || popWin.closed) {
-            clearInterval(popWinTimer); popWinTimer = null;
-            setTimeout(function(){ adjustWidthByAspect(); }, 0);
-          }
-        }, 1000);
       } catch (ex) {}
     }
 
-    // Metadata and initial layout
-    video.addEventListener("loadedmetadata", function () {
-      if (startAt && startAt > 0) {
-        try { video.currentTime = Math.min(startAt, Math.floor(video.duration || startAt)); } catch (e) {}
-      }
-      setTimeout(adjustWidthByAspect, 0);
-      updateTimes();
-      updateProgress();
-    });
-    window.addEventListener("resize", function(){ adjustWidthByAspect(); });
-
-    // Playback state
-    video.addEventListener("timeupdate", function(){ updateTimes(); updateProgress(); });
-    video.addEventListener("progress", function(){ updateProgress(); });
-    video.addEventListener("play", function(){
-      root.classList.add("playing");
-      showControls();
-      if (pipInSystem) pipUserState = true;
-    });
-    video.addEventListener("pause", function(){
-      root.classList.remove("playing");
-      showControls();
-      if (pipInSystem) pipUserState = false;
-    });
-
-    // System PiP enter/leave
     video.addEventListener("enterpictureinpicture", function(){
       pipInSystem = true;
       root.classList.add("pip");
@@ -299,7 +298,6 @@
       pipUserState = null;
     });
 
-    // Media Session: hw-buttons
     if ("mediaSession" in navigator) {
       try {
         navigator.mediaSession.setActionHandler("play", function(){ video.play().catch(function(){}); });
@@ -310,24 +308,23 @@
       } catch (e) {}
     }
 
-    // Click to toggle play
+    // interactions
     video.addEventListener("click", function(){ playToggle(); });
 
-    // Auto-hide controls
     root.addEventListener("mousemove", showControls, { passive: true });
     root.addEventListener("pointermove", showControls, { passive: true });
     root.addEventListener("mouseleave", function () {
+      if (isEmbed) return; // no autohide in embed
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(function () { root.classList.add("autohide"); }, 600);
     });
 
-    // Buttons
     if (centerPlay) centerPlay.addEventListener("click", playToggle);
     if (btnPlay) btnPlay.addEventListener("click", playToggle);
     if (btnPrev) btnPrev.addEventListener("click", function(){ root.dispatchEvent(new CustomEvent("yrp-prev",{bubbles:true})); });
     if (btnNext) btnNext.addEventListener("click", function(){ root.dispatchEvent(new CustomEvent("yrp-next",{bubbles:true})); });
 
-    // Volume: hover shows slider (CSS). Click => mute/unmute. Wheel => volume up/down.
+    // Volume: click => mute/unmute; hover shows slider (CSS); wheel => volume
     if (btnVol) {
       btnVol.addEventListener("click", function(e){
         e.preventDefault();
@@ -363,7 +360,6 @@
     if (volSlider) volSlider.addEventListener("wheel", onWheelVolume, { passive: false });
     refreshVolIcon();
 
-    // Seeking on progress rail
     if (progress) {
       progress.addEventListener("mousedown", function (e) {
         seeking = true;
@@ -376,7 +372,6 @@
       progress.addEventListener("mouseleave", function () { if (tooltip) tooltip.hidden = true; });
     }
 
-    // Settings menu
     if (btnSettings && menu) {
       btnSettings.addEventListener("click", function (e) {
         var open = menu.hidden === true ? false : true;
@@ -405,7 +400,6 @@
       });
     }
 
-    // Theater toggle: expand inside page column
     if (btnTheater) {
       btnTheater.addEventListener("click", function () {
         root.classList.toggle("yrp-theater");
@@ -421,7 +415,6 @@
       });
     }
 
-    // Fullscreen
     if (btnFull) {
       btnFull.addEventListener("click", function () {
         if (document.fullscreenElement) {
@@ -432,7 +425,6 @@
       });
     }
 
-    // Mini (PiP) button
     if (btnPip) {
       btnPip.addEventListener("click", function(e){
         e.preventDefault();
@@ -441,7 +433,7 @@
       });
     }
 
-    // Context menu (right click)
+    // Context menu
     root.addEventListener("contextmenu", function (e) {
       e.preventDefault();
       hideMenus();
@@ -467,7 +459,7 @@
           u2.searchParams.set("t", String(at));
           copyText(u2.toString());
         } else if (act === "copy-embed") {
-          var src = window.location.origin + "/embed?v=" + encodeURIComponent(vid || "");
+          var src = (window.location.origin || "") + "/embed?v=" + encodeURIComponent(vid || "");
           var iframe = "<iframe width=\"560\" height=\"315\" src=\"" + src + "\" frameborder=\"0\" allow=\"autoplay; encrypted-media\" allowfullscreen></iframe>";
           copyText(iframe);
         }
@@ -486,7 +478,8 @@
       });
     });
 
-    // Keyboard shortcuts (global; layout-agnostic via e.code)
+    // hotkeys (global)
+	// TODO: remove cyrilic hotkey if it will possible
     function handleHotkey(e) {
       var t = e.target;
       var tag = t && t.tagName ? t.tagName.toUpperCase() : "";
@@ -516,11 +509,11 @@
     }
     document.addEventListener("keydown", handleHotkey);
 
-    // Final pass after layout settles
+    // last layout pass
     setTimeout(adjustWidthByAspect, 200);
   }
 
-  // Init all hosts on the page
+  // init all
   function initAll() {
     var hosts = document.querySelectorAll(".player-host[data-player='yurtube']");
     if (hosts.length === 0) return;
@@ -532,7 +525,7 @@
           mountOne(hosts[i], html);
         }
       })
-      .catch(function () { /* ignore */ });
+      .catch(function () { });
   }
 
   if (document.readyState === "loading") {
