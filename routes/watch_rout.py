@@ -149,11 +149,10 @@ async def watch_page(request: Request, v: str) -> Any:
 
         video: Dict[str, Any] = dict(row)
 
-        # Record view and increment counters (count everyone, including author)
+        # Record view and increment counters
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
-        # Reflect +1 immediately in template without refetch
         try:
             video["views_count"] = int(video.get("views_count") or 0) + 1
         except Exception:
@@ -174,7 +173,8 @@ async def watch_page(request: Request, v: str) -> Any:
         }
 
         allow_embed = bool(video.get("allow_embed"))
-        embed_url = f"/embed?v={video['video_id']}"
+        # FIX: make absolute URL for embed
+        embed_url = f"{_base_url(request)}/embed?v={video['video_id']}"
 
         return templates.TemplateResponse(
             "watch.html",
