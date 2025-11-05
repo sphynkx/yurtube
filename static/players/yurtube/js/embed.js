@@ -4,6 +4,12 @@
   function elClosest(node, selector, stopAt){ var n=node; while(n && n!==stopAt){ if(n.nodeType===1 && typeof n.matches==="function" && n.matches(selector)) return n; n=n.parentElement||n.parentNode; } return null; }
   function detectPlayerName(){ try{ var u=new URL(import.meta.url); var m=u.pathname.match(/\/static\/players\/([^\/]+)\//); return m? m[1]:"yurtube"; }catch(e){ return "yurtube"; } }
 
+  var STORE="yrp:";
+  function canLS(){ try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; }catch(_){ return false; } }
+  function load(key, def){ if(!canLS()) return def; try{ var s=localStorage.getItem(STORE+key); return s? JSON.parse(s): def; }catch(_){ return def; } }
+  function save(key, val){ if(!canLS()) return; try{ localStorage.setItem(STORE+key, JSON.stringify(val)); }catch(_){} }
+  function throttle(fn, ms){ var t=0, pend=false; return function(){ var now=Date.now(); if(!t||now-t>=ms){ t=now; fn(); } else if(!pend){ pend=true; setTimeout(function(){ pend=false; t=Date.now(); fn(); }, ms-(now-t)); } }; }
+
   function mountOne(host, tpl, PLAYER_BASE){
     host.innerHTML = tpl;
 
@@ -12,7 +18,11 @@
     var video = root.querySelector(".yrp-video");
     var controls = root.querySelector(".yrp-controls");
     var source = video.querySelector("source");
-	var ap = root.querySelector(".yrp-autoplay"); if (ap) ap.style.display = "none";
+    var ap = root.querySelector(".yrp-autoplay"); if (ap) ap.style.display = "none";
+
+    var opts = parseJSONAttr(host,"data-options",{});
+    var DEBUG = /\byrpdebug=1\b/i.test(location.search) || !!(opts && opts.debug);
+    function d(){ if(!DEBUG) return; try { console.debug.apply(console, ["[YRP-EMBED]"].concat([].slice.call(arguments))); } catch(_){} }
 
     root.classList.add("yrp-embed");
     root.setAttribute("tabindex","0");
@@ -21,7 +31,6 @@
     var poster = host.getAttribute("data-poster-url")||"";
     var vid = host.getAttribute("data-video-id")||"";
     var subs = parseJSONAttr(host,"data-subtitles",[]);
-    var opts = parseJSONAttr(host,"data-options",{});
 
     if(source) source.setAttribute("src", videoSrc);
     if(poster) video.setAttribute("poster", poster);
@@ -29,6 +38,8 @@
     if(opts&&opts.muted) video.setAttribute("muted","");
     if(opts&&opts.loop) video.setAttribute("loop","");
     if(vid) root.setAttribute("data-video-id", vid);
+
+    video.setAttribute("playsinline","");
 
     if(Array.isArray(subs)){
       subs.forEach(function(t){
@@ -43,7 +54,8 @@
       });
     }
 
-    // icon urls -> CSS vars on root (for mask)
+    try { video.load(); d("video.load() called", {src: videoSrc}); } catch(e){ d("video.load() error", e); }
+
     var iconBase = PLAYER_BASE + "/img/buttons";
     root.style.setProperty("--icon-play",    'url("' + iconBase + '/play.svg")');
     root.style.setProperty("--icon-pause",   'url("' + iconBase + '/pause.svg")');
@@ -58,10 +70,12 @@
     root.style.setProperty("--icon-full",    'url("' + iconBase + '/full.svg")');
     root.classList.add("yrp-icons-ready");
 
-    wireEmbed(root, wrap, video, controls);
+    wireEmbed(root, wrap, video, controls, DEBUG);
   }
 
-  function wireEmbed(root, wrap, video, controls){
+  function wireEmbed(root, wrap, video, controls, DEBUG){
+    function d(){ if(!DEBUG) return; try { console.debug.apply(console, ["[YRP-EMBED]"].concat([].slice.call(arguments))); } catch(_){} }
+
     var centerPlay = root.querySelector(".yrp-center-play");
     var btnPlay = root.querySelector(".yrp-play");
     var btnVol  = root.querySelector(".yrp-vol-btn");
@@ -83,6 +97,9 @@
 
     var seeking=false, duration=0, hideTimer=null;
     var volClickLock=false;
+
+    var userTouchedVolume = false;
+    var autoMuteApplied = false;
 
     function showControls(){
       root.classList.remove("autohide");
@@ -133,11 +150,133 @@
     function seekByClientX(xc){ var r=rail.getBoundingClientRect(); var x=Math.max(0, Math.min(xc - r.left, r.width)); var f=r.width>0? x/r.width: 0; var t=(duration||0)*f; video.currentTime=t; }
     function updateTooltip(xc){ var tt=tooltip; if(!tt) return; var r=rail.getBoundingClientRect(); var x=Math.max(0, Math.min(xc-r.left, r.width)); var f=r.width>0? x/r.width:0; var t=(duration||0)*f; tt.textContent=fmtTime(t); tt.style.left=(f*100).toFixed(3)+"%"; tt.hidden=false; }
 
+    // Persist: volume/mute
+    (function(){
+      var vs = load("volume", null);
+      if (vs && typeof vs.v === "number") video.volume = Math.max(0, Math.min(vs.v, 1));
+      if (vs && typeof vs.m === "boolean") video.muted = !!vs.m;
+      if (volSlider) volSlider.value = String(video.volume || 1);
+      refreshVolIcon();
+
+      video.addEventListener("volumechange", function(){
+        if (autoMuteApplied && video.muted && !userTouchedVolume) return;
+        save("volume", { v: Math.max(0, Math.min(video.volume||0,1)), m: !!video.muted });
+      });
+
+      video.addEventListener("loadedmetadata", function once(){
+        video.removeEventListener("loadedmetadata", once);
+        if (userTouchedVolume) return;
+        if (vs) {
+          if (typeof vs.v === "number") video.volume = Math.max(0, Math.min(vs.v, 1));
+          if (typeof vs.m === "boolean") video.muted = !!vs.m;
+          if (volSlider) volSlider.value = String(video.volume || 1);
+          refreshVolIcon();
+        }
+      });
+    })();
+
+    // Persist: speed
+    (function(){
+      var sp = load("speed", null);
+      if (typeof sp === "number" && sp > 0) video.playbackRate = sp;
+      video.addEventListener("ratechange", function(){ save("speed", video.playbackRate); });
+    })();
+
+    // Persist: position-resume
+    (function(){
+      var vid = root.getAttribute("data-video-id") || "";
+      if (!vid) return;
+      var map = load("resume", {}), rec = map[vid], now = Date.now();
+      function applyResume(t){
+        var d = isFinite(video.duration) ? video.duration : 0;
+        if (d && t > 10 && t < d - 5) {
+          try { video.currentTime = t; } catch(_){}
+        }
+      }
+      if (rec && typeof rec.t === "number" && (now - (rec.ts||0)) < 180*24*3600*1000) {
+        var setAt = Math.max(0, rec.t|0);
+        if (isFinite(video.duration) && video.duration > 0) applyResume(setAt);
+        else video.addEventListener("loadedmetadata", function once(){ video.removeEventListener("loadedmetadata", once); applyResume(setAt); });
+      }
+      var savePos = throttle(function(){
+        var d=isFinite(video.duration)?video.duration:0;
+        var cur=Math.max(0, Math.floor(video.currentTime||0));
+        var m=load("resume",{}); m[vid]={ t:cur, ts: Date.now(), d:d };
+        save("resume", m);
+      }, 3000);
+      video.addEventListener("timeupdate", function(){ if (!video.paused && !video.seeking) savePos(); });
+      video.addEventListener("ended", function(){ var m=load("resume",{}); delete m[vid]; save("resume", m); });
+    })();
+
+    // Events diags
+    ["loadedmetadata","loadeddata","canplay","canplaythrough","play","playing","pause","stalled","suspend","waiting","error","abort","emptied"].forEach(function(ev){
+      video.addEventListener(ev, function(){ d("event:", ev, {rs: video.readyState, paused: video.paused, muted: video.muted}); });
+    });
+
+    // Silent autostart
+    (function(){
+      var host = root.closest(".player-host") || root;
+      var opt = parseJSONAttr(host, "data-options", null);
+      var WANT = !!(opt && Object.prototype.hasOwnProperty.call(opt, "autoplay") && opt.autoplay);
+      d("autoplay check (embed)", {WANT:WANT, opt:opt});
+      if (!WANT) return;
+
+      function tryPlaySequence(reason){
+        d("tryPlaySequence", {reason:reason, muted: video.muted, rs: video.readyState});
+        var p=null;
+        try { p = video.play(); } catch(e){ d("play() threw sync", e); p = null; }
+        if (p && typeof p.then === "function") {
+          p.then(function(){ d("play() resolved"); }).catch(function(err){
+            d("play() rejected", {name: err && err.name, msg: err && err.message});
+            if (!video.muted) {
+              autoMuteApplied = true;
+              video.muted = true;
+              video.setAttribute("muted","");
+              if (volSlider) volSlider.value = String(video.volume || 1);
+              refreshVolIcon();
+              d("retry play() with mute");
+              try { video.play().catch(function(e2){ d("retry rejected", {name:e2 && e2.name, msg:e2 && e2.message}); }); } catch(e2){ d("retry threw sync", e2); }
+            }
+          });
+        } else {
+          setTimeout(function(){
+            if (video.paused) {
+              autoMuteApplied = true;
+              video.muted = true;
+              video.setAttribute("muted","");
+              d("no-promise fallback: play muted");
+              try { video.play().catch(function(e3){ d("no-promise fallback rejected", e3); }); } catch(e3){ d("no-promise fallback threw", e3); }
+            }
+          }, 0);
+        }
+      }
+
+      var fired=false;
+      function fireOnce(tag){ if(fired) return; fired=true; tryPlaySequence(tag); }
+      if (video.readyState >= 1) fireOnce("readyState>=1");
+      ["loadedmetadata","loadeddata","canplay","canplaythrough"].forEach(function(ev){
+        var once=function(){ video.removeEventListener(ev, once); fireOnce(ev); };
+        video.addEventListener(ev, once);
+      });
+
+      setTimeout(function(){
+        if (video.paused) {
+          d("watchdog: still paused, force muted play");
+          autoMuteApplied = true;
+          video.muted = true;
+          video.setAttribute("muted","");
+          try { video.play().catch(function(e){ d("watchdog play rejected", e); }); } catch(e){ d("watchdog play threw", e); }
+        }
+      }, 1200);
+    })();
+
     function volToggleOnce(e){
       if(e){ e.preventDefault(); e.stopPropagation(); }
       if(volClickLock) return;
       volClickLock = true;
       setTimeout(function(){ volClickLock=false; }, 220);
+      userTouchedVolume = true;
+      autoMuteApplied = false;
       setMutedToggle();
       root.classList.add("vol-open");
       showControls();
@@ -176,6 +315,8 @@
 
     if(volSlider){
       volSlider.addEventListener("input", function(){
+        userTouchedVolume = true;
+        autoMuteApplied = false;
         var v=parseFloat(volSlider.value||"1"); if(!isFinite(v)) v=1;
         v=Math.max(0,Math.min(v,1)); video.volume=v; if(v>0) video.muted=false; refreshVolIcon();
         root.classList.add("vol-open"); showControls();
@@ -184,6 +325,8 @@
     if(volWrap){
       volWrap.addEventListener("wheel", function(e){
         e.preventDefault();
+        userTouchedVolume = true;
+        autoMuteApplied = false;
         var step=0.05, v=video.muted?0:video.volume;
         var nv=Math.max(0,Math.min(v+(e.deltaY<0?step:-step),1));
         video.volume=nv; if(nv>0) video.muted=false;
@@ -194,15 +337,13 @@
 
     if(progress){
       progress.addEventListener("mousedown", function (e) { var seeking=true; seekByClientX(e.clientX); showControls(); });
-      window.addEventListener("mousemove", function (e) { /* noop: seeking handled above */ });
+      window.addEventListener("mousemove", function (e) { /* noop */ });
       window.addEventListener("mouseup", function () { /* noop */ });
       progress.addEventListener("mousemove", function (e) { updateTooltip(e.clientX); });
       progress.addEventListener("mouseleave", function () { if(tooltip) tooltip.hidden=true; });
     }
 
-    // Settings toggle: class-based, not hidden property
     if (btnSettings && menu) {
-      // ensure template "hidden" attr does not block
       menu.removeAttribute("hidden");
       btnSettings.addEventListener("click", function (e) {
         e.preventDefault(); e.stopPropagation();
