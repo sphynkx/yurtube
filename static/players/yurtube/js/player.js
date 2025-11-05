@@ -1,5 +1,4 @@
 (function () {
-  // Helpers
   function fmtTime(sec) {
     if (!isFinite(sec) || sec < 0) sec = 0;
     sec = Math.floor(sec);
@@ -31,8 +30,15 @@
     var v = parseFloat(String(s || "").trim());
     return isFinite(v) ? v : 0;
   }
+  function detectPlayerName() {
+    try {
+      var u = new URL(import.meta.url);
+      var m = u.pathname.match(/\/static\/players\/([^\/]+)\//);
+      return m ? m[1] : "yurtube";
+    } catch (e) { return "yurtube"; }
+  }
 
-  function mountOne(host, templateHTML) {
+  function mountOne(host, templateHTML, PLAYER_BASE) {
     host.innerHTML = templateHTML;
 
     var root = host.querySelector(".yrp-container");
@@ -64,6 +70,21 @@
         video.appendChild(tr);
       });
     }
+
+    // icon urls -> CSS vars on root (for mask)
+    var iconBase = PLAYER_BASE + "/img/buttons";
+    root.style.setProperty("--icon-play",    'url("' + iconBase + '/play.svg")');
+    root.style.setProperty("--icon-pause",   'url("' + iconBase + '/pause.svg")');
+    root.style.setProperty("--icon-prev",    'url("' + iconBase + '/prev.svg")');
+    root.style.setProperty("--icon-next",    'url("' + iconBase + '/next.svg")');
+    root.style.setProperty("--icon-vol",     'url("' + iconBase + '/volume.svg")');
+    root.style.setProperty("--icon-mute",    'url("' + iconBase + '/mute.svg")');
+    root.style.setProperty("--icon-cc",      'url("' + iconBase + '/cc.svg")');
+    root.style.setProperty("--icon-mini",    'url("' + iconBase + '/mini.svg")');
+    root.style.setProperty("--icon-settings",'url("' + iconBase + '/settings.svg")');
+    root.style.setProperty("--icon-theater", 'url("' + iconBase + '/theater.svg")');
+    root.style.setProperty("--icon-full",    'url("' + iconBase + '/full.svg")');
+    root.classList.add("yrp-icons-ready");
 
     var startAt = 0;
     if (opts && typeof opts.start === "number" && opts.start > 0) {
@@ -102,7 +123,6 @@
     var seeking = false;
     var duration = 0;
 
-    // PiP bookkeeping (system PiP)
     var pipInSystem = false;
     var pipWasPlayingOrig = false;
     var pipWasMutedOrig = false;
@@ -136,7 +156,23 @@
     function refreshVolIcon() {
       var v = video.muted ? 0 : video.volume;
       var label = (video.muted || v === 0) ? "Mute" : "Vol";
-      if (btnVol) btnVol.textContent = label;
+      if (btnVol) {
+        btnVol.textContent = label;
+        btnVol.classList.toggle("icon-mute", (label === "Mute"));
+        btnVol.classList.toggle("icon-vol",  (label !== "Mute"));
+      }
+    }
+    function refreshPlayIcon() {
+      if (!btnPlay) return;
+      if (video.paused) {
+        btnPlay.textContent = "Play";
+        btnPlay.classList.add("icon-play");
+        btnPlay.classList.remove("icon-pause");
+      } else {
+        btnPlay.textContent = "Pause";
+        btnPlay.classList.add("icon-pause");
+        btnPlay.classList.remove("icon-play");
+      }
     }
     function seekByClientX(clientX) {
       var rect = rail.getBoundingClientRect();
@@ -193,7 +229,6 @@
       root.style.width = "100%";
     }
 
-    // Lifecycle
     video.addEventListener("loadedmetadata", function () {
       if (startAt && startAt > 0) {
         try { video.currentTime = Math.min(startAt, Math.floor(video.duration || startAt)); } catch (e) {}
@@ -201,6 +236,8 @@
       setTimeout(adjustWidthByAspect, 0);
       updateTimes();
       updateProgress();
+      refreshPlayIcon();
+      refreshVolIcon();
     });
     window.addEventListener("resize", function(){ adjustWidthByAspect(); });
 
@@ -209,15 +246,16 @@
     video.addEventListener("play", function(){
       root.classList.add("playing");
       showControls();
+      refreshPlayIcon();
       if (pipInSystem) pipUserState = true;
     });
     video.addEventListener("pause", function(){
       root.classList.remove("playing");
       showControls();
+      refreshPlayIcon();
       if (pipInSystem) pipUserState = false;
     });
 
-    // PiP (system)
     function enterVideoPiP() {
       pipWasPlayingOrig = !video.paused;
       pipWasMutedOrig = !!video.muted;
@@ -234,7 +272,7 @@
 
       return startPlayPromise.then(function () {
         return video.requestPictureInPicture();
-      }).catch(function(){ /* ignore */ }).then(function(){
+      }).catch(function(){ }).then(function(){
         if (needTempPlay) {
           video.pause();
           video.muted = prevMuted;
@@ -289,7 +327,6 @@
       } catch (e) {}
     }
 
-    // interactions
     video.addEventListener("click", function(){ playToggle(); });
 
     root.addEventListener("mousemove", showControls, { passive: true });
@@ -304,7 +341,6 @@
     if (btnPrev) btnPrev.addEventListener("click", function(){ root.dispatchEvent(new CustomEvent("yrp-prev",{bubbles:true})); });
     if (btnNext) btnNext.addEventListener("click", function(){ root.dispatchEvent(new CustomEvent("yrp-next",{bubbles:true})); });
 
-    // Volume: click => mute/unmute; hover shows slider (CSS); wheel => volume
     if (btnVol) {
       btnVol.addEventListener("click", function(e){
         e.preventDefault();
@@ -364,6 +400,8 @@
           btnSettings.setAttribute("aria-expanded", "true");
         }
         e.stopPropagation();
+        root.classList.add("vol-open");
+        showControls();
       });
       menu.addEventListener("click", function (e) {
         var target = e.target;
@@ -371,12 +409,13 @@
           var sp = parseFloat(target.getAttribute("data-speed") || "NaN");
           if (!isNaN(sp)) {
             video.playbackRate = sp;
-            hideMenus();
+            menu.hidden = true;
+            btnSettings.setAttribute("aria-expanded", "false");
           }
         }
       });
       document.addEventListener("click", function (e) {
-        if (!menu.hidden && !menu.contains(e.target) && e.target !== btnSettings) hideMenus();
+        if (!menu.hidden && !menu.contains(e.target) && e.target !== btnSettings) menu.hidden = true;
       });
     }
 
@@ -413,7 +452,6 @@
       });
     }
 
-    // Context menu
     root.addEventListener("contextmenu", function (e) {
       e.preventDefault();
       hideMenus();
@@ -458,7 +496,6 @@
       });
     });
 
-    // hotkeys (global)
     function handleHotkey(e) {
       var t = e.target;
       var tag = t && t.tagName ? t.tagName.toUpperCase() : "";
@@ -488,20 +525,20 @@
     }
     document.addEventListener("keydown", handleHotkey);
 
-    // last layout pass
     setTimeout(adjustWidthByAspect, 200);
   }
 
-  // init all
   function initAll() {
-    var hosts = document.querySelectorAll(".player-host[data-player='yurtube']");
+    var PLAYER_NAME = detectPlayerName();
+    var PLAYER_BASE = "/static/players/" + PLAYER_NAME;
+    var hosts = document.querySelectorAll('.player-host[data-player="' + PLAYER_NAME + '"]');
     if (hosts.length === 0) return;
 
-    fetch("/static/players/yurtube/templates/player.html", { credentials: "same-origin" })
+    fetch(PLAYER_BASE + "/templates/player.html", { credentials: "same-origin" })
       .then(function (r) { return r.text(); })
       .then(function (html) {
         for (var i = 0; i < hosts.length; i++) {
-          mountOne(hosts[i], html);
+          mountOne(hosts[i], html, PLAYER_BASE);
         }
       })
       .catch(function () { });

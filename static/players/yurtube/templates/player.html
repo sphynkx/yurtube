@@ -7,7 +7,10 @@
     </video>
 
     <button class="yrp-center-play" aria-label="Play/Pause (Space, K, Enter)" title="Play/Pause (Space, K, Enter)">
-      <img class="yrp-center-logo" src="/static/players/yurtube/img/logo.png" alt="Play">
+      <img class="yrp-center-logo"
+           src="/static/players/yurtube/img/logo.png"
+           onerror="this.onerror=null;this.src='/static/img/fallback_player_logo.svg';"
+           alt="Play">
     </button>
 
     <div class="yrp-controls" role="group" aria-label="Player controls">
@@ -20,12 +23,12 @@
       </div>
       <div class="yrp-bar">
         <div class="yrp-left">
-          <button class="yrp-btn yrp-play" aria-label="Play/Pause (Space, K, Enter)" title="Play/Pause (Space, K, Enter)">Play</button>
-          <button class="yrp-btn yrp-prev" aria-label="Previous" title="Previous">Prev</button>
-          <button class="yrp-btn yrp-next" aria-label="Next" title="Next">Next</button>
+          <button class="yrp-btn yrp-play icon-play" aria-label="Play/Pause (Space, K, Enter)" title="Play/Pause (Space, K, Enter)">Play</button>
+          <button class="yrp-btn yrp-prev icon-prev" aria-label="Previous" title="Previous">Prev</button>
+          <button class="yrp-btn yrp-next icon-next" aria-label="Next" title="Next">Next</button>
 
           <div class="yrp-volume" title="Volume (wheel), Mute (M)">
-            <button class="yrp-btn yrp-vol-btn" aria-label="Mute/Unmute (M)" title="Mute/Unmute (M)">Vol</button>
+            <button class="yrp-btn yrp-vol-btn icon-vol" aria-label="Mute/Unmute (M)" title="Mute/Unmute (M)">Vol</button>
             <div class="yrp-vol-slider-wrap">
               <input class="yrp-vol-slider" type="range" min="0" max="1" step="0.01" value="1" aria-label="Volume">
             </div>
@@ -39,10 +42,11 @@
         </div>
 
         <div class="yrp-right">
-          <button class="yrp-btn yrp-subtitles" aria-label="Subtitles" title="Subtitles" disabled>CC</button>
-          <button class="yrp-btn yrp-pip" aria-label="Mini player (I)" title="Mini player (I)">Mini</button>
+          <button class="yrp-btn yrp-subtitles icon-cc" aria-label="Subtitles" title="Subtitles" disabled>CC</button>
+          <button class="yrp-btn yrp-pip icon-mini" aria-label="Mini player (I)" title="Mini player (I)">Mini</button>
+
           <div class="yrp-menu-wrap">
-            <button class="yrp-btn yrp-settings" aria-haspopup="true" aria-expanded="false" title="Settings">Settings</button>
+            <button class="yrp-btn yrp-settings icon-settings" aria-haspopup="true" aria-expanded="false" title="Settings">Settings</button>
             <div class="yrp-menu" role="menu" hidden>
               <div class="yrp-menu-section" data-section="speed">
                 <div class="yrp-menu-title">Speed</div>
@@ -61,8 +65,9 @@
               </div>
             </div>
           </div>
-          <button class="yrp-btn yrp-theater" aria-label="Theater (T)" title="Theater (T)">Theater</button>
-          <button class="yrp-btn yrp-fullscreen" aria-label="Fullscreen (F)" title="Fullscreen (F)">Full</button>
+
+          <button class="yrp-btn yrp-theater icon-theater" aria-label="Theater (T)" title="Theater (T)">Theater</button>
+          <button class="yrp-btn yrp-fullscreen icon-full" aria-label="Fullscreen (F)" title="Fullscreen (F)">Full</button>
         </div>
       </div>
     </div>
