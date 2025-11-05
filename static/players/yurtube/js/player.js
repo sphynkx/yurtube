@@ -84,6 +84,9 @@
     root.style.setProperty("--icon-settings",'url("' + iconBase + '/settings.svg")');
     root.style.setProperty("--icon-theater", 'url("' + iconBase + '/theater.svg")');
     root.style.setProperty("--icon-full",    'url("' + iconBase + '/full.svg")');
+    root.style.setProperty("--icon-autoplay-on",  'url("' + iconBase + '/autoplay-on.svg")');
+    root.style.setProperty("--icon-autoplay-off", 'url("' + iconBase + '/autoplay-off.svg")');
+
     root.classList.add("yrp-icons-ready");
 
     var startAt = 0;
@@ -118,6 +121,7 @@
     var btnPip = root.querySelector(".yrp-pip");
     var leftGrp = root.querySelector(".yrp-left");
     var rightGrp = root.querySelector(".yrp-right");
+    var btnAutoplay = root.querySelector(".yrp-autoplay");
 
     var hideTimer = null;
     var seeking = false;
@@ -127,6 +131,19 @@
     var pipWasPlayingOrig = false;
     var pipWasMutedOrig = false;
     var pipUserState = null;
+
+    var autoplayOn = false;
+    function refreshAutoplayBtn(){
+      if (!btnAutoplay) return;
+      btnAutoplay.setAttribute("aria-pressed", autoplayOn ? "true" : "false");
+      btnAutoplay.title = autoplayOn ? "Autoplay on (A)" : "Autoplay off (A)";
+      btnAutoplay.textContent = autoplayOn ? "Autoplay on" : "Autoplay off";
+      var img = autoplayOn ? "var(--icon-autoplay-on)" : "var(--icon-autoplay-off)";
+      try {
+        btnAutoplay.style.webkitMaskImage = img;
+        btnAutoplay.style.maskImage = img;
+      } catch(_){}
+    }
 
     function showControls() {
       root.classList.remove("autohide");
@@ -238,6 +255,7 @@
       updateProgress();
       refreshPlayIcon();
       refreshVolIcon();
+      refreshAutoplayBtn();
     });
     window.addEventListener("resize", function(){ adjustWidthByAspect(); });
 
@@ -452,6 +470,15 @@
       });
     }
 
+    if (btnAutoplay) {
+      btnAutoplay.addEventListener("click", function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        autoplayOn = !autoplayOn;
+        refreshAutoplayBtn();
+      });
+    }
+
     root.addEventListener("contextmenu", function (e) {
       e.preventDefault();
       hideMenus();
@@ -521,6 +548,7 @@
       if (code === "KeyF" || key === "f") { btnFull && btnFull.click(); e.preventDefault(); return; }
       if (code === "KeyT" || key === "t") { btnTheater && btnTheater.click(); e.preventDefault(); return; }
       if (code === "KeyI" || key === "i") { toggleMini(); e.preventDefault(); return; }
+      if (code === "KeyA" || key === "a") { e.preventDefault(); if (btnAutoplay) btnAutoplay.click(); return; }
       if (code === "Escape" || key === "escape") { hideMenus(); return; }
     }
     document.addEventListener("keydown", handleHotkey);

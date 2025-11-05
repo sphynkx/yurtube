@@ -12,6 +12,7 @@
     var video = root.querySelector(".yrp-video");
     var controls = root.querySelector(".yrp-controls");
     var source = video.querySelector("source");
+	var ap = root.querySelector(".yrp-autoplay"); if (ap) ap.style.display = "none";
 
     root.classList.add("yrp-embed");
     root.setAttribute("tabindex","0");

@@ -105,3 +105,6 @@ html, body { height:100%; background:#000; font-family:var(--yrp-font); }
 }
 
 .nojs { color:#fff; padding:12px; font-family:var(--yrp-font); }
+
+/* hide Autoplay button in embed */
+.yrp-container.yrp-embed .yrp-autoplay { display: none !important; }
