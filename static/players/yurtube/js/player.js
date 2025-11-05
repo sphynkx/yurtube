@@ -31,11 +31,28 @@
     return isFinite(v) ? v : 0;
   }
   function detectPlayerName() {
+    // 1) ESM: import.meta.url
     try {
       var u = new URL(import.meta.url);
       var m = u.pathname.match(/\/static\/players\/([^\/]+)\//);
-      return m ? m[1] : "yurtube";
-    } catch (e) { return "yurtube"; }
+      if (m) return m[1];
+    } catch (e) {}
+    // 2) classic: currentScript
+    try {
+      var s = (document.currentScript && document.currentScript.src) || "";
+      var m2 = s.match(/\/static\/players\/([^\/]+)\//);
+      if (m2) return m2[1];
+    } catch (e2) {}
+    // 3) from DOM host
+    try {
+      var host = document.querySelector('.player-host[data-player]');
+      if (host) {
+        var pn = String(host.getAttribute('data-player') || '').trim();
+        if (pn) return pn;
+      }
+    } catch (e3) {}
+    // 4) fallback
+    return "yurtube";
   }
 
   // storage helpers
@@ -69,7 +86,7 @@
     if (opts && opts.loop) video.setAttribute("loop", "");
     if (vid) root.setAttribute("data-video-id", vid);
 
-    // for iOS
+    // iOS inline
     video.setAttribute("playsinline", "");
 
     if (Array.isArray(subs)) {
@@ -85,6 +102,7 @@
       });
     }
 
+    // ensure load starts
     try { video.load(); d("video.load() called", {src: videoSrc}); } catch(e){ d("video.load() error", e); }
 
     // icon urls -> CSS vars on root (for mask)
@@ -104,6 +122,10 @@
     root.style.setProperty("--icon-autoplay-off", 'url("' + iconBase + '/autoplay-off.svg")');
 
     root.classList.add("yrp-icons-ready");
+
+    // set center logo dynamically
+    var centerLogo = root.querySelector(".yrp-center-logo");
+    if (centerLogo) centerLogo.setAttribute("src", PLAYER_BASE + "/img/logo.png");
 
     var startAt = 0;
     if (opts && typeof opts.start === "number" && opts.start > 0) {
@@ -267,7 +289,7 @@
       root.style.width = "100%";
     }
 
-    // Persist: volume/mute
+    // PERSIST: volume/mute
     (function(){
       var vs = load("volume", null);
       if (vs && typeof vs.v === "number") video.volume = clamp(vs.v, 0, 1);
@@ -292,14 +314,14 @@
       });
     })();
 
-    // Persist: speed
+    // PERSIST: speed
     (function(){
       var sp = load("speed", null);
       if (typeof sp === "number" && sp > 0) video.playbackRate = sp;
       video.addEventListener("ratechange", function(){ save("speed", video.playbackRate); });
     })();
 
-    // Persist: theater
+    // PERSIST: theater
     (function(){
       if (!btnTheater) return;
       var th = !!load("theater", false);
@@ -319,7 +341,7 @@
       });
     })();
 
-    // Persist: position-resume
+    // PERSIST: resume
     (function(){
       var vid = root.getAttribute("data-video-id") || "";
       if (!vid) return;
@@ -353,12 +375,12 @@
       video.addEventListener("ended", function(){ var m = load("resume", {}); delete m[vid]; save("resume", m); });
     })();
 
-    // Events diags
+    // Debug events
     ["loadedmetadata","loadeddata","canplay","canplaythrough","play","playing","pause","stalled","suspend","waiting","error","abort","emptied"].forEach(function(ev){
-      video.addEventListener(ev, function(e){ d("event:", ev, {rs: video.readyState, paused: video.paused, muted: video.muted}); });
+      video.addEventListener(ev, function(){ d("event:", ev, {rs: video.readyState, paused: video.paused, muted: video.muted}); });
     });
 
-    // Silent autostart
+    // Autoplay (opt.autoplay === true has priority; otherwise saved button)
     (function(){
       var host = root.closest(".player-host") || root;
       var opt = parseJSONAttr(host, "data-options", null);
@@ -374,7 +396,7 @@
 
       function tryPlaySequence(reason){
         d("tryPlaySequence", {reason:reason, muted: video.muted, rs: video.readyState});
-        var p;
+        var p = null;
         try { p = video.play(); } catch(e){ d("play() threw sync", e); p = null; }
         if (p && typeof p.then === "function") {
           p.then(function(){ d("play() resolved"); }).catch(function(err){
@@ -405,10 +427,10 @@
       var fired = false;
       function fireOnce(tag){ if (fired) return; fired = true; tryPlaySequence(tag); }
       if (video.readyState >= 1) fireOnce("readyState>=1");
-      video.addEventListener("loadedmetadata", function once(){ video.removeEventListener("loadedmetadata", once); fireOnce("loadedmetadata"); });
-      video.addEventListener("loadeddata", function once(){ video.removeEventListener("loadeddata", once); fireOnce("loadeddata"); });
-      video.addEventListener("canplay", function once(){ video.removeEventListener("canplay", once); fireOnce("canplay"); });
-      video.addEventListener("canplaythrough", function once(){ video.removeEventListener("canplaythrough", once); fireOnce("canplaythrough"); });
+      ["loadedmetadata","loadeddata","canplay","canplaythrough"].forEach(function(ev){
+        var once=function(){ video.removeEventListener(ev, once); fireOnce(ev); };
+        video.addEventListener(ev, once);
+      });
 
       setTimeout(function(){
         if (video.paused) {
@@ -452,9 +474,9 @@
     });
 
     function enterVideoPiP() {
-      pipWasPlayingOrig = !video.paused;
-      pipWasMutedOrig = !!video.muted;
-      pipUserState = null;
+      var pipWasPlayingOrig = !video.paused;
+      var pipWasMutedOrig = !!video.muted;
+      var pipUserState = null;
 
       var needTempPlay = video.paused;
       var prevMuted = video.muted;
@@ -487,30 +509,6 @@
         }
       } catch (ex) {}
     }
-
-    video.addEventListener("enterpictureinpicture", function(){
-      pipInSystem = true;
-      root.classList.add("pip");
-      if (!pipWasPlayingOrig && !video.paused) {
-        video.pause();
-        video.muted = pipWasMutedOrig;
-        pipUserState = false;
-      }
-    });
-    video.addEventListener("leavepictureinpicture", function(){
-      pipInSystem = false;
-      root.classList.remove("pip");
-      if (pipUserState === true) {
-        video.play().catch(function(){});
-      } else if (pipUserState === false) {
-        video.pause();
-      } else {
-        if (pipWasPlayingOrig) video.play().catch(function(){});
-        else video.pause();
-      }
-      video.muted = pipWasMutedOrig;
-      pipUserState = null;
-    });
 
     if ("mediaSession" in navigator) {
       try {

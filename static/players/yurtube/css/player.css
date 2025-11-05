@@ -1,8 +1,6 @@
 :root {
   --yrp-bg: rgba(0, 0, 0, 0.35);
   --yrp-fg: #e9f6f4;
-  --yrp-accent: #0aa886;
-  --yrp-accent-2: #0a7ca8;
   --yrp-rail: rgba(255,255,255,0.25);
   --yrp-buffer: rgba(255,255,255,0.4);
   --yrp-played: #0aa886;
