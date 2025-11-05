@@ -9,6 +9,10 @@
   --yrp-icon-color: #6cc9fa;
   --yrp-knob-color: #6cc9fa;
   --yrp-font: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Arial, sans-serif;
+
+  /* icon sizing */
+  --yrp-icon-size: 20px;
+  --yrp-icon-button-width: 40px;
 }
 
 html, body { height:100%; background:#000; font-family:var(--yrp-font); }
@@ -37,7 +41,7 @@ html, body { height:100%; background:#000; font-family:var(--yrp-font); }
 .yrp-progress-handle { position:absolute; top:50%; transform:translate(-50%,-50%); width:16px; height:16px; border-radius:8px; background:var(--yrp-knob-color); left:0%; }
 .yrp-progress-tooltip { position:absolute; bottom:120%; transform:translateX(-50%); background:rgba(0,0,0,0.8); color:#fff; padding:3px 6px; border-radius:4px; font-size:12px; white-space:nowrap; }
 
-.yrp-bar { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; overflow:hidden; }
+.yrp-bar { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; overflow: visible; } /* was hidden, clipped menu */
 .yrp-left, .yrp-right { display:inline-flex; align-items:center; gap:6px; }
 
 .yrp-btn { appearance:none; border:none; cursor:pointer; background:transparent; color:var(--yrp-icon-color); height:28px; border-radius:4px; padding:0 8px; font-weight:700; letter-spacing:.02em; }
@@ -68,19 +72,19 @@ html, body { height:100%; background:#000; font-family:var(--yrp-font); }
 .yrp-container.yrp-embed .yrp-next,
 .yrp-container.yrp-embed .yrp-theater { display:none !important; }
 
-/* icon masks (color via background-color) */
+/* icon masks */
 .yrp-icons-ready .yrp-btn {
-  width: 36px;
+  width: var(--yrp-icon-button-width);
   padding: 0;
   text-indent: -9999px;
   overflow: hidden;
   background-color: var(--yrp-icon-color);
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-position: center;
-  -webkit-mask-size: 18px 18px;
+  -webkit-mask-size: var(--yrp-icon-size) var(--yrp-icon-size);
   mask-repeat: no-repeat;
   mask-position: center;
-  mask-size: 18px 18px;
+  mask-size: var(--yrp-icon-size) var(--yrp-icon-size);
 }
 .yrp-icons-ready .yrp-btn.icon-play    { -webkit-mask-image: var(--icon-play);    mask-image: var(--icon-play); }
 .yrp-icons-ready .yrp-btn.icon-pause   { -webkit-mask-image: var(--icon-pause);   mask-image: var(--icon-pause); }
