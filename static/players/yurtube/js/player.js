@@ -65,24 +65,15 @@
       });
     }
 
-    // Autodetect embed mode: inside iframe or body.has('is-embed')
-    var isEmbed = false;
-    try { isEmbed = (window.top !== window.self); } catch (e) { isEmbed = true; }
-    if (!isEmbed && document.body) isEmbed = document.body.classList.contains("is-embed");
-    if (isEmbed) {
-      root.classList.add("yrp-embed");
-      root.style.height = "100%";  // fill iframe height via CSS; JS keeps out of sizing logic
-    }
-
     var startAt = 0;
     if (opts && typeof opts.start === "number" && opts.start > 0) {
       startAt = Math.max(0, opts.start);
     }
 
-    wire(root, startAt, isEmbed);
+    wire(root, startAt);
   }
 
-  function wire(root, startAt, isEmbed) {
+  function wire(root, startAt) {
     var video = root.querySelector(".yrp-video");
     var centerPlay = root.querySelector(".yrp-center-play");
     var btnPlay = root.querySelector(".yrp-play");
@@ -118,11 +109,6 @@
     var pipUserState = null;
 
     function showControls() {
-      // In embed we do not autohide to keep panel pinned at the bottom without jumps
-      if (isEmbed) {
-        root.classList.remove("autohide");
-        return;
-      }
       root.classList.remove("autohide");
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(function () { root.classList.add("autohide"); }, 2000);
@@ -188,11 +174,6 @@
     function adjustWidthByAspect() {
       if (root.classList.contains("yrp-theater")) return;
 
-      // In EMBED we do not control size by JS: the iframe defines the box.
-      // CSS flex makes: video area (flex:1) + controls (auto) — stable for any aspect.
-      if (isEmbed) return;
-
-      // Normal page sizing by aspect with toolbar min width
       var csVideo = getComputedStyle(video);
       var maxH = cssPxToNum(csVideo.getPropertyValue("max-height")) || video.clientHeight || 0;
       var vw = video.videoWidth || 16;
@@ -314,7 +295,6 @@
     root.addEventListener("mousemove", showControls, { passive: true });
     root.addEventListener("pointermove", showControls, { passive: true });
     root.addEventListener("mouseleave", function () {
-      if (isEmbed) return; // no autohide in embed
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(function () { root.classList.add("autohide"); }, 600);
     });
@@ -479,7 +459,6 @@
     });
 
     // hotkeys (global)
-	// TODO: remove cyrilic hotkey if it will possible
     function handleHotkey(e) {
       var t = e.target;
       var tag = t && t.tagName ? t.tagName.toUpperCase() : "";
@@ -492,19 +471,19 @@
 
       if (code === "Space" || code === "Enter" || code === "NumpadEnter" ||
           code === "MediaPlayPause" ||
-          code === "KeyK" || key === "k" || key === "к") {
+          code === "KeyK" || key === "k") {
         playToggle(); e.preventDefault(); return;
       }
-      if (code === "ArrowLeft" || key === "arrowleft" || code === "KeyJ" || key === "j" || key === "л") {
+      if (code === "ArrowLeft" || key === "arrowleft" || code === "KeyJ" || key === "j") {
         video.currentTime = clamp((video.currentTime || 0) - 5, 0, duration || 0); e.preventDefault(); return;
       }
-      if (code === "ArrowRight" || key === "arrowright" || code === "KeyL" || key === "l" || key === "д") {
+      if (code === "ArrowRight" || key === "arrowright" || code === "KeyL" || key === "l") {
         video.currentTime = clamp((video.currentTime || 0) + 5, 0, duration || 0); e.preventDefault(); return;
       }
-      if (code === "KeyM" || key === "m" || key === "ь") { setMutedToggle(); e.preventDefault(); return; }
-      if (code === "KeyF" || key === "f" || key === "а") { btnFull && btnFull.click(); e.preventDefault(); return; }
-      if (code === "KeyT" || key === "t" || key === "е") { btnTheater && btnTheater.click(); e.preventDefault(); return; }
-      if (code === "KeyI" || key === "i" || key === "ш") { toggleMini(); e.preventDefault(); return; }
+      if (code === "KeyM" || key === "m") { setMutedToggle(); e.preventDefault(); return; }
+      if (code === "KeyF" || key === "f") { btnFull && btnFull.click(); e.preventDefault(); return; }
+      if (code === "KeyT" || key === "t") { btnTheater && btnTheater.click(); e.preventDefault(); return; }
+      if (code === "KeyI" || key === "i") { toggleMini(); e.preventDefault(); return; }
       if (code === "Escape" || key === "escape") { hideMenus(); return; }
     }
     document.addEventListener("keydown", handleHotkey);
