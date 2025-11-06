@@ -1,6 +1,5 @@
-# Global Brython helpers (ASCII only)
+# Global Brython helpers
 from browser import document, console, window
-
 
 def _append_cache_bust(src: str) -> str:
     try:
@@ -10,7 +9,6 @@ def _append_cache_bust(src: str) -> str:
         console.log(f"[brython] cache-bust error: {e}")
         return src
 
-
 def _fallback_avatar(ev):
     img = document.getElementById("nav-avatar")
     if img is None:
@@ -18,16 +16,13 @@ def _fallback_avatar(ev):
     img.attrs["src"] = "/static/img/avatar_default.svg"
     console.log("[brython] avatar fallback applied")
 
-
 def _bind_copy_embed():
     btn = document.getElementById("copy-embed")
     area = document.getElementById("embed-code")
     if not btn or not area:
         return
-
     def _copy(ev):
         txt = area.value
-        # Clipboard API if available
         nav = window.navigator
         if hasattr(nav, "clipboard") and nav.clipboard:
             nav.clipboard.writeText(txt)
@@ -36,9 +31,57 @@ def _bind_copy_embed():
             area.select()
             ok = document.execCommand("copy")
             console.log(f"[brython] embed copied (execCommand={ok})")
-
     btn.bind("click", _copy)
 
+def _bind_user_menu_dismiss():
+    """
+    Close the <details class="user-menu"> when clicking outside.
+    Uses DOM property 'open' instead of attrs.
+    """
+    try:
+        items = document.select("details.user-menu")
+    except Exception:
+        items = []
+    if not items:
+        return
+    menu = items[0]
+
+    def inside(el, root):
+        cur = el
+        while cur is not None:
+            if cur == root:
+                return True
+            try:
+                cur = cur.parentElement
+            except Exception:
+                cur = None
+        return False
+
+    def close_menu():
+        try:
+            if getattr(menu, "open", False):
+                menu.open = False  # DOM way
+            # safety: remove attribute if still present
+            try:
+                menu.removeAttribute("open")
+            except Exception:
+                pass
+        except Exception as e:
+            console.log(f"[brython] user-menu close error: {e}")
+
+    def on_doc_click(ev):
+        try:
+            # if not open -> nothing to do
+            if not getattr(menu, "open", False):
+                return
+            tgt = getattr(ev, "target", None)
+            if tgt and inside(tgt, menu):
+                return  # click inside menu
+            close_menu()
+        except Exception as e:
+            console.log(f"[brython] dismiss handler error: {e}")
+
+    document.bind("mousedown", on_doc_click)
 
 def init():
     img = document.getElementById("nav-avatar")
@@ -47,9 +90,8 @@ def init():
         if img.attrs.get("data-cache-bust") == "1":
             img.attrs["src"] = _append_cache_bust(img.attrs["src"])
             console.log("[brython] nav avatar cache-busted")
-
     _bind_copy_embed()
+    _bind_user_menu_dismiss()
     console.log("[brython] init.bry loaded")
-
 
 init()
