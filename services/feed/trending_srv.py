@@ -16,24 +16,23 @@ def _date_str(dt: Any) -> Optional[str]:
 
 async def fetch_trending_page(limit: int, offset: int, days: int) -> Tuple[List[Dict[str, Any]], int]:
     """
-    Trending without history: exponential decay by video age.
-    - score = (views_count + 5*likes_count) * exp(- age_sec / (days*86400))
-    - the fewer days (1d), the greater the age penalty -> more recent and popular videos are at the top.
-    - order by score DESC, then by date for stability.
-    - pagination: return (items, total)
-    Note: we calculate the total based on the number of public videos in a reasonable window (e.g., 2 years),
-    to avoid scanning endlessly old posts.
+    Trending by a strict recency window + exponential decay:
+
+    - Window filter: ONLY videos created within the last `days` are considered.
+      (days is clamped to [1..365])
+    - Score within the window:
+        score = (views_count + 5*likes_count) * exp(- age_sec / (days*86400))
+      Smaller `days` => stronger age strafe => freshest and popular videos to top.
+    - Order: score DESC, created_at DESC
+    - Pagination: (items, total) where total = count of public videos in the window.
     """
     limit = max(1, min(int(limit), 50))
     offset = max(0, int(offset))
     days = max(1, min(int(days), 365))
 
-    # How far back in time to look when calculating totals and sampling.
-    bound_days = 365 * 2
-
     conn = await get_conn()
     try:
-        # Total: How many public videos fall within the "bound_days" window
+        # Total for `days`
         total_row = await conn.fetchrow(
             """
             SELECT COUNT(*) AS cnt
@@ -41,13 +40,13 @@ async def fetch_trending_page(limit: int, offset: int, days: int) -> Tuple[List[
             WHERE v.status = 'public'
               AND v.created_at > (now() - make_interval(days => $1::int))
             """,
-            bound_days,
+            days,
         )
         total = int(total_row["cnt"]) if total_row and "cnt" in total_row else 0
         if total == 0:
             return [], 0
 
-        # Main query: calculate age_sec, raw_pop and score with exponential decay.
+        # Main request: filter by `days` window, count age_sec and score with decay
         rows = await conn.fetch(
             """
             WITH base AS (
@@ -67,7 +66,7 @@ async def fetch_trending_page(limit: int, offset: int, days: int) -> Tuple[List[
               JOIN users u ON u.user_uid = v.author_uid
               LEFT JOIN categories c ON c.category_id = v.category_id
               WHERE v.status = 'public'
-                AND v.created_at > (now() - make_interval(days => $4::int))
+                AND v.created_at > (now() - make_interval(days => $3::int))
             )
             SELECT
               b.video_id,
@@ -115,7 +114,6 @@ async def fetch_trending_page(limit: int, offset: int, days: int) -> Tuple[List[
             limit,
             offset,
             days,
-            bound_days,
         )
     finally:
         await release_conn(conn)
