@@ -9,6 +9,12 @@ import urllib.request
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from services.search.settings_srch import settings
+from db.search_manticore_db import (
+    http_sql_select_raw,
+    http_sql_select,
+    http_sql_raw_post,
+    run_cli,
+)
 
 log = logging.getLogger(__name__)
 
@@ -27,26 +33,17 @@ def _esc_sql_str(val: str) -> str:
 
 
 def _http_sql_select_raw(sql: str) -> str:
-    base = f"http://{settings.MANTICORE_HOST}:{settings.MANTICORE_HTTP_PORT}/sql"
-    payload = {"query": sql}
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(base, data=data, headers={"Content-Type": "application/json"})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.read().decode("utf-8")
-    except Exception:
-        qs = urllib.parse.urlencode({"query": sql})
-        url = f"{base}?{qs}"
-        with urllib.request.urlopen(url, timeout=10) as resp2:
-            return resp2.read().decode("utf-8")
+    """
+    Delegates HTTP raw SQL to db.search_manticore_db.http_sql_select_raw.
+    """
+    return http_sql_select_raw(sql)
 
 
 def _http_sql_select(sql: str) -> Union[Dict[str, Any], List[Any]]:
-    raw = _http_sql_select_raw(sql)
-    try:
-        return json.loads(raw)
-    except Exception:
-        return {"error": "invalid json", "raw": raw[:500]}
+    """
+    Delegates HTTP SQL select to db.search_manticore_db.http_sql_select.
+    """
+    return http_sql_select(sql)
 
 
 def _extract_column_names(columns: Any) -> List[Optional[str]]:
@@ -126,54 +123,17 @@ def _normalize_rows(res: Union[Dict[str, Any], List[Any]]) -> List[Dict[str, Any
 
 
 def _http_sql_raw_post(sql: str) -> Tuple[bool, str]:
-    base = f"http://{settings.MANTICORE_HOST}:{settings.MANTICORE_HTTP_PORT}/sql"
-    form = urllib.parse.urlencode({"mode": "raw", "query": sql}).encode("utf-8")
-    req = urllib.request.Request(base, data=form, headers={"Content-Type": "application/x-www-form-urlencoded"})
-    try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
-            body = resp.read().decode("utf-8")
-            try:
-                obj = json.loads(body)
-                if isinstance(obj, dict) and obj.get("error"):
-                    err = str(obj.get("error"))
-                    log.error("Manticore raw-post error: %s", err)
-                    return False, err
-            except Exception:
-                pass
-            return True, ""
-    except urllib.error.HTTPError as e:
-        err_body = ""
-        try:
-            err_body = e.read().decode("utf-8", errors="replace")
-        except Exception:
-            pass
-        msg = f"HTTP {e.code}: {err_body.strip()}"
-        log.error("Manticore HTTPError during raw-post: %s", msg)
-        return False, msg
-    except Exception as e:
-        log.exception("Manticore raw-post failed: %s", e)
-        return False, repr(e)
-
-
-def _cli_available() -> Optional[str]:
-    explicit = os.getenv("MANTICORE_CLI_PATH")
-    if explicit and os.path.isfile(explicit):
-        return explicit
-    return shutil.which("mysql")
+    """
+    Delegates HTTP raw post to db.search_manticore_db.http_sql_raw_post.
+    """
+    return http_sql_raw_post(sql)
 
 
 def _run_cli(sql: str) -> Tuple[bool, str]:
-    mysql_bin = _cli_available()
-    if not mysql_bin:
-        return False, "mysql CLI not found (set MANTICORE_CLI_PATH or install mysql client)"
-    cmd = [mysql_bin, "-h", settings.MANTICORE_HOST, "-P", "9306", "-N", "-B", "-e", sql]
-    try:
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=20)
-        if res.returncode != 0:
-            return False, res.stderr.strip()
-        return True, ""
-    except Exception as e:
-        return False, repr(e)
+    """
+    Delegates CLI invocation to db.search_manticore_db.run_cli.
+    """
+    return run_cli(sql)
 
 
 def _run_select(sql: str) -> List[Dict[str, Any]]:
@@ -185,9 +145,7 @@ def _run_select(sql: str) -> List[Dict[str, Any]]:
 
 def _ru_variants(s: str) -> List[str]:
     """
-    Generate simple Russian variants to catch common spelling differences:
-    - 'ё' <-> 'е'
-    - 'эй' <-> 'ей'
+    Generate simple Russian variants to catch common spelling differences
     """
     out = {s}
     if "ё" in s:
@@ -204,7 +162,6 @@ def _ru_variants(s: str) -> List[str]:
 def _expand_query_terms(q: str) -> str:
     """
     Build boolean expression with OR-ed variants for each token.
-    Example: 'бэйс рок' -> '(бэйс | бейс) (рок)'
     """
     parts = [t for t in q.strip().split() if t]
     groups: List[str] = []
