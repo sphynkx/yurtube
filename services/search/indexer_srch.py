@@ -4,32 +4,18 @@ from typing import Any, Dict, Optional, Tuple
 
 from db import get_conn, release_conn
 from services.search.search_client_srch import get_backend
+from db.search_index_db import fetch_video_for_index
 
 log = logging.getLogger(__name__)
 
 
 async def _fetch_video(conn, video_id: str) -> Optional[Dict[str, Any]]:
-    row = await conn.fetchrow(
-        """
-        SELECT
-          v.video_id,
-          v.title,
-          v.description,
-          v.status,
-          v.created_at,
-          v.views_count,
-          v.likes_count,
-          u.username,
-          u.channel_id,
-          c.name AS category
-        FROM videos v
-        JOIN users u ON u.user_uid = v.author_uid
-        LEFT JOIN categories c ON c.category_id = v.category_id
-        WHERE v.video_id = $1
-        """,
-        video_id,
-    )
-    return dict(row) if row else None
+    """
+    Fetch video row for indexing.
+
+    NOTE: DB access is delegated to db.search_index_db.fetch_video_for_index.
+    """
+    return await fetch_video_for_index(conn, video_id)
 
 
 def _author_from_row(row: Dict[str, Any]) -> str:
