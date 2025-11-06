@@ -17,6 +17,7 @@ from db.subscriptions_db import (
 from db.videos_db import (
     list_author_public_videos,
 )
+from db.users_db import get_user_by_name_or_channel as db_get_user_by_name_or_channel
 from utils.format_ut import fmt_dt
 from utils.security_ut import get_current_user
 from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
@@ -61,20 +62,10 @@ async def _get_user_by_name_or_channel(conn, name_or_channel: str) -> Optional[D
     """
     Fetch channel owner by @username or channel_id.
     Includes avatar asset path when present.
+
+    NOTE: DB access is delegated to db.users_db.get_user_by_name_or_channel.
     """
-    row = await conn.fetchrow(
-        """
-        SELECT u.user_uid, u.username, u.channel_id, u.created_at,
-               ua.path AS avatar_asset_path
-        FROM users u
-        LEFT JOIN user_assets ua
-          ON ua.user_uid = u.user_uid AND ua.asset_type = 'avatar'
-        WHERE lower(u.username) = lower($1) OR u.channel_id = $1
-        LIMIT 1
-        """,
-        name_or_channel,
-    )
-    return dict(row) if row else None
+    return await db_get_user_by_name_or_channel(conn, name_or_channel)
 
 
 async def _render_channel(request: Request, owner: Optional[Dict[str, Any]]) -> HTMLResponse:

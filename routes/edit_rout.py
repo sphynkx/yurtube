@@ -12,6 +12,13 @@ from config.config import settings
 from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset
 from db.categories_db import list_categories
+from db.video_renditions_db import list_video_renditions as db_list_renditions, enqueue_video_renditions
+from db.videos_query_db import (
+    get_owned_video_full as db_get_owned_video_full,
+    update_video_meta as db_update_video_meta,
+    update_thumb_pref_offset as db_update_thumb_pref_offset,
+    set_video_embed_params as db_set_video_embed_params,
+)
 from services.ffmpeg_srv import (
     async_generate_thumbnails,
     async_generate_animated_preview,
@@ -37,37 +44,21 @@ def _bool_from_form(val: Optional[str]) -> bool:
 
 
 async def _fetch_owned_video_full(conn, video_id: str, owner_uid: str) -> Optional[Dict[str, Any]]:
-    row = await conn.fetchrow(
-        """
-        SELECT v.*,
-               u.username, u.channel_id,
-               ua.path AS avatar_asset_path,
-               a.path AS thumb_asset_path
-        FROM videos v
-        JOIN users u ON u.user_uid = v.author_uid
-        LEFT JOIN user_assets ua
-          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
-        LEFT JOIN video_assets a
-          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
-        WHERE v.video_id = $1 AND v.author_uid = $2
-        """,
-        video_id,
-        owner_uid,
-    )
-    return dict(row) if row else None
+    """
+    Fetch owned video with related assets for edit pages.
+
+    NOTE: DB access is delegated to db.videos_query_db.get_owned_video_full.
+    """
+    return await db_get_owned_video_full(conn, video_id, owner_uid)
 
 
 async def _list_renditions(conn, video_id: str) -> List[Dict[str, Any]]:
-    rows = await conn.fetch(
-        """
-        SELECT preset, codec, status, storage_path, updated_at, error_message
-        FROM video_renditions
-        WHERE video_id = $1
-        ORDER BY preset, codec
-        """,
-        video_id,
-    )
-    return [dict(r) for r in rows]
+    """
+    List renditions for a video (status, codec, preset, etc).
+
+    NOTE: DB access is delegated to db.video_renditions_db.list_video_renditions.
+    """
+    return await db_list_renditions(conn, video_id)
 
 
 @router.get("/edit/{video_id}", response_class=HTMLResponse)
@@ -179,28 +170,17 @@ async def edit_meta(
         b_kids = _bool_from_form(is_made_for_kids)
         b_comments = _bool_from_form(allow_comments)
 
-        await conn.execute(
-            """
-            UPDATE videos
-            SET title = $2,
-                description = $3,
-                status = $4,
-                category_id = $5,
-                is_age_restricted = $6,
-                is_made_for_kids = $7,
-                allow_comments = $8,
-                license = $9
-            WHERE video_id = $1
-            """,
+        await db_update_video_meta(
+            conn,
             video_id,
-            new_title,
-            new_desc,
-            status,
-            (category_id or None),
-            b_age,
-            b_kids,
-            b_comments,
-            (license or "standard").strip(),
+            title=new_title,
+            description=new_desc,
+            status=status,
+            category_id=category_id,
+            is_age_restricted=b_age,
+            is_made_for_kids=b_kids,
+            allow_comments=b_comments,
+            license_str=(license or "standard"),
         )
     finally:
         await release_conn(conn)
@@ -260,11 +240,7 @@ async def regen_thumbs(
                 rel_anim = os.path.relpath(anim_path, settings.STORAGE_ROOT)
                 await upsert_video_asset(conn, video_id, "thumbnail_anim", rel_anim)
 
-        await conn.execute(
-            "UPDATE videos SET thumb_pref_offset = $2 WHERE video_id = $1",
-            video_id,
-            max(0, int(offset_sec)),
-        )
+        await db_update_thumb_pref_offset(conn, video_id, max(0, int(offset_sec)))
     finally:
         await release_conn(conn)
 
@@ -373,18 +349,7 @@ async def set_renditions(
         owned = await _fetch_owned_video_full(conn, video_id, user["user_uid"])
         if not owned:
             raise HTTPException(status_code=404, detail="Video not found")
-        for p in plist:
-            await conn.execute(
-                """
-                INSERT INTO video_renditions (video_id, preset, codec, status)
-                VALUES ($1, $2, $3, 'queued')
-                ON CONFLICT (video_id, preset, codec)
-                DO UPDATE SET status = 'queued', updated_at = now(), error_message = NULL
-                """,
-                video_id,
-                p,
-                (codec or "vp9").strip(),
-            )
+        await enqueue_video_renditions(conn, video_id, plist, (codec or "vp9"))
     finally:
         await release_conn(conn)
 
@@ -419,17 +384,7 @@ async def set_embed(
         if not owned:
             raise HTTPException(status_code=404, detail="Video not found")
 
-        await conn.execute(
-            """
-            UPDATE videos
-            SET allow_embed = $2,
-                embed_params = $3::jsonb
-            WHERE video_id = $1
-            """,
-            video_id,
-            allow,
-            json.dumps(params),
-        )
+        await db_set_video_embed_params(conn, video_id, allow, json.dumps(params))
     finally:
         await release_conn(conn)
 
