@@ -10,22 +10,34 @@
   <link rel="stylesheet" href="/static/players/{{ player_name }}/css/embed.css">
   <style>
     html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+    .fallback-wrap { height: 100%; width: 100%; display: grid; place-items: center; background: #000; }
+    .fallback-wrap img { max-width: 100%; max-height: 100%; height: auto; width: auto; display: block; }
   </style>
 </head>
 <body class="is-embed">
-  <div class="embed-root">
-    <div class="player-wrapper">
-      <div class="player-host"
-           data-player="{{ player_name }}"
-           data-video-src="/storage/{{ video['storage_path'] }}/original.webm"
-           {% if poster_url %} data-poster-url="{{ poster_url }}" {% endif %}
-           data-video-id="{{ video['video_id'] }}"
-           data-subtitles='{{ subtitles|tojson }}'
-           data-options='{{ player_options|tojson }}'>
+  {% set _not_found = not_found|default(false) %}
+  {% set _fallback_img = fallback_image_url|default("/static/img/fallback_video_notfound.gif") %}
+
+  {% if _not_found %}
+    <div class="fallback-wrap">
+      <img src="{{ _fallback_img }}" alt="Video not found">
+    </div>
+  {% else %}
+    <div class="embed-root">
+      <div class="player-wrapper">
+        <div class="player-host"
+             data-player="{{ player_name }}"
+             data-video-src="{{ video_src }}"
+             {% if poster_url %} data-poster-url="{{ poster_url }}" {% endif %}
+             data-video-id="{{ video_id }}"
+             data-subtitles='{{ subtitles|tojson }}'
+             data-options='{{ player_options|tojson }}'>
+        </div>
       </div>
     </div>
-  </div>
-  <script type="module" src="/static/players/{{ player_name }}/js/embed.js"></script>
+    <script type="module" src="/static/players/{{ player_name }}/js/embed.js"></script>
+  {% endif %}
+
   <noscript>
     <div class="nojs">JavaScript is required to play this video.</div>
   </noscript>

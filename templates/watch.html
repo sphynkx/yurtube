@@ -3,60 +3,74 @@
 
 {% block content %}
 
+{% set _not_found = not_found|default(false) %}
+{% set _fallback_img = fallback_image_url|default("/static/img/fallback_video_notfound.gif") %}
+
 <div class="player-wrapper">
-  {{ pm.render_player(
-       player_name=player_name,
-       video_src=video_src,
-       poster_url=poster_url,
-       video_id=video['video_id'],
-       subtitles=subtitles,
-       options=player_options
-     ) }}
+  {% if _not_found %}
+    <div class="player-fallback" style="width:min(95vw,560px);">
+      <img src="{{ _fallback_img }}" alt="Video not found"
+           style="display:block;width:100%;height:auto;background:#000;">
+    </div>
+  {% else %}
+    {{ pm.render_player(
+         player_name=player_name,
+         video_src=video_src,
+         poster_url=poster_url,
+         video_id=video['video_id'],
+         subtitles=subtitles,
+         options=player_options
+       ) }}
+  {% endif %}
 </div>
 
-<h2 class="watch-title">{{ video['title'] }}</h2>
+{% if video %}
+  <h2 class="watch-title">{{ video['title'] }}</h2>
 
-<div class="video-info">
-  <div class="watch-meta" style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
-    <!-- Line 1: avatar + author (link to channel if available) -->
-    <div class="author-line" style="display:inline-flex;align-items:center;gap:8px;">
-      {% if avatar_url %}
-        <img class="mini-avatar" src="{{ avatar_url }}" alt="avatar">
-      {% endif %}
-      {% if video.channel_id %}
-        <a class="author-name" href="/channel/{{ video.channel_id }}">{{ (video.username or video.channel_id) or "" }}</a>
-      {% elif video.username %}
-        <a class="author-name" href="/user/{{ video.username }}">{{ video.username }}</a>
-      {% else %}
-        <span class="author-name">{{ (video.username or video.channel_id) or "" }}</span>
-      {% endif %}
-    </div>
-
-    <!-- Line 2: date -->
-    <div class="watch-date">
-      {% if video.created_at %}
-        {% if video.created_at.__class__.__name__ == 'datetime' %}
-          {{ video.created_at.strftime("%Y-%m-%d") }}
-        {% else %}
-          {{ video.created_at }}
+  <div class="video-info">
+    <div class="watch-meta" style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
+      <!-- Line 1: avatar + author (link to channel if available) -->
+      <div class="author-line" style="display:inline-flex;align-items:center;gap:8px;">
+        {% if avatar_url %}
+          <img class="mini-avatar" src="{{ avatar_url }}" alt="avatar">
         {% endif %}
-      {% endif %}
-    </div>
+        {% if video.channel_id %}
+          <a class="author-name" href="/channel/{{ video.channel_id }}">{{ (video.username or video.channel_id) or "" }}</a>
+        {% elif video.username %}
+          <a class="author-name" href="/user/{{ video.username }}">{{ video.username }}</a>
+        {% else %}
+          <span class="author-name">{{ (video.username or video.channel_id) or "" }}</span>
+        {% endif %}
+      </div>
 
-    <!-- Line 3: views (+likes and category if present) -->
-    <div class="watch-stats" style="display:inline-flex;align-items:center;gap:10px;">
-      <span class="views">{{ video.views_count or 0 }} views</span>
-      {% if video.likes_count %}
-        <span class="likes">{{ video.likes_count }} likes</span>
-      {% endif %}
-      {% if video.category %}
-        <span class="category">in {{ video.category }}</span>
-      {% endif %}
+      <!-- Line 2: date -->
+      <div class="watch-date">
+        {% if video.created_at %}
+          {% if video.created_at.__class__.__name__ == 'datetime' %}
+            {{ video.created_at.strftime("%Y-%m-%d") }}
+          {% else %}
+            {{ video.created_at }}
+          {% endif %}
+        {% endif %}
+      </div>
+
+      <!-- Line 3: views (+likes and category if present) -->
+      <div class="watch-stats" style="display:inline-flex;align-items:center;gap:10px;">
+        <span class="views">{{ video.views_count or 0 }} views</span>
+        {% if video.likes_count %}
+          <span class="likes">{{ video.likes_count }} likes</span>
+        {% endif %}
+        {% if video.category %}
+          <span class="category">in {{ video.category }}</span>
+        {% endif %}
+      </div>
     </div>
   </div>
-</div>
 
-<p>{{ video['description'] }}</p>
+  <p>{{ video['description'] }}</p>
+{% else %}
+  <h2 class="watch-title">Video not found</h2>
+{% endif %}
 
 {% if allow_embed %}
   <details class="embed-box" style="margin-top:10px;">

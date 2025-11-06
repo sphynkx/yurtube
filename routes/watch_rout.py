@@ -20,6 +20,8 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
 
+FALLBACK_IMAGE = "/static/img/fallback_video_notfound.gif"
+
 
 def _avatar_small_url(avatar_path: Optional[str]) -> str:
     if not avatar_path:
@@ -145,11 +147,46 @@ async def watch_page(request: Request, v: str) -> Any:
             v,
         )
         if not row:
-            raise HTTPException(status_code=404, detail="Video not found")
+            # Video not found: render page with dummy-pict
+            video: Optional[Dict[str, Any]] = None
+            poster_url = None
+            thumb_anim_url = None
+            avatar_url = None
+            allow_embed = False
+            subtitles: List[Dict[str, Any]] = []
+            player_options: Dict[str, Any] = {
+                "autoplay": False,
+                "muted": False,
+                "loop": False,
+                "start": 0,
+            }
+            embed_url = f"{_base_url(request)}/embed?v={v}"
+
+            return templates.TemplateResponse(
+                "watch.html",
+                {
+                    "request": request,
+                    "current_user": user,
+                    "video": video,
+                    "video_id": v,  # optionally could show id
+                    "player_name": settings.VIDEO_PLAYER,
+                    "video_src": None,  # dont transmit video to permit mount video-player!!
+                    "poster_url": poster_url,
+                    "thumb_anim_url": thumb_anim_url,
+                    "avatar_url": avatar_url,
+                    "allow_embed": allow_embed,
+                    "embed_url": embed_url,
+                    "subtitles": subtitles,
+                    "player_options": player_options,
+                    "not_found": True,
+                    "fallback_image_url": FALLBACK_IMAGE,
+                },
+                headers={"Cache-Control": "no-store"},
+            )
 
         video: Dict[str, Any] = dict(row)
 
-        # Record view and increment counters
+        # Taking view
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
@@ -214,9 +251,35 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
             v,
         )
         if not row:
-            raise HTTPException(status_code=404, detail="Video not found")
+            # Video not found: render embed iframe with dummy-pict
+            video: Optional[Dict[str, Any]] = None
+            poster_url = None
+            subtitles: List[Dict[str, Any]] = []
+            player_options: Dict[str, Any] = {
+                "autoplay": bool(autoplay),
+                "muted": bool(muted),
+                "loop": bool(loop),
+                "start": max(0, int(t or 0)),
+            }
 
-        # Count embed views as well!!
+            return templates.TemplateResponse(
+                "embed.html",
+                {
+                    "request": request,
+                    "video": video,
+                    "player_name": settings.VIDEO_PLAYER,
+                    "video_src": None,   # dont mount player
+                    "poster_url": poster_url,
+                    "video_id": v,
+                    "subtitles": subtitles,
+                    "player_options": player_options,
+                    "not_found": True,
+                    "fallback_image_url": FALLBACK_IMAGE,
+                },
+                headers={"Cache-Control": "no-store"},
+            )
+
+        # Taking view for embed
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)

@@ -5,19 +5,16 @@
     try { return JSON.parse(s); } catch (e) { return fallback; }
   }
   function detectPlayerName() {
-    // 1) ESM: import.meta.url
     try {
       var u = new URL(import.meta.url);
       var m = u.pathname.match(/\/static\/players\/([^\/]+)\//);
       if (m) return m[1];
     } catch (e) {}
-    // 2) classic: currentScript
     try {
       var s = (document.currentScript && document.currentScript.src) || "";
       var m2 = s.match(/\/static\/players\/([^\/]+)\//);
       if (m2) return m2[1];
     } catch (e2) {}
-    // 3) from DOM host
     try {
       var host = document.querySelector('.player-host[data-player]');
       if (host) {
@@ -25,7 +22,6 @@
         if (pn) return pn;
       }
     } catch (e3) {}
-    // 4) fallback
     return "yurtube";
   }
   function tryPlay(video, onDebug) {
@@ -42,7 +38,6 @@
          }
        });
     } else {
-      // no promise path: retry muted next tick
       setTimeout(function(){
         if (video.paused) {
           video.muted = true;
@@ -51,6 +46,39 @@
         }
       }, 0);
     }
+  }
+  // Fallback media
+  var FALLBACK_SRC = "/static/img/fallback_video_notfound.gif";
+  function installFallbackGuards(video, sourceEl, onDebug) {
+    var applied = false;
+    var watchdog = null;
+    function applyFallback(reason){
+      if (applied) return;
+      applied = true;
+      onDebug && onDebug("fallback: applying", reason);
+      try {
+        if (sourceEl) sourceEl.setAttribute("src", FALLBACK_SRC);
+        else video.src = FALLBACK_SRC;
+        video.load();
+      } catch(e) {}
+    }
+    function clearWatchdog(){ if (watchdog) { clearTimeout(watchdog); watchdog = null; } }
+    video.addEventListener("loadstart", function(){
+      clearWatchdog();
+      watchdog = setTimeout(function(){
+        if (!applied && video.readyState < 1) applyFallback("watchdog-timeout");
+      }, 4000);
+    });
+    ["loadeddata","canplay","canplaythrough","play","playing"].forEach(function(ev){
+      video.addEventListener(ev, clearWatchdog);
+    });
+    video.addEventListener("error", function(){
+      if (!applied) applyFallback("error-event");
+    });
+    setTimeout(function(){
+      var src = sourceEl ? (sourceEl.getAttribute("src")||"") : (video.currentSrc||video.src||"");
+      if (!applied && !src) applyFallback("empty-src");
+    }, 0);
   }
 
   function mountOne(host, tpl, PLAYER_BASE) {
@@ -70,18 +98,15 @@
     var DEBUG = /\byrpdebug=1\b/i.test(location.search) || !!(opts && opts.debug);
     function d(){ if (!DEBUG) return; try { console.debug.apply(console, ["[STD]"].concat([].slice.call(arguments))); } catch(_){} }
 
-    // dynamic logo
     if (centerLogo) centerLogo.setAttribute("src", PLAYER_BASE + "/img/logo.png");
 
-    // wire attributes
     if (source) source.setAttribute("src", src);
     if (poster) video.setAttribute("poster", poster);
     if (opts && opts.muted) video.setAttribute("muted", "");
     if (opts && opts.loop) video.setAttribute("loop", "");
     video.setAttribute("playsinline", "");
-    video.setAttribute("controls", ""); // native controls
+    video.setAttribute("controls", "");
 
-    // subtitles (tracks)
     if (Array.isArray(subs)) {
       subs.forEach(function (t) {
         if (!t || !t.src) return;
@@ -95,23 +120,22 @@
       });
     }
 
-    // ensure loading starts
     try { video.load(); d("video.load() called", { src: src }); } catch (e) { d("video.load() error", e); }
 
-    // toggle overlay by state
+    // fallback handlers
+    installFallbackGuards(video, source, d);
+
     function syncPlayingClass() {
       if (video.paused) root.classList.remove("playing");
       else root.classList.add("playing");
     }
 
-    // basic events + state sync
     ["loadedmetadata","loadeddata","canplay","canplaythrough","play","playing","pause","stalled","suspend","waiting","error","abort","emptied"].forEach(function(ev){
       video.addEventListener(ev, function(){ d("event", ev, { rs: video.readyState, paused: video.paused, muted: video.muted }); });
     });
     video.addEventListener("play", syncPlayingClass);
     video.addEventListener("pause", syncPlayingClass);
 
-    // guarded toggle to avoid double-trigger (debounce)
     var toggleLock = false;
     function safeToggle() {
       if (toggleLock) return;
@@ -120,22 +144,18 @@
       if (video.paused) { tryPlay(video, d); } else { video.pause(); }
     }
 
-    // center button controls playback
     if (centerBtn) {
-      centerBtn.addEventListener("click", function(){
-        safeToggle();
-      });
+      centerBtn.addEventListener("click", function(){ safeToggle(); });
     }
 
-    // minimal hotkeys (no Space/Enter to avoid native conflicts)
+    // Do not add click toggle to <video> (native controls already handle it)
+
     function onKey(e){
-      var t = e.target;
-      var tag = t && t.tagName ? t.tagName.toUpperCase() : "";
+      var t = e.target; var tag = t && t.tagName ? t.tagName.toUpperCase() : "";
       if (t && (t.isContentEditable || tag === "INPUT" || tag === "TEXTAREA")) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       var k = (e.key || "").toLowerCase();
       var code = e.code || "";
-
       if (k === "j" || code === "ArrowLeft") {
         e.preventDefault();
         video.currentTime = Math.max(0, (video.currentTime || 0) - 5);
@@ -144,18 +164,15 @@
         var dUR = isFinite(video.duration) ? video.duration : 1e9;
         video.currentTime = Math.min((video.currentTime || 0) + 5, dUR);
       } else if (k === "m") {
-        e.preventDefault();
-        video.muted = !video.muted;
+        e.preventDefault(); video.muted = !video.muted;
       } else if (k === "f") {
         e.preventDefault();
         if (document.fullscreenElement) document.exitFullscreen().catch(function(){});
         else root.requestFullscreen && root.requestFullscreen().catch(function(){});
       }
-      // Space/Enter intentionally not handled: let native controls decide.
     }
     document.addEventListener("keydown", onKey);
 
-    // simple autoplay: only if opts.autoplay === true
     (function(){
       var want = !!(opts && opts.autoplay === true);
       d("autoplay check", { WANT: want, opt: opts });
@@ -167,7 +184,6 @@
       setTimeout(function(){ if (video.paused) attempt("watchdog"); }, 1200);
     })();
 
-    // start offset if provided
     (function(){
       var start = 0;
       if (opts && typeof opts.start === "number" && opts.start > 0) start = Math.max(0, opts.start);
@@ -177,7 +193,6 @@
       else video.addEventListener("loadedmetadata", function once(){ video.removeEventListener("loadedmetadata", once); apply(); });
     })();
 
-    // initial sync
     syncPlayingClass();
   }
 
