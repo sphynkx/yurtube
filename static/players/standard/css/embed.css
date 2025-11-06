@@ -1,4 +1,4 @@
-/* Minimal embed styling (native controls, full-bleed container) */
+/* Minimal embed styling */
 
 .yrp-container {
   --yrp-played: #ff3333;
@@ -14,15 +14,18 @@
   outline: none;
 }
 
-.yrp-video-wrap,
-.yrp-video {
+.yrp-video-wrap {
+  position: relative;
   width: 100%;
   height: 100%;
 }
 
 .yrp-video {
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   background: #000;
+  display: block;
 }
 
 .yrp-center-play {

@@ -33,8 +33,8 @@
       }, 0);
     }
   }
-  // Fallback media
-  var FALLBACK_SRC = "/static/img/fallback_video_notfound.webm";
+  // Fallback media (GIF)
+  var FALLBACK_SRC = "/static/img/fallback_video_notfound.gif";
   function installFallbackGuards(video, sourceEl, onDebug) {
     var applied = false;
     var watchdog = null;
@@ -71,6 +71,7 @@
     host.innerHTML = tpl;
 
     var root = host.querySelector(".yrp-container");
+    var wrap = root.querySelector(".yrp-video-wrap");
     var video = root.querySelector(".yrp-video");
     var source = video.querySelector("source");
     var centerBtn = root.querySelector(".yrp-center-play");
@@ -121,6 +122,22 @@
     });
     video.addEventListener("play", syncPlayingClass);
     video.addEventListener("pause", syncPlayingClass);
+
+    function layoutFillViewport(){
+      try {
+        var H = window.innerHeight || document.documentElement.clientHeight || root.clientHeight || 0;
+        if (H <= 0) return;
+        wrap.style.height = H + "px";
+        video.style.height = "100%";
+        video.style.width = "100%";
+        video.style.objectFit = "contain";
+      } catch(_){}
+    }
+    window.addEventListener("resize", layoutFillViewport);
+    window.addEventListener("orientationchange", layoutFillViewport);
+    layoutFillViewport();
+    setTimeout(layoutFillViewport, 0);
+    setTimeout(layoutFillViewport, 100);
 
     var toggleLock=false;
     function safeToggle(){
