@@ -1,8 +1,14 @@
-<!-- ASCII ONLY -->
-<div class="stdp-container">
-  <video class="stdp-video" preload="metadata" controls>
-    <source>
-    <!-- Tracks will be injected by JS if provided -->
-    Your browser does not support the video tag.
-  </video>
+<div class="yrp-container" data-yrp="1" tabindex="0">
+  <div class="yrp-video-wrap">
+    <video class="yrp-video" preload="metadata" playsinline controls>
+      <source>
+      Your browser does not support the video tag.
+    </video>
+
+    <button class="yrp-center-play" aria-label="Play/Pause" title="Play/Pause">
+      <img class="yrp-center-logo"
+           onerror="this.onerror=null;this.src='/static/img/fallback_player_logo.svg';"
+           alt="Play">
+    </button>
+  </div>
 </div>

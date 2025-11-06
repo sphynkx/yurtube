@@ -1,30 +1,27 @@
-/* Minimal standard player styling */
+/* Minimal embed styling (native controls, full-bleed container) */
 
 .yrp-container {
   --yrp-played: #ff3333;
   --yrp-icon-color: #f0f0f0;
   --yrp-knob-color: #ffffff;
-  --yrp-max-width: 860px;
 
   position: relative;
   display: block;
-  width: min(95vw, var(--yrp-max-width));
-  max-width: 100%;
-  margin: 0 auto;
-  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
   background: #000;
   color: #fff;
   outline: none;
 }
 
-.yrp-video-wrap {
-  position: relative;
+.yrp-video-wrap,
+.yrp-video {
+  width: 100%;
+  height: 100%;
 }
 
 .yrp-video {
-  display: block;
-  width: 100%;
-  height: auto;
+  object-fit: contain;
   background: #000;
 }
 
@@ -32,8 +29,8 @@
   position: absolute;
   inset: 0;
   margin: auto;
-  width: 120px;
-  height: 120px;
+  width: 96px;
+  height: 96px;
   display: grid;
   place-items: center;
   background: transparent;
@@ -44,14 +41,12 @@
 }
 
 .yrp-center-logo {
-  display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
   pointer-events: none;
 }
 
-/* Hide center logo while playing to avoid overlay */
 .yrp-container.playing .yrp-center-play {
   opacity: 0;
   pointer-events: none;
