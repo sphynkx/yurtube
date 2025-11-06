@@ -1,11 +1,12 @@
 from typing import Any
 
+import asyncpg
 from fastapi import APIRouter, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from db import get_conn, release_conn
-from db.users_db import authenticate_user, create_user, get_user_by_username
+from db.users_db import authenticate_user, create_user, get_user_by_username, get_user_by_email
 from utils.idgen_ut import gen_id
 from utils.security_ut import (
     clear_session_cookie,
@@ -70,28 +71,60 @@ async def register(
 ) -> Any:
     conn = await get_conn()
     try:
-        existing = await get_user_by_username(conn, username)
-        if existing:
+        # Check username uniqueness
+        existing_user = await get_user_by_username(conn, username)
+        if existing_user:
             return templates.TemplateResponse(
                 "auth/register.html",
                 {
                     "request": request,
                     "current_user": None,
                     "error": "Username already taken",
+                    # Preserve user input so it does not need to be retyped
+                    "form": {"username": username, "email": email},
+                },
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Check email uniqueness (case-insensitive)
+        existing_email = await get_user_by_email(conn, email)
+        if existing_email:
+            return templates.TemplateResponse(
+                "auth/register.html",
+                {
+                    "request": request,
+                    "current_user": None,
+                    "error": "Email is already registered",
+                    # Preserve user input so it does not need to be retyped
+                    "form": {"username": username, "email": email},
                 },
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
         user_uid = gen_id(20)
         channel_id = gen_id(24)
-        await create_user(
-            conn=conn,
-            user_uid=user_uid,
-            channel_id=channel_id,
-            username=username,
-            email=email,
-            password_hash=hash_password(password),
-        )
+        try:
+            await create_user(
+                conn=conn,
+                user_uid=user_uid,
+                channel_id=channel_id,
+                username=username,
+                email=email,
+                password_hash=hash_password(password),
+            )
+        except asyncpg.UniqueViolationError:
+            # Race-condition fallback: surface a friendly message instead of 500
+            return templates.TemplateResponse(
+                "auth/register.html",
+                {
+                    "request": request,
+                    "current_user": None,
+                    "error": "Username or email is already registered",
+                    # Preserve user input so it does not need to be retyped
+                    "form": {"username": username, "email": email},
+                },
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
     finally:
         await release_conn(conn)
 

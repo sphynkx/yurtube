@@ -12,13 +12,11 @@ from db import get_conn, release_conn
 from db.assets_db import get_thumbnail_asset_path
 from db.views_db import add_view, increment_video_views_counter
 from db.videos_db import get_video
+from db.videos_query_db import fetch_watch_video_full, fetch_embed_video_info
+from services.feed.recommend_srv import fetch_rightbar_for_video  # right-bar recommendations
 from utils.format_ut import fmt_dt
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
-from db.videos_query_db import (  # moved heavy selects into db utility
-    fetch_watch_video_full,
-    fetch_embed_video_info,
-)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -109,7 +107,6 @@ async def watch_page(request: Request, v: str) -> Any:
     user = get_current_user(request)
     conn = await get_conn()
     try:
-        # replaced inline SQL with db utility call
         row = await fetch_watch_video_full(conn, v)
 
         if not row:
@@ -176,6 +173,16 @@ async def watch_page(request: Request, v: str) -> Any:
         allow_embed = bool(video.get("allow_embed"))
         embed_url = f"{_base_url(request)}/embed?v={video['video_id']}"
 
+        # Right-bar recommendations: fetch after video is known
+        recommended_videos: List[Dict[str, Any]] = []
+        try:
+            if getattr(settings, "RIGHTBAR_ENABLED", True):
+                limit = int(getattr(settings, "RIGHTBAR_LIMIT", 12) or 12)
+                recommended_videos = await fetch_rightbar_for_video(video["video_id"], user_uid, limit=limit)
+        except Exception:
+            # Do not break the watch page if recommend service fails
+            recommended_videos = []
+
         return templates.TemplateResponse(
             "watch.html",
             {
@@ -191,6 +198,7 @@ async def watch_page(request: Request, v: str) -> Any:
                 "embed_url": embed_url,
                 "subtitles": subtitles,
                 "player_options": player_options,
+                "recommended_videos": recommended_videos,
             },
             headers={"Cache-Control": "no-store"},
         )
@@ -203,7 +211,6 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
     user = get_current_user(request)
     conn = await get_conn()
     try:
-        # replaced inline SQL with db utility call
         row = await fetch_embed_video_info(conn, v)
 
         if not row:

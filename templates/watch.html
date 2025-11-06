@@ -6,98 +6,153 @@
 {% set _not_found = not_found|default(false) %}
 {% set _fallback_img = fallback_image_url|default("/static/img/fallback_video_notfound.gif") %}
 
-<div class="player-wrapper">
-  {% if _not_found %}
-    <div class="player-fallback" style="width:min(95vw,560px);">
-      <img src="{{ _fallback_img }}" alt="Video not found"
-           style="display:block;width:100%;height:auto;background:#000;">
+{# Two-column layout when recommendations are present #}
+{% set _has_right = (recommended_videos is defined) and (recommended_videos|length > 0) and (not _not_found) %}
+
+<div class="watch-layout" style="
+  display: grid;
+  grid-template-columns: {% if _has_right %} minmax(0, 1fr) 360px {% else %} 1fr {% endif %};
+  gap: 16px;
+  align-items: start;
+">
+
+  <div class="watch-main">
+
+    <div class="player-wrapper">
+      {% if _not_found %}
+        <div class="player-fallback" style="width:min(95vw,560px);">
+          <img src="{{ _fallback_img }}" alt="Video not found"
+               style="display:block;width:100%;height:auto;background:#000;">
+        </div>
+      {% else %}
+        {{ pm.render_player(
+             player_name=player_name,
+             video_src=video_src,
+             poster_url=poster_url,
+             video_id=video['video_id'],
+             subtitles=subtitles,
+             options=player_options
+           ) }}
+      {% endif %}
     </div>
-  {% else %}
-    {{ pm.render_player(
-         player_name=player_name,
-         video_src=video_src,
-         poster_url=poster_url,
-         video_id=video['video_id'],
-         subtitles=subtitles,
-         options=player_options
-       ) }}
-  {% endif %}
-</div>
 
-{% if video %}
-  <h2 class="watch-title">{{ video['title'] }}</h2>
+    {% if video %}
+      <h2 class="watch-title">{{ video['title'] }}</h2>
 
-  <div class="video-info">
-    <div class="watch-meta" style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
-      <!-- Line 1: avatar + author (link to channel if available) -->
-      <div class="author-line" style="display:inline-flex;align-items:center;gap:8px;">
-        {% if avatar_url %}
-          <img class="mini-avatar" src="{{ avatar_url }}" alt="avatar">
-        {% endif %}
-        {% if video.channel_id %}
-          <a class="author-name" href="/channel/{{ video.channel_id }}">{{ (video.username or video.channel_id) or "" }}</a>
-        {% elif video.username %}
-          <a class="author-name" href="/user/{{ video.username }}">{{ video.username }}</a>
-        {% else %}
-          <span class="author-name">{{ (video.username or video.channel_id) or "" }}</span>
-        {% endif %}
+      <div class="video-info">
+        <div class="watch-meta" style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
+          <!-- Line 1: avatar + author (link to channel if available) -->
+          <div class="author-line" style="display:inline-flex;align-items:center;gap:8px;">
+            {% if avatar_url %}
+              <img class="mini-avatar" src="{{ avatar_url }}" alt="avatar">
+            {% endif %}
+            {% if video.channel_id %}
+              <a class="author-name" href="/channel/{{ video.channel_id }}">{{ (video.username or video.channel_id) or "" }}</a>
+            {% elif video.username %}
+              <a class="author-name" href="/user/{{ video.username }}">{{ video.username }}</a>
+            {% else %}
+              <span class="author-name">{{ (video.username or video.channel_id) or "" }}</span>
+            {% endif %}
+          </div>
+
+          <!-- Line 2: date -->
+          <div class="watch-date">
+            {% if video.created_at %}
+              {% if video.created_at.__class__.__name__ == 'datetime' %}
+                {{ video.created_at.strftime("%Y-%m-%d") }}
+              {% else %}
+                {{ video.created_at }}
+              {% endif %}
+            {% endif %}
+          </div>
+
+          <!-- Line 3: views (+likes and category if present) -->
+          <div class="watch-stats" style="display:inline-flex;align-items:center;gap:10px;">
+            <span class="views">{{ video.views_count or 0 }} views</span>
+            {% if video.likes_count %}
+              <span class="likes">{{ video.likes_count }} likes</span>
+            {% endif %}
+            {% if video.category %}
+              <span class="category">in {{ video.category }}</span>
+            {% endif %}
+          </div>
+        </div>
       </div>
 
-      <!-- Line 2: date -->
-      <div class="watch-date">
-        {% if video.created_at %}
-          {% if video.created_at.__class__.__name__ == 'datetime' %}
-            {{ video.created_at.strftime("%Y-%m-%d") }}
-          {% else %}
-            {{ video.created_at }}
-          {% endif %}
-        {% endif %}
-      </div>
+      <p>{{ video['description'] }}</p>
+    {% else %}
+      <h2 class="watch-title">Video not found</h2>
+    {% endif %}
 
-      <!-- Line 3: views (+likes and category if present) -->
-      <div class="watch-stats" style="display:inline-flex;align-items:center;gap:10px;">
-        <span class="views">{{ video.views_count or 0 }} views</span>
-        {% if video.likes_count %}
-          <span class="likes">{{ video.likes_count }} likes</span>
-        {% endif %}
-        {% if video.category %}
-          <span class="category">in {{ video.category }}</span>
-        {% endif %}
-      </div>
-    </div>
+    {% if allow_embed %}
+      <details class="embed-box" style="margin-top:10px;">
+        <summary>Embed</summary>
+        <div style="margin-top:8px;">
+          <label for="embed-code">Iframe:</label>
+          <textarea id="embed-code" class="embed-code" readonly rows="3" style="width:100%;font-family:monospace;">&lt;iframe width="560" height="315" src="{{ embed_url }}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen&gt;&lt;/iframe&gt;</textarea>
+          <button type="button" class="btn-copy-embed" style="margin-top:6px;">Copy</button>
+        </div>
+      </details>
+      <script>
+      (function(){
+        var box=document.querySelector(".embed-box");
+        if(!box) return;
+        var btn=box.querySelector(".btn-copy-embed");
+        var ta=box.querySelector(".embed-code");
+        if(btn && ta){
+          btn.addEventListener("click",function(){
+            try{
+              ta.select();
+              document.execCommand("copy");
+            }catch(e){}
+            ta.blur();
+          });
+        }
+      })();
+      </script>
+    {% endif %}
   </div>
 
-  <p>{{ video['description'] }}</p>
-{% else %}
-  <h2 class="watch-title">Video not found</h2>
-{% endif %}
+  {% if _has_right %}
+  <aside class="watch-right" aria-label="Up next">
+    <h3 style="margin:0 0 8px 0;">Up next</h3>
 
-{% if allow_embed %}
-  <details class="embed-box" style="margin-top:10px;">
-    <summary>Embed</summary>
-    <div style="margin-top:8px;">
-      <label for="embed-code">Iframe:</label>
-      <textarea id="embed-code" class="embed-code" readonly rows="3" style="width:100%;font-family:monospace;">&lt;iframe width="560" height="315" src="{{ embed_url }}" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen&gt;&lt;/iframe&gt;</textarea>
-      <button type="button" class="btn-copy-embed" style="margin-top:6px;">Copy</button>
+    <style>
+      /* Hover animated thumbs in right bar */
+      .rb-item .rb-thumb { position: relative; width:160px; flex:0 0 160px; aspect-ratio:16/9; background:#000; overflow:hidden; }
+      .rb-item .rb-thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transition:opacity .15s ease; }
+      .rb-item .rb-thumb .rb-thumb-static { opacity: 1; }
+      .rb-item .rb-thumb .rb-thumb-anim  { opacity: 0; }
+      .rb-item:hover .rb-thumb .rb-thumb-static { opacity: 0; }
+      .rb-item:hover .rb-thumb .rb-thumb-anim  { opacity: 1; }
+    </style>
+
+    <div class="rb-list" style="display:flex;flex-direction:column;gap:10px;">
+      {% for r in recommended_videos %}
+      <a class="rb-item" href="/watch?v={{ r['video_id'] }}" style="display:flex;gap:8px;text-decoration:none;color:inherit;">
+        <div class="rb-thumb">
+          {% if r['thumb_url'] %}
+            <img class="rb-thumb-static" src="{{ r['thumb_url'] }}" alt="{{ r['title'] }}">
+          {% endif %}
+          {% if r['thumb_url_anim'] %}
+            <img class="rb-thumb-anim" src="{{ r['thumb_url_anim'] }}" alt="{{ r['title'] }}">
+          {% endif %}
+        </div>
+        <div class="rb-info" style="min-width:0;">
+          <div class="rb-title" style="font-weight:600;line-height:1.2;max-height:2.4em;overflow:hidden;">
+            {{ r['title'] }}
+          </div>
+          <div class="rb-author" style="font-size:12px;color:#666;">{{ r['author'] or '' }}</div>
+          <div class="rb-meta" style="font-size:12px;color:#666;">
+            {{ r['views_count'] or 0 }} views{% if r['uploaded_at'] %} • {{ r['uploaded_at'] }}{% endif %}
+          </div>
+        </div>
+      </a>
+      {% endfor %}
     </div>
-  </details>
-  <script>
-  (function(){
-    var box=document.querySelector(".embed-box");
-    if(!box) return;
-    var btn=box.querySelector(".btn-copy-embed");
-    var ta=box.querySelector(".embed-code");
-    if(btn && ta){
-      btn.addEventListener("click",function(){
-        try{
-          ta.select();
-          document.execCommand("copy");
-        }catch(e){}
-        ta.blur();
-      });
-    }
-  })();
-  </script>
-{% endif %}
+  </aside>
+  {% endif %}
+
+</div>
 
 {% endblock %}

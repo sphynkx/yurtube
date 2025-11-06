@@ -6,18 +6,36 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
+{# Preserve previously entered username/email in case of error #}
 <form action="/auth/register" method="post" novalidate>
   <div>
     <label>Username</label>
-    <input type="text" name="username" required autocomplete="username">
+    <input
+      type="text"
+      name="username"
+      required
+      autocomplete="username"
+      value="{{ (form.username if form else '') }}"
+    >
   </div>
   <div>
     <label>Email</label>
-    <input type="email" name="email" required autocomplete="email">
+    <input
+      type="email"
+      name="email"
+      required
+      autocomplete="email"
+      value="{{ (form.email if form else '') }}"
+    >
   </div>
   <div>
     <label>Password</label>
-    <input type="password" name="password" required autocomplete="new-password">
+    <input
+      type="password"
+      name="password"
+      required
+      autocomplete="new-password"
+    >
   </div>
   <button type="submit">Create account</button>
 </form>
