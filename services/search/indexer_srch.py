@@ -8,7 +8,6 @@ from db.search_index_db import fetch_video_for_index
 
 log = logging.getLogger(__name__)
 
-
 async def _fetch_video(conn, video_id: str) -> Optional[Dict[str, Any]]:
     """
     Fetch video row for indexing.
@@ -17,11 +16,9 @@ async def _fetch_video(conn, video_id: str) -> Optional[Dict[str, Any]]:
     """
     return await fetch_video_for_index(conn, video_id)
 
-
 def _author_from_row(row: Dict[str, Any]) -> str:
     u = (row.get("username") or "").strip() if row.get("username") else ""
     return u or ((row.get("channel_id") or "").strip())
-
 
 def _to_unix(dt) -> int:
     try:
@@ -31,7 +28,6 @@ def _to_unix(dt) -> int:
         return int(dt or 0)
     except Exception:
         return 0
-
 
 async def reindex_video(video_id: str) -> Tuple[bool, str]:
     try:
@@ -70,7 +66,6 @@ async def reindex_video(video_id: str) -> Tuple[bool, str]:
         log.exception("reindex_video: failed for %s: %s", video_id, e)
         return False, repr(e)
 
-
 async def delete_from_index(video_id: str) -> Tuple[bool, str]:
     try:
         backend = get_backend()
@@ -84,7 +79,6 @@ async def delete_from_index(video_id: str) -> Tuple[bool, str]:
     except Exception as e:
         log.exception("delete_from_index: failed for %s: %s", video_id, e)
         return False, repr(e)
-
 
 def fire_and_forget_reindex(video_id: str) -> None:
     try:

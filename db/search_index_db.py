@@ -1,6 +1,5 @@
 from typing import Any, Dict, Optional
 
-
 async def fetch_video_for_index(conn, video_id: str) -> Optional[Dict[str, Any]]:
     """
     Fetch a video and related author/category fields needed by search indexer.

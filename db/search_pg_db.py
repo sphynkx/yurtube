@@ -1,6 +1,5 @@
 from typing import Any, Dict, List
 
-
 async def _set_trgm_limit(conn, threshold: float) -> None:
     """
     Try to set per-session pg_trgm threshold (best-effort).
@@ -10,11 +9,9 @@ async def _set_trgm_limit(conn, threshold: float) -> None:
     except Exception:
         pass
 
-
 async def pg_search_videos(conn, q: str, limit: int, offset: int, ts_config: str, trgm_threshold: float) -> List[Dict[str, Any]]:
     """
-    Execute search against Postgres depending on query presence.
-    Returns list of dict rows with fields:
+    Execute search. Returns list of dict rows:
     video_id, title, description, author, category, views, likes, created_at.
     """
     await _set_trgm_limit(conn, trgm_threshold)
@@ -37,7 +34,6 @@ async def pg_search_videos(conn, q: str, limit: int, offset: int, ts_config: str
         )
         return [dict(r) for r in rows]
 
-    # With query: use ts_config and trgm similarity
     sql = f"""
     WITH params AS (
       SELECT
@@ -102,7 +98,6 @@ async def pg_search_videos(conn, q: str, limit: int, offset: int, ts_config: str
     """
     rows = await conn.fetch(sql, q, limit, offset, trgm_threshold)
     return [dict(r) for r in rows]
-
 
 async def pg_suggest_titles(conn, prefix: str, limit: int) -> List[Dict[str, Any]]:
     """

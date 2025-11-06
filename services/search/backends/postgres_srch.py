@@ -18,11 +18,7 @@ class PostgresBackend:
     PostgreSQL search backend:
       - FTS over title_norm + description_norm with custom TS config (settings.PG_TS_CONFIG, default 'yt_multi')
       - Author search via username (ILIKE + trigram index)
-      - Fuzzy via pg_trgm on fuzzy-normalized fields (title_fuzzy/description_fuzzy):
-          * word_similarity (in-text) with configurable threshold
-          * % operator (threshold via set_limit)
-          * ILIKE fallback
-      - IMPORTANT: the query string is normalized to qf with the same rules as *_fuzzy fields
+      - Fuzzy via pg_trgm on fuzzy-normalized fields (title_fuzzy/description_fuzzy)
       - Ranking: FTS desc, then word-sim desc, then trigram sim desc, then popularity, then recency
     """
 
@@ -48,7 +44,6 @@ class PostgresBackend:
                 ts_config=self.ts_config,
                 trgm_threshold=self.trgm_threshold,
             )
-
             out: List[Dict[str, Any]] = []
             for r in rows:
                 out.append(
