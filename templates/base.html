@@ -6,8 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="/static/css/main.css" rel="stylesheet">
   <link href="/static/css/brand.css" rel="stylesheet">
-  <link rel="icon" type="image/png" sizes="32x32" href="/static/img/YT_fav32.png">
-  <link rel="apple-touch-icon" href="/static/img/YT_fav128.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ favicon_url|default('/static/img/YT_fav32.png') }}">
+  <link rel="apple-touch-icon" href="{{ apple_touch_icon_url|default('/static/img/YT_fav128.png') }}">
   <!-- Brython runtime and stdlib -->
   <script src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython_stdlib.js"></script>
@@ -20,7 +20,7 @@
   <header class="site-header">
     <div class="logo">
       <a href="/" aria-label="YurTube home">
-        <img class="brand-logo" src="/static/img/YT_long.png" alt="YurTube">
+        <img class="brand-logo" src="{{ brand_logo_url|default('/static/img/YT_long.png') }}" alt="YurTube">
       </a>
     </div>
     <form class="search-form" action="/search" method="get">

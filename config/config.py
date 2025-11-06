@@ -58,5 +58,15 @@ class Settings:
     EMBED_DEFAULT_LOOP: int = _getenv_int("EMBED_DEFAULT_LOOP", 0)
     VIDEO_PLAYER: str = os.getenv("VIDEO_PLAYER", "yurtube").strip() or "yurtube"
 
+    # Fallback placeholder for not-found videos (static/anim. images).
+    FALLBACK_PLACEHOLDER_URL: str = os.getenv(
+        "FALLBACK_PLACEHOLDER_URL",
+        "static/img/fallback_video_notfound.gif",
+    )
+
+    # Brand assets
+    BRAND_LOGO_URL: str = os.getenv("BRAND_LOGO_URL", "/static/img/YT_long.png")
+    FAVICON_URL: str = os.getenv("FAVICON_URL", "/static/img/YT_fav32.png")
+    APPLE_TOUCH_ICON_URL: str = os.getenv("APPLE_TOUCH_ICON_URL", "/static/img/YT_fav128.png")
 
 settings = Settings()

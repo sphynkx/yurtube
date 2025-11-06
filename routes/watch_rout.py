@@ -19,8 +19,10 @@ from utils.url_ut import build_storage_url
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
-
-FALLBACK_IMAGE = "/static/img/fallback_video_notfound.gif"
+# Brand globals for base.html (logo and icons)
+templates.env.globals["brand_logo_url"] = settings.BRAND_LOGO_URL
+templates.env.globals["favicon_url"] = settings.FAVICON_URL
+templates.env.globals["apple_touch_icon_url"] = settings.APPLE_TOUCH_ICON_URL
 
 
 def _avatar_small_url(avatar_path: Optional[str]) -> str:
@@ -146,8 +148,8 @@ async def watch_page(request: Request, v: str) -> Any:
             """,
             v,
         )
+
         if not row:
-            # Video not found: render page with dummy-pict
             video: Optional[Dict[str, Any]] = None
             poster_url = None
             thumb_anim_url = None
@@ -168,9 +170,9 @@ async def watch_page(request: Request, v: str) -> Any:
                     "request": request,
                     "current_user": user,
                     "video": video,
-                    "video_id": v,  # optionally could show id
+                    "video_id": v,
                     "player_name": settings.VIDEO_PLAYER,
-                    "video_src": None,  # dont transmit video to permit mount video-player!!
+                    "video_src": None,
                     "poster_url": poster_url,
                     "thumb_anim_url": thumb_anim_url,
                     "avatar_url": avatar_url,
@@ -179,14 +181,13 @@ async def watch_page(request: Request, v: str) -> Any:
                     "subtitles": subtitles,
                     "player_options": player_options,
                     "not_found": True,
-                    "fallback_image_url": FALLBACK_IMAGE,
+                    "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
                 },
                 headers={"Cache-Control": "no-store"},
             )
 
         video: Dict[str, Any] = dict(row)
 
-        # Taking view
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
@@ -250,8 +251,8 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
             """,
             v,
         )
+
         if not row:
-            # Video not found: render embed iframe with dummy-pict
             video: Optional[Dict[str, Any]] = None
             poster_url = None
             subtitles: List[Dict[str, Any]] = []
@@ -268,18 +269,17 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
                     "request": request,
                     "video": video,
                     "player_name": settings.VIDEO_PLAYER,
-                    "video_src": None,   # dont mount player
+                    "video_src": None,
                     "poster_url": poster_url,
                     "video_id": v,
                     "subtitles": subtitles,
                     "player_options": player_options,
                     "not_found": True,
-                    "fallback_image_url": FALLBACK_IMAGE,
+                    "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
                 },
                 headers={"Cache-Control": "no-store"},
             )
 
-        # Taking view for embed
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
