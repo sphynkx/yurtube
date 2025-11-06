@@ -17,6 +17,7 @@ def _fallback_avatar(ev):
     console.log("[brython] avatar fallback applied")
 
 def _bind_copy_embed():
+    # Optional: present on pages with embed box
     btn = document.getElementById("copy-embed")
     area = document.getElementById("embed-code")
     if not btn or not area:
@@ -35,18 +36,17 @@ def _bind_copy_embed():
 
 def _bind_user_menu_dismiss():
     """
-    Close the <details class="user-menu"> when clicking outside.
-    Uses DOM property 'open' instead of attrs.
+    Close any <details class="user-menu"> when clicking outside of it.
+    Uses 'open' property and removes attribute as a safety.
     """
     try:
-        items = document.select("details.user-menu")
+        menus = list(document.select("details.user-menu"))
     except Exception:
-        items = []
-    if not items:
+        menus = []
+    if not menus:
         return
-    menu = items[0]
 
-    def inside(el, root):
+    def contains(root, el):
         cur = el
         while cur is not None:
             if cur == root:
@@ -57,11 +57,21 @@ def _bind_user_menu_dismiss():
                 cur = None
         return False
 
-    def close_menu():
+    def in_path(root, ev):
+        try:
+            path = ev.composedPath()
+        except Exception:
+            path = None
+        if path:
+            for el in path:
+                if el == root:
+                    return True
+        return False
+
+    def close_menu(menu):
         try:
             if getattr(menu, "open", False):
-                menu.open = False  # DOM way
-            # safety: remove attribute if still present
+                menu.open = False
             try:
                 menu.removeAttribute("open")
             except Exception:
@@ -69,19 +79,32 @@ def _bind_user_menu_dismiss():
         except Exception as e:
             console.log(f"[brython] user-menu close error: {e}")
 
-    def on_doc_click(ev):
+    def on_any_down(ev):
         try:
-            # if not open -> nothing to do
-            if not getattr(menu, "open", False):
-                return
             tgt = getattr(ev, "target", None)
-            if tgt and inside(tgt, menu):
-                return  # click inside menu
-            close_menu()
+            for m in menus:
+                # Skip if click is inside menu (via composedPath or DOM parent walk)
+                if getattr(m, "open", False) and not ((tgt and contains(m, tgt)) or in_path(m, ev)):
+                    close_menu(m)
         except Exception as e:
             console.log(f"[brython] dismiss handler error: {e}")
 
-    document.bind("mousedown", on_doc_click)
+    def on_keydown(ev):
+        try:
+            key = (getattr(ev, "key", "") or "").lower()
+            code = getattr(ev, "code", "")
+            if key == "escape" or code == "Escape":
+                for m in menus:
+                    if getattr(m, "open", False):
+                        close_menu(m)
+        except Exception as e:
+            console.log(f"[brython] dismiss key handler error: {e}")
+
+    # Use early-phase pointer/mouse/touch events to ensure we catch outside clicks
+    document.bind("mousedown", on_any_down)
+    document.bind("pointerdown", on_any_down)
+    document.bind("touchstart", on_any_down)
+    document.bind("keydown", on_keydown)
 
 def init():
     img = document.getElementById("nav-avatar")

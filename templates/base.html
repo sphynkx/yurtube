@@ -8,12 +8,6 @@
   <link href="/static/css/brand.css" rel="stylesheet">
   <link rel="icon" type="image/png" sizes="32x32" href="{{ favicon_url|default('/static/img/YT_fav32.png') }}">
   <link rel="apple-touch-icon" href="{{ apple_touch_icon_url|default('/static/img/YT_fav128.png') }}">
-
-  {# NOTE:
-     Brython scripts moved to the end of <body> and loaded with 'defer'
-     so the page never blocks if CDN is slow/unreachable.
-     If you want to self-host Brython, place files under /static/vendor/brython/
-     and switch the script src URLs accordingly (see bottom of body). #}
 </head>
 <body>
   <header class="site-header">
@@ -77,6 +71,10 @@
   {# Brython runtime and stdlib — deferred and at the end to avoid blocking render #}
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython_stdlib.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  {# Load Brython init script (must be present in DOM before brython() call) #}
+  <script type="text/python" src="/static/brython/init.bry"></script>
+
   <script>
     // Safely initialize Brython after DOM is parsed. If CDN fails, page still renders.
     window.addEventListener("DOMContentLoaded", function () {
@@ -93,6 +91,7 @@
      and use the lines below instead of the CDN ones:
      <script defer src="/static/vendor/brython/brython.min.js"></script>
      <script defer src="/static/vendor/brython/brython_stdlib.js"></script>
+     <script type="text/python" src="/static/brython/init.bry"></script>
      <script>window.addEventListener("DOMContentLoaded",function(){try{if(window.brython){brython();}}catch(e){}});</script>
   #}
 </body>
