@@ -15,6 +15,10 @@ from db.videos_db import get_video
 from utils.format_ut import fmt_dt
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
+from db.videos_query_db import (  # moved heavy selects into db utility
+    fetch_watch_video_full,
+    fetch_embed_video_info,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -105,49 +109,8 @@ async def watch_page(request: Request, v: str) -> Any:
     user = get_current_user(request)
     conn = await get_conn()
     try:
-        row = await conn.fetchrow(
-            """
-            SELECT
-              v.video_id,
-              v.title,
-              v.description,
-              v.storage_path,
-              v.created_at,
-              v.views_count,
-              v.likes_count,
-              v.allow_embed,
-              v.embed_params,
-              u.username,
-              u.channel_id,
-              vcat.name AS category,
-              vthumb.path AS thumb_asset_path,
-              vanim.path  AS thumb_anim_asset_path,
-              uava.path   AS avatar_asset_path
-            FROM videos v
-            JOIN users u ON u.user_uid = v.author_uid
-            LEFT JOIN categories vcat ON vcat.category_id = v.category_id
-            LEFT JOIN LATERAL (
-              SELECT path
-              FROM video_assets
-              WHERE video_id = v.video_id AND asset_type = 'thumbnail_default'
-              LIMIT 1
-            ) vthumb ON true
-            LEFT JOIN LATERAL (
-              SELECT path
-              FROM video_assets
-              WHERE video_id = v.video_id AND asset_type = 'thumbnail_anim'
-              LIMIT 1
-            ) vanim ON true
-            LEFT JOIN LATERAL (
-              SELECT path
-              FROM user_assets
-              WHERE user_uid = v.author_uid AND asset_type = 'avatar'
-              LIMIT 1
-            ) uava ON true
-            WHERE v.video_id = $1
-            """,
-            v,
-        )
+        # replaced inline SQL with db utility call
+        row = await fetch_watch_video_full(conn, v)
 
         if not row:
             video: Optional[Dict[str, Any]] = None
@@ -240,17 +203,8 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
     user = get_current_user(request)
     conn = await get_conn()
     try:
-        row = await conn.fetchrow(
-            """
-            SELECT v.video_id, v.title, v.storage_path,
-                   a.path AS thumb_asset_path
-            FROM videos v
-            LEFT JOIN video_assets a
-              ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
-            WHERE v.video_id = $1
-            """,
-            v,
-        )
+        # replaced inline SQL with db utility call
+        row = await fetch_embed_video_info(conn, v)
 
         if not row:
             video: Optional[Dict[str, Any]] = None

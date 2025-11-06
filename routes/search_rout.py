@@ -10,6 +10,7 @@ from services.search.settings_srch import settings
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from db import get_conn, release_conn
+from db.search_db import fetch_video_assets_by_ids  # moved DB query into db utility
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -37,32 +38,11 @@ async def _enrich_results(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not ids:
         return rows
 
+    # use db utility for bulk fetch instead of inline SQL here
     conn = await get_conn()
     try:
-        q = """
-        SELECT
-          v.video_id,
-          v.created_at,
-          v.author_uid,
-          u.username,
-          ua.path AS avatar_asset_path,
-          vthumb.path AS thumb_asset_path,
-          vanim.path AS thumb_anim_asset_path
-        FROM videos v
-        JOIN users u ON u.user_uid = v.author_uid
-        LEFT JOIN user_assets ua
-          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
-        LEFT JOIN video_assets vthumb
-          ON vthumb.video_id = v.video_id AND vthumb.asset_type = 'thumbnail_default'
-        LEFT JOIN video_assets vanim
-          ON vanim.video_id = v.video_id AND vanim.asset_type = 'thumbnail_anim'
-        WHERE v.video_id = ANY($1::text[])
-        """
-        rows_db = await conn.fetch(q, ids)
-        by_id: Dict[str, Dict[str, Any]] = {}
-        for r in rows_db:
-            d = dict(r)
-            by_id[d["video_id"]] = d
+        rows_db = await fetch_video_assets_by_ids(conn, ids)
+        by_id: Dict[str, Dict[str, Any]] = {d["video_id"]: d for d in rows_db if d.get("video_id")}
     finally:
         await release_conn(conn)
 
