@@ -28,6 +28,7 @@ from utils.idgen_ut import gen_id
 from utils.path_ut import build_video_storage_dir, safe_remove_storage_relpath
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
+from services.search.indexer_srch import fire_and_forget_reindex
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -223,6 +224,13 @@ async def upload_video(
             )
     finally:
         await release_conn(conn)
+
+    # Schedule indexing right after DB changes are committed
+    try:
+        fire_and_forget_reindex(video_id)
+    except Exception:
+        # Do not break the upload flow if scheduling fails
+        pass
 
     return templates.TemplateResponse(
         "manage/select_thumbnail.html",
