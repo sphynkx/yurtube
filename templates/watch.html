@@ -9,6 +9,42 @@
 {# Two-column layout when recommendations are present #}
 {% set _has_right = (recommended_videos is defined) and (recommended_videos|length > 0) and (not _not_found) %}
 
+<style>
+/* When theater mode is active on the player, make the layout single-column.
+   Use !important to override the inline grid-template set on the wrapper. */
+.watch-layout.theater-mode {
+  grid-template-columns: 1fr !important;
+}
+
+/* Keep right bar spacing below the player in theater mode and pin it to the right edge */
+.watch-right {
+  width: 360px;
+  justify-self: end; /* stick to the right edge of its grid cell/row */
+}
+
+.watch-layout.theater-mode .watch-right {
+  margin-top: 16px;
+  width: 360px;
+  justify-self: end; /* stay at the right edge when moved below */
+}
+
+/* Mobile fallback: full width for the right bar on very narrow screens */
+@media (max-width: 420px) {
+  .watch-right {
+    width: 100%;
+    justify-self: stretch;
+  }
+}
+
+/* Hover animated thumbs in right bar */
+.rb-item .rb-thumb { position: relative; width:160px; flex:0 0 160px; aspect-ratio:16/9; background:#000; overflow:hidden; }
+.rb-item .rb-thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transition:opacity .15s ease; }
+.rb-item .rb-thumb .rb-thumb-static { opacity: 1; }
+.rb-item .rb-thumb .rb-thumb-anim  { opacity: 0; }
+.rb-item:hover .rb-thumb .rb-thumb-static { opacity: 0; }
+.rb-item:hover .rb-thumb .rb-thumb-anim  { opacity: 1; }
+</style>
+
 <div class="watch-layout" style="
   display: grid;
   grid-template-columns: {% if _has_right %} minmax(0, 1fr) 360px {% else %} 1fr {% endif %};
@@ -117,16 +153,6 @@
   <aside class="watch-right" aria-label="Up next">
     <h3 style="margin:0 0 8px 0;">Up next</h3>
 
-    <style>
-      /* Hover animated thumbs in right bar */
-      .rb-item .rb-thumb { position: relative; width:160px; flex:0 0 160px; aspect-ratio:16/9; background:#000; overflow:hidden; }
-      .rb-item .rb-thumb img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; transition:opacity .15s ease; }
-      .rb-item .rb-thumb .rb-thumb-static { opacity: 1; }
-      .rb-item .rb-thumb .rb-thumb-anim  { opacity: 0; }
-      .rb-item:hover .rb-thumb .rb-thumb-static { opacity: 0; }
-      .rb-item:hover .rb-thumb .rb-thumb-anim  { opacity: 1; }
-    </style>
-
     <div class="rb-list" style="display:flex;flex-direction:column;gap:10px;">
       {% for r in recommended_videos %}
       <a class="rb-item" href="/watch?v={{ r['video_id'] }}" style="display:flex;gap:8px;text-decoration:none;color:inherit;">
@@ -154,5 +180,34 @@
   {% endif %}
 
 </div>
+
+<script>
+/* Toggle layout to single-column when player enters theater mode.
+   Poll only the player root (.yrp-container) for class changes to avoid heavy observers
+   and to survive dynamic player re-creation. */
+(function(){
+  var layout = document.querySelector(".watch-layout");
+  if(!layout) return;
+
+  function getPlayer(){
+    return document.querySelector(".yrp-container");
+  }
+
+  var last = null;
+  function tick(){
+    var p = getPlayer();
+    var theater = !!(p && p.classList.contains("yrp-theater"));
+    if(theater !== last){
+      last = theater;
+      if(theater){ layout.classList.add("theater-mode"); }
+      else { layout.classList.remove("theater-mode"); }
+    }
+  }
+
+  var t = setInterval(tick, 250);
+  window.addEventListener("beforeunload", function(){ try{ clearInterval(t); }catch(e){} });
+  tick();
+})();
+</script>
 
 {% endblock %}
