@@ -41,6 +41,8 @@ class Settings:
     SESSION_TTL_SECONDS: int = _getenv_int("SESSION_TTL_SECONDS", 1209600)
     SESSION_COOKIE_SECURE: bool = _getenv_bool("SESSION_COOKIE_SECURE", True)
 
+    PASSWORD_MIN_SCORE: int = _getenv_int("PASSWORD_MIN_SCORE", 2)
+
     STORAGE_ROOT: str = _getenv_required("STORAGE_ROOT")
     STORAGE_PUBLIC_BASE_URL: Optional[str] = os.getenv("STORAGE_PUBLIC_BASE_URL", None)
 

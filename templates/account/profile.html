@@ -2,8 +2,8 @@
 {% block content %}
 <h1>Account</h1>
 
-<div style="display:flex; gap:24px; align-items:flex-start;">
-  <div>
+<div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
+  <div style="flex:1; min-width:260px;">
     <div>Avatar</div>
     <div style="margin:8px 0;">
       {% if avatar_url %}
@@ -25,7 +25,7 @@
     {% endif %}
   </div>
 
-  <div>
+  <div style="flex:1; min-width:260px;">
     <h2>Profile</h2>
     <p>You can customize your account here.</p>
     <ul>
@@ -33,6 +33,7 @@
       <li><a href="/manage">My videos</a></li>
       <li><a href="/subscriptions">My subscriptions</a></li>
       <li><a href="/history">My history</a></li>
+      <li><a href="/account/password">Change password</a></li>
     </ul>
   </div>
 </div>

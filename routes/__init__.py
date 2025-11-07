@@ -11,6 +11,7 @@ from .upload_rout import router as upload_router
 from .watch_rout import router as watch_router
 from .edit_rout import router as edit_router
 from .search_rout import router as search_router
+from .account_password_rout import router as account_password_router
 
 
 def register_routes(app: FastAPI) -> None:
@@ -22,6 +23,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(channel_router)
     app.include_router(history_router)
     app.include_router(account_router)
+    app.include_router(account_password_router)
     app.include_router(static_router)
     app.include_router(edit_router)
     app.include_router(search_router)

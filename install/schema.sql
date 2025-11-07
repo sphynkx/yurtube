@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS users (
     email         TEXT NOT NULL,
     password_hash TEXT NOT NULL,
     role          TEXT NOT NULL DEFAULT 'user', -- 'user' | 'admin' | 'moderator'
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    password_changed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT users_channel_id_len CHECK (char_length(channel_id) = 24),
     CONSTRAINT users_username_fmt CHECK (username ~ '^[A-Za-z0-9_.-]{3,30}$')
 );
@@ -22,6 +23,8 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_uidx ON users (lower(username));
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_uidx ON users (lower(email));
 CREATE UNIQUE INDEX IF NOT EXISTS users_channel_id_uidx ON users (channel_id);
+CREATE INDEX IF NOT EXISTS users_password_changed_at_idx ON users(password_changed_at);
+
 
 -- User assets (avatar)
 CREATE TABLE IF NOT EXISTS user_assets (
