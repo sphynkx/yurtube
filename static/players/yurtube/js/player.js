@@ -1,4 +1,5 @@
 (function () {
+  // ---------- small utils ----------
   function fmtTime(sec) {
     if (!isFinite(sec) || sec < 0) sec = 0;
     sec = Math.floor(sec);
@@ -20,6 +21,8 @@
     } else {
       var ta = document.createElement("textarea");
       ta.value = s;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
       document.body.appendChild(ta);
       ta.select();
       try { document.execCommand("copy"); } catch (e) {}
@@ -51,14 +54,14 @@
     return "yurtube";
   }
 
-  // storage helpers
+  // ---------- storage helpers ----------
   var STORE = "yrp:";
   function canLS(){ try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e){ return false; } }
   function load(key, def){ if (!canLS()) return def; try{ var s=localStorage.getItem(STORE+key); return s? JSON.parse(s): def; }catch(_){ return def; } }
   function save(key, val){ if (!canLS()) return; try{ localStorage.setItem(STORE+key, JSON.stringify(val)); }catch(_){} }
-  function throttle(fn, ms){ var t=0, pend=false, last; return function(){ last=arguments; var now=Date.now(); if(!t || now-t>=ms){ t=now; fn.apply(null,last); } else if(!pend){ pend=true; setTimeout(function(){ pend=false; t=Date.now(); fn.apply(null,last); }, ms-(now-t)); } }; }
+  function throttle(fn, ms){ var t=0, pend=false, lastArgs=null; return function(){ lastArgs=arguments; var now=Date.now(); if(!t || now-t>=ms){ t=now; fn.apply(null,lastArgs); } else if(!pend){ pend=true; setTimeout(function(){ pend=false; t=Date.now(); fn.apply(null,lastArgs); }, ms-(now-t)); } }; }
 
-  // Fallback media
+  // ---------- fallback guards ----------
   var FALLBACK_SRC = "/static/img/fallback_video_notfound.webm";
   function installFallbackGuards(video, sourceEl, onDebug) {
     var applied = false;
@@ -86,13 +89,13 @@
     video.addEventListener("error", function(){
       if (!applied) applyFallback("error-event");
     });
-    // if source missing entirely
     setTimeout(function(){
       var src = sourceEl ? (sourceEl.getAttribute("src")||"") : (video.currentSrc||video.src||"");
       if (!applied && !src) applyFallback("empty-src");
     }, 0);
   }
 
+  // ---------- mount ----------
   function mountOne(host, templateHTML, PLAYER_BASE) {
     host.innerHTML = templateHTML;
 
@@ -116,7 +119,6 @@
     if (opts && opts.loop) video.setAttribute("loop", "");
     if (vid) root.setAttribute("data-video-id", vid);
 
-    // iOS inline
     video.setAttribute("playsinline", "");
 
     if (Array.isArray(subs)) {
@@ -132,13 +134,10 @@
       });
     }
 
-    // Start loading
     try { video.load(); d("video.load() called", {src: videoSrc}); } catch(e){ d("video.load() error", e); }
 
-    // Install fallback guards
     installFallbackGuards(video, source, d);
 
-    // icon urls -> CSS vars on root (for mask)
     var iconBase = PLAYER_BASE + "/img/buttons";
     root.style.setProperty("--icon-play",    'url("' + iconBase + '/play.svg")');
     root.style.setProperty("--icon-pause",   'url("' + iconBase + '/pause.svg")');
@@ -155,7 +154,6 @@
     root.style.setProperty("--icon-autoplay-off", 'url("' + iconBase + '/autoplay-off.svg")');
     root.classList.add("yrp-icons-ready");
 
-    // Dynamic center logo
     var centerLogo = root.querySelector(".yrp-center-logo");
     if (centerLogo) centerLogo.setAttribute("src", PLAYER_BASE + "/img/logo.png");
 
@@ -165,6 +163,7 @@
     wire(root, startAt, DEBUG);
   }
 
+  // ---------- player wiring (main) ----------
   function wire(root, startAt, DEBUG) {
     function d(){ if(!DEBUG) return; try { console.debug.apply(console, ["[YRP]"].concat([].slice.call(arguments))); } catch(_){} }
 
@@ -197,13 +196,14 @@
     var seeking = false;
     var duration = 0;
 
+    var userTouchedVolume = false;
+    var autoMuteApplied = false;
+
+    // PiP state bookkeeping
     var pipInSystem = false;
     var pipWasPlayingOrig = false;
     var pipWasMutedOrig = false;
-    var pipUserState = null;
-
-    var userTouchedVolume = false;
-    var autoMuteApplied = false;
+    var pipUserState = null; // true playing, false paused, null no explicit user change
 
     var autoplayOn = !!load("autoplay", false);
     function refreshAutoplayBtn(){
@@ -218,11 +218,16 @@
       } catch(_){}
     }
 
+    // unified auto-hide scheduler
+    function scheduleAutoHide(delayMs) {
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(function(){ root.classList.add("autohide"); }, Math.max(0, delayMs || 1200));
+    }
     function showControls() {
       root.classList.remove("autohide");
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(function () { root.classList.add("autohide"); }, 2000);
+      scheduleAutoHide(2000);
     }
+
     function updateTimes() {
       try { duration = isFinite(video.duration) ? video.duration : 0; } catch (e) { duration = 0; }
       if (tTot) tTot.textContent = fmtTime(duration);
@@ -250,18 +255,6 @@
         btnVol.textContent = label;
         btnVol.classList.toggle("icon-mute", (label === "Mute"));
         btnVol.classList.toggle("icon-vol",  (label !== "Mute"));
-      }
-    }
-    function refreshPlayIcon() {
-      if (!btnPlay) return;
-      if (video.paused) {
-        btnPlay.textContent = "Play";
-        btnPlay.classList.add("icon-play");
-        btnPlay.classList.remove("icon-pause");
-      } else {
-        btnPlay.textContent = "Pause";
-        btnPlay.classList.add("icon-pause");
-        btnPlay.classList.remove("icon-play");
       }
     }
     function seekByClientX(clientX) {
@@ -299,7 +292,6 @@
 
     function adjustWidthByAspect() {
       if (root.classList.contains("yrp-theater")) return;
-
       var csVideo = getComputedStyle(video);
       var maxH = cssPxToNum(csVideo.getPropertyValue("max-height")) || video.clientHeight || 0;
       var vw = video.videoWidth || 16;
@@ -307,13 +299,10 @@
       var aspect = vh > 0 ? (vw / vh) : (16 / 9);
       var targetH = Math.min(maxH || video.clientHeight || 0, window.innerHeight * 0.9);
       if (!targetH || !isFinite(targetH)) return;
-
       var targetW = Math.floor(targetH * aspect);
       var maxPage = Math.floor(window.innerWidth * 0.95);
-
       var controlsMin = measureControlsMinWidth();
       var finalW = Math.max(controlsMin, Math.min(targetW, maxPage));
-
       root.style.maxWidth = finalW + "px";
       root.style.minWidth = controlsMin + "px";
       root.style.width = "100%";
@@ -324,8 +313,8 @@
       var vs = load("volume", null);
       if (vs && typeof vs.v === "number") video.volume = clamp(vs.v, 0, 1);
       if (vs && typeof vs.m === "boolean") video.muted = !!vs.m;
-      var volSlider = root.querySelector(".yrp-vol-slider");
-      if (volSlider) volSlider.value = String(video.volume || 1);
+      var volSlider0 = root.querySelector(".yrp-vol-slider");
+      if (volSlider0) volSlider0.value = String(video.volume || 1);
       refreshVolIcon();
 
       video.addEventListener("volumechange", function(){
@@ -336,10 +325,12 @@
       video.addEventListener("loadedmetadata", function once(){
         video.removeEventListener("loadedmetadata", once);
         if (userTouchedVolume) return;
-        if (vs) {
-          if (typeof vs.v === "number") video.volume = clamp(vs.v, 0, 1);
-          if (typeof vs.m === "boolean") video.muted = !!vs.m;
-          if (volSlider) volSlider.value = String(video.volume || 1);
+        var vs2 = load("volume", null);
+        if (vs2) {
+          if (typeof vs2.v === "number") video.volume = clamp(vs2.v, 0, 1);
+          if (typeof vs2.m === "boolean") video.muted = !!vs2.m;
+          var volSlider2 = root.querySelector(".yrp-vol-slider");
+          if (volSlider2) volSlider2.value = String(video.volume || 1);
           refreshVolIcon();
         }
       });
@@ -354,7 +345,6 @@
 
     // Persist theater
     (function(){
-      var btnTheater = root.querySelector(".yrp-theater");
       if (!btnTheater) return;
       var th = !!load("theater", false);
       if (th) root.classList.add("yrp-theater");
@@ -382,9 +372,7 @@
       var now = Date.now();
       function applyResume(t){
         var d = isFinite(video.duration) ? video.duration : 0;
-        if (d && t > 10 && t < d - 5) {
-          try { video.currentTime = t; } catch(_){}
-        }
+        if (d && t > 10 && t < d - 5) { try { video.currentTime = t; } catch(_){ } }
       }
       if (rec && typeof rec.t === "number" && (now - (rec.ts||0)) < 180*24*3600*1000) {
         var setAt = Math.max(0, rec.t|0);
@@ -422,7 +410,11 @@
       }
       var WANT = wantAutoplay();
       d("autoplay check", {WANT:WANT, opt:opt, saved:load("autoplay", false)});
-      if (!WANT) return;
+      if (!WANT) {
+        // If autoplay is off, schedule initial auto-hide so the bar does not stick forever.
+        setTimeout(function(){ scheduleAutoHide(1000); }, 0);
+        return;
+      }
 
       function tryPlaySequence(reason){
         d("tryPlaySequence", {reason:reason, muted: video.muted, rs: video.readyState});
@@ -466,6 +458,7 @@
       }, 1200);
     })();
 
+    // Initial layout and state updates
     video.addEventListener("loadedmetadata", function () {
       if (startAt && startAt > 0) {
         try { video.currentTime = Math.min(startAt, Math.floor(video.duration || startAt)); } catch (e) {}
@@ -473,9 +466,10 @@
       setTimeout(adjustWidthByAspect, 0);
       updateTimes();
       updateProgress();
-      refreshPlayIcon();
       refreshVolIcon();
       refreshAutoplayBtn();
+      // Ensure auto-hide will happen even if user does nothing (autoplay off case)
+      scheduleAutoHide(1200);
     });
     window.addEventListener("resize", function(){ adjustWidthByAspect(); });
 
@@ -484,40 +478,26 @@
     video.addEventListener("play", function(){
       root.classList.add("playing");
       showControls();
-      refreshPlayIcon();
       if (pipInSystem) pipUserState = true;
     });
     video.addEventListener("pause", function(){
       root.classList.remove("playing");
       showControls();
-      refreshPlayIcon();
       if (pipInSystem) pipUserState = false;
     });
 
+    // PiP helpers
     function enterVideoPiP() {
-      var pipWasPlayingOrig = !video.paused;
-      var pipWasMutedOrig = !!video.muted;
-      var pipUserState = null;
-
       var needTempPlay = video.paused;
       var prevMuted = video.muted;
-
-      var startPlayPromise = Promise.resolve();
-      if (needTempPlay) {
-        video.muted = true;
-        startPlayPromise = video.play().catch(function(){});
-      }
-
-      return startPlayPromise.then(function () {
-        return video.requestPictureInPicture();
-      }).catch(function(){ }).then(function(){
-        if (needTempPlay) {
-          video.pause();
-          video.muted = prevMuted;
-        }
-      });
+      var p = Promise.resolve();
+      if (needTempPlay) { video.muted = true; p = video.play().catch(function(){}); }
+      return p.then(function () { return video.requestPictureInPicture(); })
+              .catch(function(){})
+              .then(function(){
+                if (needTempPlay) { video.pause(); video.muted = prevMuted; }
+              });
     }
-
     function toggleMini() {
       try {
         if (document.pictureInPictureEnabled && video.requestPictureInPicture && !video.disablePictureInPicture) {
@@ -526,30 +506,25 @@
           } else {
             enterVideoPiP();
           }
-          return;
         }
       } catch (ex) {}
     }
 
-    if ("mediaSession" in navigator) {
-      try {
-        navigator.mediaSession.setActionHandler("play", function(){ video.play().catch(function(){}); });
-        navigator.mediaSession.setActionHandler("pause", function(){ video.pause(); });
-        navigator.mediaSession.setActionHandler("seekbackward", function(){ video.currentTime = clamp((video.currentTime||0) - 5, 0, duration||0); });
-        navigator.mediaSession.setActionHandler("seekforward", function(){ video.currentTime = clamp((video.currentTime||0) + 5, 0, duration||0); });
-        navigator.mediaSession.setActionHandler("stop", function(){ video.pause(); });
-      } catch (e) {}
-    }
-
-    video.addEventListener("click", function(){ playToggle(); });
-
-    root.addEventListener("mousemove", showControls, { passive: true });
-    root.addEventListener("pointermove", showControls, { passive: true });
-    root.addEventListener("mouseleave", function () {
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(function () { root.classList.add("autohide"); }, 600);
+    // PiP state listeners: resume and proper toggle
+    video.addEventListener("enterpictureinpicture", function () {
+      pipInSystem = true;
+      pipWasPlayingOrig = !video.paused;
+      pipWasMutedOrig = !!video.muted;
+      pipUserState = null;
+    });
+    video.addEventListener("leavepictureinpicture", function () {
+      pipInSystem = false;
+      var shouldPlay = (pipUserState === null) ? pipWasPlayingOrig : !!pipUserState;
+      if (shouldPlay) { video.play().catch(function(){}); } else { video.pause(); }
     });
 
+    // Basic UI bindings
+    video.addEventListener("click", function(){ playToggle(); });
     if (centerPlay) centerPlay.addEventListener("click", playToggle);
     if (btnPlay) btnPlay.addEventListener("click", playToggle);
     if (btnPrev) btnPrev.addEventListener("click", function(){ root.dispatchEvent(new CustomEvent("yrp-prev",{bubbles:true})); });
@@ -557,8 +532,7 @@
 
     if (btnVol) {
       btnVol.addEventListener("click", function(e){
-        e.preventDefault();
-        e.stopPropagation();
+        e.preventDefault(); e.stopPropagation();
         userTouchedVolume = true;
         autoMuteApplied = false;
         setMutedToggle();
@@ -576,8 +550,8 @@
         var v = video.muted ? 0 : video.volume;
         var nv = clamp(v + (e.deltaY < 0 ? step : -step), 0, 1);
         video.volume = nv; if (nv > 0) video.muted = false;
-        var volSlider = root.querySelector(".yrp-vol-slider");
-        if (volSlider) volSlider.value = String(nv);
+        var volSliderX = root.querySelector(".yrp-vol-slider");
+        if (volSliderX) volSliderX.value = String(nv);
         refreshVolIcon(); showControls();
       }
       vol.addEventListener("wheel", onWheelVolume, {passive:false});
@@ -662,18 +636,7 @@
       btnPip.addEventListener("click", function(e){
         e.preventDefault();
         e.stopPropagation();
-        try {
-          if (document.pictureInPictureEnabled && video.requestPictureInPicture && !video.disablePictureInPicture) {
-            if (document.pictureInPictureElement===video) document.exitPictureInPicture().catch(function(){});
-            else {
-              var need=video.paused, prev=video.muted, p=Promise.resolve();
-              if(need){ video.muted=true; p=video.play().catch(function(){}); }
-              p.then(function(){ return video.requestPictureInPicture(); })
-               .catch(function(){})
-               .then(function(){ if(need){ video.pause(); video.muted=prev; } });
-            }
-          }
-        } catch(_){}
+        toggleMini();
       });
     }
 
@@ -688,6 +651,7 @@
       });
     }
 
+    // Context menu
     root.addEventListener("contextmenu", function (e) {
       e.preventDefault();
       hideMenus();
@@ -703,12 +667,7 @@
         var at = Math.floor(video.currentTime || 0);
         var vid = root.getAttribute("data-video-id") || "";
         if (act === "pip") {
-          try {
-            if (document.pictureInPictureEnabled && video.requestPictureInPicture && !video.disablePictureInPicture) {
-              if (document.pictureInPictureElement===video) document.exitPictureInPicture().catch(function(){});
-              else video.requestPictureInPicture().catch(function(){});
-            }
-          } catch(_){}
+          toggleMini();
         } else if (act === "copy-url") {
           var u = new URL(window.location.href);
           u.searchParams.delete("t");
@@ -719,7 +678,7 @@
           copyText(u2.toString());
         } else if (act === "copy-embed") {
           var src = (window.location.origin || "") + "/embed?v=" + encodeURIComponent(vid || "");
-          var iframe = "<iframe width=\"560\" height=\"315\" src=\"" + src + "\" frameborder=\"0\" allow=\"autoplay; encrypted-media\" allowfullscreen></iframe>";
+          var iframe = "<iframe width=\"560\" height=\"315\" src=\"" + src + "\" frameborder=\"0\" allow=\"autoplay; encrypted-media; clipboard-write\" allowfullscreen></iframe>";
           copyText(iframe);
         }
         ctx.hidden = true;
@@ -737,6 +696,35 @@
       });
     });
 
+    // Hover triggers (show on hovering any layer)
+    ["mousemove","pointermove","mouseenter","touchstart"].forEach(function(evName){
+      root.addEventListener(evName, function(){ try{ root.focus(); }catch(_){ } showControls(); }, { passive: true });
+      if (video) video.addEventListener(evName, function(){ showControls(); }, { passive: true });
+      if (centerPlay) centerPlay.addEventListener(evName, function(){ showControls(); }, { passive: true });
+    });
+
+    // Fullscreen hover support: also watch global mouse moves while in fullscreen
+    function onDocMove(e){
+      var r = root.getBoundingClientRect();
+      var x = e.clientX, y = e.clientY;
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) showControls();
+    }
+    function updateFsHoverBinding(){
+      try {
+        if (document.fullscreenElement === root) {
+          document.addEventListener("mousemove", onDocMove, { passive: true });
+          document.addEventListener("pointermove", onDocMove, { passive: true });
+        } else {
+          document.removeEventListener("mousemove", onDocMove);
+          document.removeEventListener("pointermove", onDocMove);
+        }
+      } catch(_) {}
+    }
+    document.addEventListener("fullscreenchange", updateFsHoverBinding);
+    // In case already fullscreen (rare), ensure binding
+    updateFsHoverBinding();
+
+    // Hotkeys (include proper PiP toggle on I)
     function handleHotkey(e) {
       var t = e.target;
       var tag = t && t.tagName ? t.tagName.toUpperCase() : "";
@@ -759,11 +747,14 @@
         video.currentTime = clamp((video.currentTime || 0) + 5, 0, duration || 0); e.preventDefault(); return;
       }
       if (code === "KeyM" || key === "m") { setMutedToggle(); e.preventDefault(); return; }
-      if (code === "KeyF" || key === "f") { var btnFull = root.querySelector(".yrp-fullscreen"); btnFull && btnFull.click(); e.preventDefault(); return; }
-      if (code === "KeyT" || key === "t") { var btnTheater = root.querySelector(".yrp-theater"); btnTheater && btnTheater.click(); e.preventDefault(); return; }
-      if (code === "KeyI" || key === "i") { try { if (document.pictureInPictureEnabled && video.requestPictureInPicture && !video.disablePictureInPicture) video.requestPictureInPicture().catch(function(){}); } catch(_){}
-        e.preventDefault(); return; }
-      if (code === "KeyA" || key === "a") { e.preventDefault(); var btnAutoplay = root.querySelector(".yrp-autoplay"); btnAutoplay && btnAutoplay.click(); return; }
+      if (code === "KeyF" || key === "f") {
+        if (document.fullscreenElement) { document.exitFullscreen().catch(function(){}); }
+        else { root.requestFullscreen && root.requestFullscreen().catch(function(){}); }
+        e.preventDefault(); return;
+      }
+      if (code === "KeyT" || key === "t") { if (btnTheater) btnTheater.click(); e.preventDefault(); return; }
+      if (code === "KeyI" || key === "i") { toggleMini(); e.preventDefault(); return; }
+      if (code === "KeyA" || key === "a") { if (btnAutoplay) btnAutoplay.click(); e.preventDefault(); return; }
       if (code === "Escape" || key === "escape") { hideMenus(); return; }
     }
     document.addEventListener("keydown", handleHotkey);
@@ -771,6 +762,7 @@
     setTimeout(adjustWidthByAspect, 200);
   }
 
+  // ---------- init ----------
   function initAll() {
     var PLAYER_NAME = detectPlayerName();
     var PLAYER_BASE = "/static/players/" + PLAYER_NAME;

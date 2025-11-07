@@ -389,7 +389,6 @@
     if (centerPlay) centerPlay.addEventListener("click", function(){ playToggle(); });
     if (btnPlay) btnPlay.addEventListener("click", function(){ playToggle(); });
 
-    // NEW: toggle by clicking anywhere on the video
     video.addEventListener("click", function(){ playToggle(); });
 
     if (btnVol) btnVol.addEventListener("click", function(e){
