@@ -7,18 +7,18 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from config.config import settings
-from db import get_conn, release_conn
-from db.user_assets_db import (
-    delete_user_avatar,
-    get_user_avatar_path,
-    upsert_user_avatar,
-)
-from db.users_db import get_user_by_uid
-from db.sso_db import list_identities_for_user
 from services.ffmpeg_srv import generate_image_thumbnail
 from utils.path_ut import build_user_storage_dir, safe_remove_storage_relpath
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
+
+# DB access moved behind helpers in db/account_profile_db.py
+from db.account_profile_db import (
+    fetch_profile_data,
+    save_user_avatar_path,
+    remove_user_avatar_record,
+    unlink_google_identity_if_possible,
+)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -27,9 +27,12 @@ templates = Jinja2Templates(directory="templates")
 def _cache_bust(url: Optional[str]) -> Optional[str]:
     """
     Append a timestamp query param to force browsers to reload updated images.
+    Only applied to local paths (starting with "/") to avoid breaking external CDN URLs.
     """
     if not url:
         return None
+    if not url.startswith("/"):
+        return url
     sep = "&" if "?" in url else "?"
     return f"{url}{sep}cb={int(time.time())}"
 
@@ -47,15 +50,12 @@ async def account_home(request: Request) -> Any:
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
 
-    conn = await get_conn()
-    try:
-        db_user = await get_user_by_uid(conn, user["user_uid"])
-        profile_username = (db_user or {}).get("username") or user.get("username") or ""
-        avatar_rel = await get_user_avatar_path(conn, user["user_uid"])
-        avatar_url = build_storage_url(avatar_rel) if avatar_rel else None
-        sso_list = await list_identities_for_user(conn, user["user_uid"])
-    finally:
-        await release_conn(conn)
+    # Encapsulated DB calls
+    data = await fetch_profile_data(user["user_uid"])
+    profile_username = data["username"] or user.get("username") or ""
+    avatar_rel = data["avatar_rel"]
+    avatar_url = build_storage_url(avatar_rel) if avatar_rel else None
+    sso_list = data["sso_list"]
 
     provider = request.cookies.get("yt_authp") or "local"
 
@@ -137,11 +137,8 @@ async def account_profile_update(request: Request, avatar: Optional[UploadFile] 
 
     rel_path = os.path.relpath(original_abs, settings.STORAGE_ROOT)
 
-    conn = await get_conn()
-    try:
-        await upsert_user_avatar(conn, user["user_uid"], rel_path)
-    finally:
-        await release_conn(conn)
+    # DB write encapsulated
+    await save_user_avatar_path(user["user_uid"], rel_path)
 
     return RedirectResponse("/account", status_code=status.HTTP_302_FOUND)
 
@@ -157,11 +154,8 @@ async def account_avatar_delete(request: Request) -> Any:
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
 
-    conn = await get_conn()
-    try:
-        await delete_user_avatar(conn, user["user_uid"])
-    finally:
-        await release_conn(conn)
+    # DB delete encapsulated
+    await remove_user_avatar_record(user["user_uid"])
 
     user_dir_abs = build_user_storage_dir(settings.STORAGE_ROOT, user["user_uid"])
     rel_user_dir = os.path.relpath(user_dir_abs, settings.STORAGE_ROOT)
@@ -182,29 +176,12 @@ async def account_unlink_google(request: Request) -> Any:
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
 
-    conn = await get_conn()
-    try:
-        ident = await conn.fetchrow(
-            "SELECT subject FROM sso_identities WHERE provider='google' AND user_uid=$1 LIMIT 1",
-            user["user_uid"],
-        )
-        if not ident:
-            return RedirectResponse("/account?msg=no_google", status_code=status.HTTP_302_FOUND)
-        row_pw = await conn.fetchrow(
-            "SELECT password_hash FROM users WHERE user_uid=$1",
-            user["user_uid"],
-        )
-        pwd_hash = row_pw["password_hash"] if row_pw else ""
-        # If password missing -> deny unlink (user would lose access)
-        if not pwd_hash:
-            return RedirectResponse("/account?msg=need_password_before_unlink", status_code=status.HTTP_302_FOUND)
-
-        await conn.execute(
-            "DELETE FROM sso_identities WHERE provider='google' AND user_uid=$1",
-            user["user_uid"],
-        )
-    finally:
-        await release_conn(conn)
+    # Encapsulated in DB layer
+    result = await unlink_google_identity_if_possible(user["user_uid"])
+    if result == "no_google":
+        return RedirectResponse("/account?msg=no_google", status_code=status.HTTP_302_FOUND)
+    if result == "need_password_before_unlink":
+        return RedirectResponse("/account?msg=need_password_before_unlink", status_code=status.HTTP_302_FOUND)
 
     resp = RedirectResponse("/account?msg=google_unlinked", status_code=status.HTTP_302_FOUND)
     resp.delete_cookie("yt_gname")
