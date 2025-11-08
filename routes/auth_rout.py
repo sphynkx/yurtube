@@ -1,4 +1,5 @@
 from typing import Any
+from urllib.parse import quote_plus
 
 import asyncpg
 from fastapi import APIRouter, Form, Request, status
@@ -24,13 +25,13 @@ templates = Jinja2Templates(directory="templates")
 async def login_page(request: Request) -> Any:
     if get_current_user(request):
         return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse("auth/login.html", 
+    return templates.TemplateResponse("auth/login.html",
     {
         "brand_logo_url": settings.BRAND_LOGO_URL,
         "brand_tagline": settings.BRAND_TAGLINE,
         "favicon_url": settings.FAVICON_URL,
         "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-        "request": request, 
+        "request": request,
         "current_user": None
     })
 
@@ -64,9 +65,16 @@ async def login(
 
     redirect = RedirectResponse("/", status_code=status.HTTP_302_FOUND)
     create_session_cookie(redirect, user["user_uid"])
+    # Provider marker
     redirect.set_cookie(
         "yt_authp", "local",
         httponly=True, secure=True, samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
+    local_name = user.get("username") or username
+    redirect.set_cookie(
+        "yt_lname", quote_plus(str(local_name), safe="()"),
+        httponly=False, secure=True, samesite="lax",
         max_age=60 * 60 * 24 * 30,
     )
     return redirect
@@ -76,13 +84,13 @@ async def login(
 async def register_page(request: Request) -> Any:
     if get_current_user(request):
         return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse("auth/register.html", 
+    return templates.TemplateResponse("auth/register.html",
     {
         "brand_logo_url": settings.BRAND_LOGO_URL,
         "brand_tagline": settings.BRAND_TAGLINE,
         "favicon_url": settings.FAVICON_URL,
         "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-        "request": request, 
+        "request": request,
         "current_user": None
     })
 
@@ -166,6 +174,11 @@ async def register(
         httponly=True, secure=True, samesite="lax",
         max_age=60 * 60 * 24 * 30,
     )
+    redirect.set_cookie(
+        "yt_lname", quote_plus(str(username), safe="()"),
+        httponly=False, secure=True, samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
     return redirect
 
 
@@ -174,6 +187,7 @@ async def logout_post() -> Any:
     redirect = RedirectResponse("/", status_code=status.HTTP_302_FOUND)
     clear_session_cookie(redirect)
     redirect.delete_cookie("yt_authp")
+    redirect.delete_cookie("yt_lname")
     return redirect
 
 
@@ -185,4 +199,5 @@ async def logout_get() -> Any:
     redirect = RedirectResponse("/", status_code=status.HTTP_302_FOUND)
     clear_session_cookie(redirect)
     redirect.delete_cookie("yt_authp")
+    redirect.delete_cookie("yt_lname")
     return redirect

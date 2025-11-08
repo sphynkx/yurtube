@@ -7,69 +7,103 @@
 {% endif %}
 
 <style>
-  .reg-form { display:flex; flex-direction:column; gap:14px; max-width:420px; }
-  .reg-row { display:flex; gap:12px; align-items:center; }
-  .reg-row label { width:110px; font-weight:600; }
-  .reg-input-wrap { flex:1; }
-  .pw-field { position:relative; display:inline-flex; align-items:center; }
-  .pw-input { width: 22ch; max-width:100%; padding-right:28px; }
+  .auth-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 24px;
+    max-width: 760px;
+  }
+  @media (min-width: 900px) {
+    .auth-grid {
+      grid-template-columns: 1fr 260px;
+      align-items: start;
+    }
+  }
+
+  .reg-form { display:flex; flex-direction:column; gap:14px; }
+  .reg-row { display:flex; flex-direction:column; gap:4px; }
+  .reg-row label { font-weight:600; }
+  .reg-input, .pw-input, .reg-submit {
+    width: 24ch; min-width:24ch; max-width:24ch; box-sizing:border-box;
+  }
+
+  .pw-field { position:relative; width:fit-content; }
+  .pw-input { padding-right:32px; }
   .pw-eye {
-    position:absolute; right:4px; width:24px; height:24px; border:0; padding:0;
+    position:absolute; top:50%; transform:translateY(-50%);
+    right:6px; width:24px; height:24px; border:0; padding:0;
     background:transparent; cursor:pointer; opacity:0.75;
+    display:flex; align-items:center; justify-content:center;
   }
   .pw-eye:hover { opacity:1; }
   .pw-eye::before {
-    content:""; display:block; width:100%; height:100%;
+    content:""; display:block; width:20px; height:20px;
     background-repeat:no-repeat; background-position:center;
     background-size:20px 20px;
-    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z'/><circle cx='12' cy='12' r='3'/></svg>");
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12C1 12 5 5 12 5s11 7 11 7-4 7-11 7S1 12 1 12z'></path><circle cx='12' cy='12' r='3'></circle></svg>");
   }
-  .sso-block { margin-top:28px; max-width:420px; }
+
+  .reg-submit {
+    padding:6px 10px; font-weight:600; background:#f5f5f5;
+    border:1px solid #bbb; cursor:pointer;
+  }
+  .reg-submit:hover { background:#eee; }
+
+  .sso-panel { display:flex; flex-direction:column; gap:10px; }
+  .sso-title { font-weight:600; margin-bottom:4px; }
   .sso-btn {
-    display:inline-flex; align-items:center; gap:8px;
-    background:#fff; border:1px solid #ccc; padding:8px 14px;
+    display:flex; align-items:center; gap:8px; justify-content:center;
+    width: 24ch; min-width:24ch; max-width:100%;
+    background:#fff; border:1px solid #ccc; padding:10px 12px;
     cursor:pointer; border-radius:4px; text-decoration:none; color:#222;
     font-weight:600;
   }
   .sso-btn:hover { background:#f5f5f5; }
-  .sso-icon {
-    width:20px; height:20px; display:inline-block;
-    background-image:url("/static/img/google_icon.svg");
-    background-size:contain; background-repeat:no-repeat;
+  .sso-icon { width:20px; height:20px; background-size:contain; background-repeat:no-repeat; }
+  .sso-icon.google { background-image:url("/static/img/google_icon.svg"); }
+  .sso-icon.twitter { background-image:url("/static/img/twitter_icon.svg"); }
+
+  @media (max-width: 420px) {
+    .reg-input, .pw-input, .reg-submit, .sso-btn {
+      width:24ch; min-width:0; max-width:100%;
+    }
   }
+
+  .hint-line { font-size:12px; color:#666; margin-top:4px; }
 </style>
 
-<form class="reg-form" action="/auth/register" method="post" novalidate>
-  <div class="reg-row">
-    <label for="reg-username">Username</label>
-    <div class="reg-input-wrap">
-      <input id="reg-username" type="text" name="username" required autocomplete="username"
+<div class="auth-grid">
+  <form class="reg-form" action="/auth/register" method="post" novalidate>
+    <div class="reg-row">
+      <label for="reg-username">Username</label>
+      <input id="reg-username" class="reg-input" type="text" name="username" required autocomplete="username"
              value="{{ form.username if form and form.username is defined }}">
     </div>
-  </div>
-  <div class="reg-row">
-    <label for="reg-email">Email</label>
-    <div class="reg-input-wrap">
-      <input id="reg-email" type="email" name="email" required autocomplete="email"
+    <div class="reg-row">
+      <label for="reg-email">Email</label>
+      <input id="reg-email" class="reg-input" type="email" name="email" required autocomplete="email"
              value="{{ form.email if form and form.email is defined }}">
     </div>
-  </div>
-  <div class="reg-row">
-    <label for="reg-password">Password</label>
-    <div class="reg-input-wrap pw-field">
-      <input id="reg-password" class="pw-input" type="password" name="password" required autocomplete="new-password">
-      <button type="button" class="pw-eye" data-target="reg-password" aria-label="Hold to show"></button>
+    <div class="reg-row">
+      <label for="reg-password">Password</label>
+      <div class="pw-field">
+        <input id="reg-password" class="pw-input" type="password" name="password" required autocomplete="new-password">
+        <button type="button" class="pw-eye" data-target="reg-password" aria-label="Hold to show password"></button>
+      </div>
     </div>
-  </div>
-  <button type="submit">Create account</button>
-  <p style="font-size:12px;color:#666;margin:4px 0 0;">Min 8 characters recommended. You can also register with Google below.</p>
-</form>
+    <button type="submit" class="reg-submit">Create account</button>
+    <p class="hint-line">Min 8 characters recommended. You can also register with SSO on the right.</p>
+  </form>
 
-<div class="sso-block">
-  <div style="font-weight:600; margin-bottom:6px;">Or register via</div>
-  <a class="sso-btn" href="/auth/google/start">
-    <span class="sso-icon"></span> Google
-  </a>
+  <aside class="sso-panel">
+    <div class="sso-title">Or register via</div>
+    <a class="sso-btn" href="/auth/google/start">
+      <span class="sso-icon google" aria-hidden="true"></span> Google
+    </a>
+    <a class="sso-btn" href="/auth/twitter/start">
+      <span class="sso-icon twitter" aria-hidden="true"></span> Twitter
+    </a>
+  </aside>
 </div>
 
 <script>
@@ -78,8 +112,8 @@
     var id = btn.getAttribute("data-target");
     var input = document.getElementById(id);
     if (!input) return;
-    var show = function(){ input.type="text"; };
-    var hide = function(){ input.type="password"; };
+    function show(){ input.type="text"; }
+    function hide(){ input.type="password"; }
     btn.addEventListener("mousedown", function(e){ e.preventDefault(); show(); });
     btn.addEventListener("mouseup", hide);
     btn.addEventListener("mouseleave", hide);
@@ -87,12 +121,9 @@
     btn.addEventListener("touchend", hide);
     input.addEventListener("blur", hide);
   }
-  function init(){
-    var eyes=document.querySelectorAll(".pw-eye");
-    for (var i=0;i<eyes.length;i++) bindEye(eyes[i]);
-  }
-  if (document.readyState==="loading") document.addEventListener("DOMContentLoaded", init);
-  else init();
+  document.addEventListener("DOMContentLoaded", function(){
+    document.querySelectorAll(".pw-eye").forEach(bindEye);
+  });
 })();
 </script>
 {% endblock %}

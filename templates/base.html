@@ -24,6 +24,54 @@
 
   <link rel="icon" type="image/png" sizes="32x32" href="{{ _favicon }}">
   <link rel="apple-touch-icon" href="{{ _apple_icon }}">
+
+  <style>
+    /* Wide layout: logo (left) — search (flex) — avatar (right) */
+    .site-header {
+      display:flex;
+      flex-wrap:wrap;
+      gap:12px;
+      align-items:center;
+      padding:4px 12px 6px;
+    }
+    .site-header .logo {
+      display:flex;
+      align-items:center;
+      gap:12px;
+      flex:0 0 auto;
+      order:1;
+    }
+    .search-form {
+      flex:1 1 360px;
+      display:flex;
+      order:2;           /* search stays between logo and avatar on wide screens */
+    }
+    .user-nav {
+      display:flex;
+      align-items:center;
+      flex:0 0 auto;
+      order:3;           /* avatar at the right end on wide screens */
+      margin-left:0;
+    }
+
+    @media (max-width: 760px) {
+      .site-header { align-items:flex-start; }
+      .logo { order:1; }
+      .user-nav {
+        order:2;
+        margin-left:8px;
+      }
+      .search-form {
+        order:4;
+        flex:1 1 100%;
+        width:100%;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .search-form input { width:100%; }
+    }
+  </style>
 </head>
 <body>
   <header class="site-header">
@@ -35,15 +83,19 @@
         <div class="brand-tagline">{{ brand_tagline }}</div>
       {% endif %}
     </div>
+
     <form class="search-form" action="/search" method="get">
       <input type="text" name="q" placeholder="Search" aria-label="Search">
     </form>
+
     <nav class="user-nav">
       {% if current_user %}
         {% set authp = request.cookies.get('yt_authp') %}
         {% set sso_pic = request.cookies.get('yt_gpic') %}
         {% set sso_name_raw = request.cookies.get('yt_gname') %}
         {% set sso_name = sso_name_raw.replace('+',' ') if sso_name_raw else None %}
+        {% set local_name_raw = request.cookies.get('yt_lname') %}
+        {% set local_name = local_name_raw.replace('+',' ') if local_name_raw else None %}
 
         {% set avatar_src = '/storage/users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
         {% if authp and authp != 'local' and sso_pic %}
@@ -51,12 +103,14 @@
         {% endif %}
 
         {% set display_name = current_user['username'] %}
-        {% if authp and authp != 'local' and sso_name %}
+        {% if authp == 'local' and local_name %}
+          {% set display_name = local_name %}
+        {% elif authp and authp != 'local' and sso_name %}
           {% set display_name = sso_name %}
         {% endif %}
 
         <details class="user-menu">
-          <summary style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;">
+          <summary style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;">
             <img id="nav-avatar" src="{{ avatar_src }}" alt="me" class="avatar"
                  onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';"
                  style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
@@ -81,9 +135,8 @@
           </ul>
         </details>
       {% else %}
-        {# Unauthenticated: avatar menu with caption under avatar #}
         <details class="user-menu">
-          <summary style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;">
+          <summary style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;">
             <img src="/static/img/avatar_default.svg" alt="guest" class="avatar"
                  style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
             <span title="Guest"
