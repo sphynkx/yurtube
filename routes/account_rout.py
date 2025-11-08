@@ -25,6 +25,9 @@ templates = Jinja2Templates(directory="templates")
 
 
 def _cache_bust(url: Optional[str]) -> Optional[str]:
+    """
+    Append a timestamp query param to force browsers to reload updated images.
+    """
     if not url:
         return None
     sep = "&" if "?" in url else "?"
@@ -33,6 +36,13 @@ def _cache_bust(url: Optional[str]) -> Optional[str]:
 
 @router.get("/account", response_class=HTMLResponse)
 async def account_home(request: Request) -> Any:
+    """
+    Account profile page:
+    - Requires authenticated user
+    - Loads avatar asset path
+    - Loads SSO identities (only shown for Google sign-in)
+    - Prepares vars for header (avatar + display name)
+    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
@@ -87,6 +97,12 @@ async def account_home(request: Request) -> Any:
 
 @router.post("/account/profile", response_class=HTMLResponse)
 async def account_profile_update(request: Request, avatar: Optional[UploadFile] = File(None)) -> Any:
+    """
+    Update avatar:
+    - Accepts an image file
+    - Stores original + small thumbnail
+    - Upserts DB record for avatar path
+    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
@@ -126,6 +142,11 @@ async def account_profile_update(request: Request, avatar: Optional[UploadFile] 
 
 @router.post("/account/avatar/delete")
 async def account_avatar_delete(request: Request) -> Any:
+    """
+    Delete current avatar:
+    - Removes DB record
+    - Deletes storage directory for the user
+    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
@@ -142,8 +163,15 @@ async def account_avatar_delete(request: Request) -> Any:
 
     return RedirectResponse("/account", status_code=status.HTTP_302_FOUND)
 
+
 @router.post("/account/sso/google/unlink")
 async def account_unlink_google(request: Request) -> Any:
+    """
+    Unlink Google identity:
+    - Requires existing Google SSO
+    - Requires local password (prevents losing final login method)
+    - Deletes identity and resets header cookies to local
+    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
@@ -161,8 +189,8 @@ async def account_unlink_google(request: Request) -> Any:
             user["user_uid"],
         )
         pwd_hash = row_pw["password_hash"] if row_pw else ""
+        # If password missing -> deny unlink (user would lose access)
         if not pwd_hash:
-            # If locall pass is absent - cannot unlink - else we cannot login
             return RedirectResponse("/account?msg=need_password_before_unlink", status_code=status.HTTP_302_FOUND)
 
         await conn.execute(
@@ -172,7 +200,6 @@ async def account_unlink_google(request: Request) -> Any:
     finally:
         await release_conn(conn)
 
-    # Clean up Google-cookies
     resp = RedirectResponse("/account?msg=google_unlinked", status_code=status.HTTP_302_FOUND)
     resp.delete_cookie("yt_gname")
     resp.delete_cookie("yt_gpic")

@@ -1,4 +1,5 @@
 from typing import Optional, Dict, Any, List
+import asyncpg
 
 async def get_identity(conn, provider: str, subject: str) -> Optional[Dict[str, Any]]:
     row = await conn.fetchrow(
@@ -49,3 +50,25 @@ async def list_identities_for_user(conn, user_uid: str) -> List[Dict[str, Any]]:
         user_uid,
     )
     return [dict(r) for r in rows]
+
+
+async def has_identity_for_user(conn: asyncpg.Connection, provider: str, user_uid: str) -> bool:
+    row = await conn.fetchrow(
+        """
+        SELECT 1
+        FROM sso_identities
+        WHERE provider = $1 AND user_uid = $2
+        LIMIT 1
+        """,
+        provider, user_uid,
+    )
+    return bool(row)
+
+async def unlink_identity_for_user(conn: asyncpg.Connection, provider: str, user_uid: str) -> None:
+    await conn.execute(
+        """
+        DELETE FROM sso_identities
+        WHERE provider = $1 AND user_uid = $2
+        """,
+        provider, user_uid,
+    )

@@ -8,6 +8,7 @@
     {% if msg == 'google_unlinked' %}Google account unlinked successfully.
     {% elif msg == 'no_google' %}No Google account linked.
     {% elif msg == 'need_password_before_unlink' %}Set a local password before unlinking Google.
+    {% elif msg == 'unlinked' %}Google unlinked and you were logged out.
     {% else %}{{ msg }}
     {% endif %}
   </div>
@@ -40,21 +41,17 @@
   <div style="flex:1; min-width:280px;">
     <h2>Profile</h2>
 
-    {% set google_name = None %}
-    {% set google_email = None %}
-    {% for ident in sso_identities %}
-      {% if ident.provider == 'google' %}
-        {% if ident.display_name %}{% set google_name = ident.display_name %}{% endif %}
-        {% if ident.email %}{% set google_email = ident.email %}{% endif %}
-      {% endif %}
-    {% endfor %}
-
-    <p>Name: <strong>{{ google_name if google_name else current_user['username'] }}</strong></p>
-    <p>Handle: <strong>@{{ current_user['username'] }}</strong></p>
-
-    {% if google_email %}
-      <p>Google email: <strong>{{ google_email }}</strong></p>
-    {% endif %}
+    {# Show only one name (Google display name when present, otherwise raw username) #}
+    <p>Name: <strong>
+      {% set google_name = None %}
+      {% for ident in sso_identities %}
+        {% if ident.provider == 'google' and ident.display_name %}
+          {% set google_name = ident.display_name %}
+          {% break %}
+        {% endif %}
+      {% endfor %}
+      {{ google_name if google_name else current_user['username'] }}
+    </strong></p>
 
     <ul style="margin-top:16px;">
       <li><a href="/manage">My videos</a></li>

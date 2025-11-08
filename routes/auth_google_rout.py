@@ -15,6 +15,8 @@ from fastapi import status
 from db import get_conn, release_conn
 from db.users_db import create_user
 from db.sso_db import get_identity, create_identity, update_identity_profile
+from db.username_db import generate_unique_username
+from utils.username_ut import sanitize_username_base
 from utils.security_ut import create_session_cookie
 from utils.idgen_ut import gen_id
 
@@ -49,50 +51,6 @@ def _parse_state(state: str) -> Optional[Dict[str, Any]]:
 def _code_challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
-
-
-async def _username_exists(conn, uname: str) -> bool:
-    row = await conn.fetchrow(
-        "SELECT 1 FROM users WHERE lower(username)=lower($1) LIMIT 1",
-        uname,
-    )
-    return bool(row)
-
-
-def _sanitize_base(name: str) -> str:
-    # Save space as delimiter: replace it on "-" - beautication..
-    name = name.strip()
-    name = name.replace(" ", "-")
-    allowed = []
-    for ch in name:
-        if ch.isalnum() or ch in "._-":
-            allowed.append(ch)
-    cleaned = "".join(allowed)
-    if not cleaned:
-        cleaned = "user"
-    return cleaned[:30]
-
-
-async def _gen_unique_username(conn, base: str) -> str:
-    # If base is free - use it
-    if not await _username_exists(conn, base):
-        return base
-    # Try suffixes -g1 .. -g9
-    for i in range(1, 10):
-        candidate = f"{base}-g{i}"
-        if len(candidate) > 30:
-            candidate = candidate[:30]
-        if not await _username_exists(conn, candidate):
-            return candidate
-    # Move on to a random suffix
-    for _ in range(20):
-        cand = f"{base}-g{gen_id(4)}"
-        if len(cand) > 30:
-            cand = cand[:30]
-        if not await _username_exists(conn, cand):
-            return cand
-    # Fallback
-    return f"user-{gen_id(6)}"
 
 
 @router.get("/auth/google/start")
@@ -203,14 +161,13 @@ async def google_callback(request: Request, state: str, code: str) -> Any:
     try:
         ident = await get_identity(conn, "google", sub)
         if ident:
-            # If Google identity present -> just update profile and use the current user
+            # Identity exists: update and reuse user
             user_uid = ident["user_uid"]
             await update_identity_profile(conn, "google", sub, name, picture)
         else:
-            # Always create NEW user - dont merge by email!!
-            base_name = (name or email.split("@")[0] or "user").strip()
-            safe_base = _sanitize_base(base_name)
-            safe_name = await _gen_unique_username(conn, safe_base)
+            # Always create NEW user (never merge by email)
+            base_name = sanitize_username_base(name, email)
+            safe_name = await generate_unique_username(conn, base_name)
 
             user_uid = gen_id(20)
             channel_id = gen_id(24)
@@ -226,6 +183,7 @@ async def google_callback(request: Request, state: str, code: str) -> Any:
                     password_hash="",
                 )
             except asyncpg.UniqueViolationError:
+                # Email conflict: create alias or fall back to None
                 try:
                     local, domain = email.split("@", 1)
                     alias = f"{local}+g{sub[:6]}@{domain}"
@@ -242,7 +200,7 @@ async def google_callback(request: Request, state: str, code: str) -> Any:
                             password_hash="",
                         )
                     except asyncpg.UniqueViolationError:
-                        safe_name = await _gen_unique_username(conn, safe_base + "-g")
+                        safe_name = await generate_unique_username(conn, base_name + "-g")
                         await create_user(
                             conn=conn,
                             user_uid=user_uid,
@@ -262,7 +220,7 @@ async def google_callback(request: Request, state: str, code: str) -> Any:
                             password_hash="",
                         )
                     except asyncpg.UniqueViolationError:
-                        safe_name = await _gen_unique_username(conn, safe_base + "-g")
+                        safe_name = await generate_unique_username(conn, base_name + "-g")
                         await create_user(
                             conn=conn,
                             user_uid=user_uid,

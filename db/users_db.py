@@ -73,3 +73,12 @@ async def get_user_by_name_or_channel(conn: asyncpg.Connection, name_or_channel:
         name_or_channel,
     )
     return dict(row) if row else None
+
+
+async def user_has_password(conn: asyncpg.Connection, user_uid: str) -> bool:
+    row = await conn.fetchrow(
+        "SELECT password_hash FROM users WHERE user_uid = $1",
+        user_uid,
+    )
+    pwd = (row["password_hash"] if row else "") or ""
+    return bool(pwd)
