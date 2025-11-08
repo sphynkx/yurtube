@@ -12,7 +12,6 @@ from utils.path_ut import build_user_storage_dir, safe_remove_storage_relpath
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 
-# DB access moved behind helpers in db/account_profile_db.py
 from db.account_profile_db import (
     fetch_profile_data,
     save_user_avatar_path,
@@ -50,7 +49,6 @@ async def account_home(request: Request) -> Any:
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
 
-    # Encapsulated DB calls
     data = await fetch_profile_data(user["user_uid"])
     profile_username = data["username"] or user.get("username") or ""
     avatar_rel = data["avatar_rel"]
@@ -137,7 +135,6 @@ async def account_profile_update(request: Request, avatar: Optional[UploadFile] 
 
     rel_path = os.path.relpath(original_abs, settings.STORAGE_ROOT)
 
-    # DB write encapsulated
     await save_user_avatar_path(user["user_uid"], rel_path)
 
     return RedirectResponse("/account", status_code=status.HTTP_302_FOUND)
@@ -154,7 +151,6 @@ async def account_avatar_delete(request: Request) -> Any:
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
 
-    # DB delete encapsulated
     await remove_user_avatar_record(user["user_uid"])
 
     user_dir_abs = build_user_storage_dir(settings.STORAGE_ROOT, user["user_uid"])
@@ -176,7 +172,6 @@ async def account_unlink_google(request: Request) -> Any:
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
 
-    # Encapsulated in DB layer
     result = await unlink_google_identity_if_possible(user["user_uid"])
     if result == "no_google":
         return RedirectResponse("/account?msg=no_google", status_code=status.HTTP_302_FOUND)

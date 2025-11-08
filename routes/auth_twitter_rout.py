@@ -162,6 +162,7 @@ async def twitter_callback(
     picture = None
     email = None
 
+    # Optional id_token (ignored for subject; we only take name/picture/email from it)
     if id_token_raw:
         parts = id_token_raw.split(".")
         if len(parts) >= 2:
@@ -170,7 +171,6 @@ async def twitter_callback(
                 return base64.urlsafe_b64decode(x.encode("utf-8"))
             try:
                 payload = json.loads(_b64d(parts[1]).decode("utf-8"))
-                sub = payload.get("sub") or sub
                 name = payload.get("name") or name
                 picture = payload.get("picture") or picture
                 email = payload.get("email") or email
@@ -178,7 +178,8 @@ async def twitter_callback(
                 if settings.TWITTER_OAUTH_DEBUG:
                     print("[twitter-oauth] id_token decode failed:", repr(e))
 
-    if access_token and (not sub or not name or not picture):
+    # Always resolve canonical subject and profile via /2/users/me
+    if access_token:
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 ur = await client.get(
@@ -188,9 +189,11 @@ async def twitter_callback(
                 if ur.status_code == 200:
                     ui = ur.json() or {}
                     data = ui.get("data") or {}
-                    sub = sub or data.get("id")
+                    sub = str(data.get("id")) if data.get("id") is not None else None
                     name = name or data.get("name") or data.get("username")
                     picture = picture or data.get("profile_image_url")
+                    if settings.TWITTER_OAUTH_DEBUG:
+                        print("[twitter-oauth] resolved sub=", sub)
                 else:
                     if settings.TWITTER_OAUTH_DEBUG:
                         print("[twitter-oauth] users/me error", ur.status_code, ur.text[:400])

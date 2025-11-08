@@ -77,23 +77,35 @@
         {% endfor %}
       </ul>
 
-      {# Show "Unlink Google" only if a Google identity exists #}
-      {% set ns = namespace(has_google=false) %}
+      {% set has_google = false %}
+      {% set has_twitter = false %}
       {% for ident in sso_identities %}
         {% if ident.provider == 'google' %}
-          {% set ns.has_google = true %}
+          {% set has_google = true %}
+        {% elif ident.provider == 'twitter' %}
+          {% set has_twitter = true %}
         {% endif %}
       {% endfor %}
-      {% if ns.has_google %}
+      {% set current_authp = request.cookies.get('yt_authp') %}
+
+      {% if has_google and current_authp == 'google' %}
       <form action="/account/sso/google/unlink" method="post" style="margin-top:12px;"
             onsubmit="return confirm('Unlink Google account?');">
         <button type="submit">Unlink Google</button>
       </form>
       {% endif %}
+    {% else %}
+      {# Even if list empty, still detect current auth provider from cookie #}
+      {% set has_twitter = false %}
+      {% set has_google = false %}
+      {% set current_authp = request.cookies.get('yt_authp') %}
     {% endif %}
 
     <div style="margin-top:16px;">
-      <a class="button" href="/auth/twitter/start?link=1">Link Twitter</a>
+      {# Hide Link Twitter if twitter identity already exists OR current login is via twitter (cookie) #}
+      {% if not has_twitter and current_authp != 'twitter' %}
+        <a class="button" href="/auth/twitter/start?link=1">Link Twitter</a>
+      {% endif %}
     </div>
   </div>
 </div>

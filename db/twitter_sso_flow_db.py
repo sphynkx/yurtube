@@ -23,16 +23,28 @@ async def process_twitter_identity(
     Returns user_uid that should be logged in after Twitter OAuth callback.
     Handles:
       - existing identity (update profile)
-      - explicit linking (link_mode=1)
+      - explicit linking (link_mode=1) with reassignment when identity belongs to another user
       - new user creation (with optional pseudo email)
     """
     conn = await get_conn()
     try:
         ident = await get_identity(conn, "twitter", sub)
         if ident:
-            user_uid = ident["user_uid"]
+            # If identity already exists:
+            # - When linking explicitly and it belongs to another user, reassign to the current user
+            # - Otherwise, just update profile and return the owner
+            owner_uid = ident["user_uid"]
+            if link_mode == 1 and current_user_uid and owner_uid != current_user_uid:
+                # Reassign identity to the current session user
+                await conn.execute(
+                    "UPDATE sso_identities SET user_uid=$1 WHERE provider='twitter' AND subject=$2",
+                    current_user_uid, sub
+                )
+                await update_identity_profile(conn, "twitter", sub, name, picture)
+                return current_user_uid
+
             await update_identity_profile(conn, "twitter", sub, name, picture)
-            return user_uid
+            return owner_uid
 
         if link_mode == 1 and current_user_uid:
             # Explicit linking
