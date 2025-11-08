@@ -6,37 +6,93 @@
 <div class="alert alert-error">{{ error }}</div>
 {% endif %}
 
-{# Preserve previously entered username/email in case of error #}
-<form action="/auth/register" method="post" novalidate>
-  <div>
-    <label>Username</label>
-    <input
-      type="text"
-      name="username"
-      required
-      autocomplete="username"
-      value="{{ (form.username if form else '') }}"
-    >
+<style>
+  .reg-form { display:flex; flex-direction:column; gap:14px; max-width:420px; }
+  .reg-row { display:flex; gap:12px; align-items:center; }
+  .reg-row label { width:110px; font-weight:600; }
+  .reg-input-wrap { flex:1; }
+  .pw-field { position:relative; display:inline-flex; align-items:center; }
+  .pw-input { width: 22ch; max-width:100%; padding-right:28px; }
+  .pw-eye {
+    position:absolute; right:4px; width:24px; height:24px; border:0; padding:0;
+    background:transparent; cursor:pointer; opacity:0.75;
+  }
+  .pw-eye:hover { opacity:1; }
+  .pw-eye::before {
+    content:""; display:block; width:100%; height:100%;
+    background-repeat:no-repeat; background-position:center;
+    background-size:20px 20px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z'/><circle cx='12' cy='12' r='3'/></svg>");
+  }
+  .sso-block { margin-top:28px; max-width:420px; }
+  .sso-btn {
+    display:inline-flex; align-items:center; gap:8px;
+    background:#fff; border:1px solid #ccc; padding:8px 14px;
+    cursor:pointer; border-radius:4px; text-decoration:none; color:#222;
+    font-weight:600;
+  }
+  .sso-btn:hover { background:#f5f5f5; }
+  .sso-icon {
+    width:20px; height:20px; display:inline-block;
+    background-image:url("/static/img/google_icon.svg");
+    background-size:contain; background-repeat:no-repeat;
+  }
+</style>
+
+<form class="reg-form" action="/auth/register" method="post" novalidate>
+  <div class="reg-row">
+    <label for="reg-username">Username</label>
+    <div class="reg-input-wrap">
+      <input id="reg-username" type="text" name="username" required autocomplete="username"
+             value="{{ form.username if form and form.username is defined }}">
+    </div>
   </div>
-  <div>
-    <label>Email</label>
-    <input
-      type="email"
-      name="email"
-      required
-      autocomplete="email"
-      value="{{ (form.email if form else '') }}"
-    >
+  <div class="reg-row">
+    <label for="reg-email">Email</label>
+    <div class="reg-input-wrap">
+      <input id="reg-email" type="email" name="email" required autocomplete="email"
+             value="{{ form.email if form and form.email is defined }}">
+    </div>
   </div>
-  <div>
-    <label>Password</label>
-    <input
-      type="password"
-      name="password"
-      required
-      autocomplete="new-password"
-    >
+  <div class="reg-row">
+    <label for="reg-password">Password</label>
+    <div class="reg-input-wrap pw-field">
+      <input id="reg-password" class="pw-input" type="password" name="password" required autocomplete="new-password">
+      <button type="button" class="pw-eye" data-target="reg-password" aria-label="Hold to show"></button>
+    </div>
   </div>
   <button type="submit">Create account</button>
+  <p style="font-size:12px;color:#666;margin:4px 0 0;">Min 8 characters recommended. You can also register with Google below.</p>
 </form>
+
+<div class="sso-block">
+  <div style="font-weight:600; margin-bottom:6px;">Or register via</div>
+  <a class="sso-btn" href="/auth/google/start">
+    <span class="sso-icon"></span> Google
+  </a>
+</div>
+
+<script>
+(function(){
+  function bindEye(btn){
+    var id = btn.getAttribute("data-target");
+    var input = document.getElementById(id);
+    if (!input) return;
+    var show = function(){ input.type="text"; };
+    var hide = function(){ input.type="password"; };
+    btn.addEventListener("mousedown", function(e){ e.preventDefault(); show(); });
+    btn.addEventListener("mouseup", hide);
+    btn.addEventListener("mouseleave", hide);
+    btn.addEventListener("touchstart", function(e){ e.preventDefault(); show(); }, {passive:false});
+    btn.addEventListener("touchend", hide);
+    input.addEventListener("blur", hide);
+  }
+  function init(){
+    var eyes=document.querySelectorAll(".pw-eye");
+    for (var i=0;i<eyes.length;i++) bindEye(eyes[i]);
+  }
+  if (document.readyState==="loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+</script>
 {% endblock %}

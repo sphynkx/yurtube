@@ -1,7 +1,7 @@
 from typing import Any
 
 import asyncpg
-from fastapi import APIRouter, Form, HTTPException, Request, status
+from fastapi import APIRouter, Form, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -39,7 +39,6 @@ async def login(
         await release_conn(conn)
 
     if not user:
-        # Render the login page with a friendly error instead of JSON
         return templates.TemplateResponse(
             "auth/login.html",
             {
@@ -52,6 +51,11 @@ async def login(
 
     redirect = RedirectResponse("/", status_code=status.HTTP_302_FOUND)
     create_session_cookie(redirect, user["user_uid"])
+    redirect.set_cookie(
+        "yt_authp", "local",
+        httponly=True, secure=True, samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
     return redirect
 
 
@@ -71,7 +75,6 @@ async def register(
 ) -> Any:
     conn = await get_conn()
     try:
-        # Check username uniqueness
         existing_user = await get_user_by_username(conn, username)
         if existing_user:
             return templates.TemplateResponse(
@@ -80,13 +83,11 @@ async def register(
                     "request": request,
                     "current_user": None,
                     "error": "Username already taken",
-                    # Preserve user input so it does not need to be retyped
                     "form": {"username": username, "email": email},
                 },
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Check email uniqueness (case-insensitive)
         existing_email = await get_user_by_email(conn, email)
         if existing_email:
             return templates.TemplateResponse(
@@ -95,7 +96,6 @@ async def register(
                     "request": request,
                     "current_user": None,
                     "error": "Email is already registered",
-                    # Preserve user input so it does not need to be retyped
                     "form": {"username": username, "email": email},
                 },
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -113,14 +113,12 @@ async def register(
                 password_hash=hash_password(password),
             )
         except asyncpg.UniqueViolationError:
-            # Race-condition fallback: surface a friendly message instead of 500
             return templates.TemplateResponse(
                 "auth/register.html",
                 {
                     "request": request,
                     "current_user": None,
                     "error": "Username or email is already registered",
-                    # Preserve user input so it does not need to be retyped
                     "form": {"username": username, "email": email},
                 },
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -130,11 +128,28 @@ async def register(
 
     redirect = RedirectResponse("/", status_code=status.HTTP_302_FOUND)
     create_session_cookie(redirect, user_uid)
+    redirect.set_cookie(
+        "yt_authp", "local",
+        httponly=True, secure=True, samesite="lax",
+        max_age=60 * 60 * 24 * 30,
+    )
     return redirect
 
 
 @router.post("/logout")
-async def logout() -> Any:
+async def logout_post() -> Any:
     redirect = RedirectResponse("/", status_code=status.HTTP_302_FOUND)
     clear_session_cookie(redirect)
+    redirect.delete_cookie("yt_authp")
+    return redirect
+
+
+@router.get("/logout")
+async def logout_get() -> Any:
+    """
+    Permit 405
+    """
+    redirect = RedirectResponse("/", status_code=status.HTTP_302_FOUND)
+    clear_session_cookie(redirect)
+    redirect.delete_cookie("yt_authp")
     return redirect

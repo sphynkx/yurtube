@@ -63,3 +63,25 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 /* Alerts */
 .alert { padding:10px 12px; border-radius:6px; margin:10px 0; border:1px solid transparent; }
 .alert-error { background:#fde8e8; color:#8a1f1f; border-color:#f5c2c7; }
+
+/* Footer */
+.footer-simple {
+  display: flow-root;
+  clear: both;
+  width: 100%;
+  padding: 8px 0 20px;
+}
+.footer-simple .footer-row {
+  text-align: center;
+  margin: 6px 0;
+}
+.footer-simple a {
+  color: #1d33aa;
+  text-decoration: none;
+}
+.footer-simple a:hover {
+  text-decoration: underline;
+}
+.footer-simple, .footer-simple .footer-row {
+  text-align: center !important;
+}

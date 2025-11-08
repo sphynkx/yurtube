@@ -21,16 +21,29 @@
     </form>
     <nav class="user-nav">
       {% if current_user %}
+        {% set authp = request.cookies.get('yt_authp') %}
+        {% set gpic = request.cookies.get('yt_gpic') %}
+        {% set gname_raw = request.cookies.get('yt_gname') %}
+        {% set gname = gname_raw.replace('+',' ') if gname_raw else None %}
+
+        {% set avatar_src = '/storage/users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
+        {% if authp == 'google' and gpic %}
+          {% set avatar_src = gpic %}
+        {% endif %}
+
+        {% set display_name = current_user['username'] %}
+        {% if authp == 'google' and gname %}
+          {% set display_name = gname %}
+        {% endif %}
+
         <details class="user-menu">
-          <summary>
-            <img
-              id="nav-avatar"
-              src="/storage/users/{{ current_user['user_uid'] }}/avatar_small.png"
-              alt="me"
-              class="avatar"
-              data-cache-bust="1"
-              onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';"
-            >
+          <summary style="display:inline-flex;align-items:center;gap:8px;">
+            <img id="nav-avatar" src="{{ avatar_src }}" alt="me" class="avatar"
+                 onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';"
+                 style="width:28px;height:28px;border-radius:50%;object-fit:cover;">
+            <span style="font-weight:600;max-width:18ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              {{ display_name }}
+            </span>
           </summary>
           <ul>
             <li><a href="/account">Account</a></li>
@@ -68,14 +81,11 @@
     </main>
   </div>
 
-  <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython_stdlib.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-  <script type="text/python" src="/static/brython/init.bry"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython_stdlib.js"></script>
   <script>
     window.addEventListener("DOMContentLoaded", function () {
-      try { if (window.brython) { brython(); } } catch (e) {
-        console && console.warn && console.warn("[init] Brython init skipped:", e);
-      }
+      try { if (window.brython) { brython(); } } catch (e) {}
     });
   </script>
 </body>

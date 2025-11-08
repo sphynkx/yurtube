@@ -86,6 +86,11 @@ cp install/.env-sample .env
 ```
 Enter username, email, password for admin-user.
 
+## SSO configuration
+Go to [Google Cloud Console](https://console.cloud.google.com/), create new Web-app, config it, get secrets, set them to `.env` also.
+
+Go to [Twitter Dev Portal](https://developer.x.com/en/portal/petition/essential/basic-info), create new Web-app, config it, get secrets, set them to `.env` also.
+
 
 ## Search engines
 Application supports two search engines. You may configure both of them and switch via `.env` parameter. Default is Postgres FTS.

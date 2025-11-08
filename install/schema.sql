@@ -25,6 +25,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_uidx ON users (lower(email))
 CREATE UNIQUE INDEX IF NOT EXISTS users_channel_id_uidx ON users (channel_id);
 CREATE INDEX IF NOT EXISTS users_password_changed_at_idx ON users(password_changed_at);
 
+CREATE TABLE IF NOT EXISTS sso_identities (
+    provider      TEXT NOT NULL,
+    subject       TEXT NOT NULL,
+    user_uid      TEXT NOT NULL REFERENCES users(user_uid) ON DELETE CASCADE,
+    email         TEXT,
+    display_name  TEXT,
+    picture_url   TEXT,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider, subject)
+);
+
+CREATE INDEX IF NOT EXISTS sso_identities_user_idx ON sso_identities(user_uid);
+CREATE INDEX IF NOT EXISTS sso_identities_email_idx ON sso_identities(email);
 
 -- User assets (avatar)
 CREATE TABLE IF NOT EXISTS user_assets (

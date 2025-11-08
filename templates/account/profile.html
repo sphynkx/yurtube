@@ -2,17 +2,29 @@
 {% block content %}
 <h1>Account</h1>
 
-<div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
-  <div style="flex:1; min-width:260px;">
-    <div>Avatar</div>
-    <div style="margin:8px 0;">
+{% set msg = request.query_params.get('msg') %}
+{% if msg %}
+  <div class="alert">
+    {% if msg == 'google_unlinked' %}Google account unlinked successfully.
+    {% elif msg == 'no_google' %}No Google account linked.
+    {% elif msg == 'need_password_before_unlink' %}Set a local password before unlinking Google.
+    {% else %}{{ msg }}
+    {% endif %}
+  </div>
+{% endif %}
+
+<div style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start;">
+  <div style="flex:0 0 260px;">
+    <h2>Avatar</h2>
+    <div style="margin:10px 0;">
       {% if avatar_url %}
-        <img src="{{ avatar_url }}" alt="avatar" class="avatar-img">
+        <img src="{{ avatar_url }}" alt="avatar" style="width:128px;height:128px;object-fit:cover;border-radius:8px;"
+             onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
       {% else %}
-        <img src="/static/img/avatar_default.svg" alt="avatar" class="avatar-img">
+        <img src="/static/img/avatar_default.svg" alt="avatar" style="width:128px;height:128px;">
       {% endif %}
     </div>
-    <form action="/account/profile" method="post" enctype="multipart/form-data" style="margin-bottom:8px;">
+    <form action="/account/profile" method="post" enctype="multipart/form-data" style="margin-bottom:12px;">
       <input type="file" name="avatar" accept="image/*" required>
       <div style="margin-top:8px;">
         <button type="submit">Upload avatar</button>
@@ -25,16 +37,57 @@
     {% endif %}
   </div>
 
-  <div style="flex:1; min-width:260px;">
+  <div style="flex:1; min-width:280px;">
     <h2>Profile</h2>
-    <p>You can customize your account here.</p>
-    <ul>
-      <li><a href="/channel/subscribers?channel_uid={{ current_user['user_uid'] }}">Subscribers</a></li>
+
+    {% set google_name = None %}
+    {% set google_email = None %}
+    {% for ident in sso_identities %}
+      {% if ident.provider == 'google' %}
+        {% if ident.display_name %}{% set google_name = ident.display_name %}{% endif %}
+        {% if ident.email %}{% set google_email = ident.email %}{% endif %}
+      {% endif %}
+    {% endfor %}
+
+    <p>Name: <strong>{{ google_name if google_name else current_user['username'] }}</strong></p>
+    <p>Handle: <strong>@{{ current_user['username'] }}</strong></p>
+
+    {% if google_email %}
+      <p>Google email: <strong>{{ google_email }}</strong></p>
+    {% endif %}
+
+    <ul style="margin-top:16px;">
       <li><a href="/manage">My videos</a></li>
       <li><a href="/subscriptions">My subscriptions</a></li>
       <li><a href="/history">My history</a></li>
       <li><a href="/account/password">Change password</a></li>
     </ul>
+
+    {% if sso_identities and sso_identities|length > 0 %}
+      <h3 style="margin-top:28px;">Connected SSO</h3>
+      <ul>
+        {% for ident in sso_identities %}
+          <li>
+            {{ ident.provider|capitalize }}:
+            {% if ident.display_name %}
+              {{ ident.display_name }}
+            {% elif ident.email %}
+              {{ ident.email }}
+            {% else %}
+              {{ ident.subject }}
+            {% endif %}
+            {% if ident.picture_url %}
+              <img src="{{ ident.picture_url }}" alt="pic"
+                   style="width:32px;height:32px;border-radius:50%;object-fit:cover;vertical-align:middle;margin-left:8px;">
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      <form action="/account/sso/google/unlink" method="post" style="margin-top:12px;"
+            onsubmit="return confirm('Unlink Google account?');">
+        <button type="submit">Unlink Google</button>
+      </form>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
