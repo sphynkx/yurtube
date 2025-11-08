@@ -40,7 +40,7 @@ async def account_home(request: Request) -> Any:
     Account profile page:
     - Requires authenticated user
     - Loads avatar asset path
-    - Loads SSO identities (only shown for Google sign-in)
+    - Loads SSO identities (shown when present)
     - Prepares vars for header (avatar + display name)
     """
     user = get_current_user(request)
@@ -59,24 +59,30 @@ async def account_home(request: Request) -> Any:
 
     provider = request.cookies.get("yt_authp") or "local"
 
-    google_picture = None
-    google_name = None
+    # Find first available SSO picture/name (any provider)
+    sso_picture = None
+    sso_name = None
     for ident in sso_list:
-        if ident.get("provider") == "google":
-            google_picture = ident.get("picture_url")
-            google_name = ident.get("display_name") or ident.get("email")
-            break
+        if not sso_picture and ident.get("picture_url"):
+            sso_picture = ident.get("picture_url")
+        if not sso_name and (ident.get("display_name") or ident.get("email")):
+            sso_name = ident.get("display_name") or ident.get("email")
 
-    if provider == "google":
-        nav_avatar_url = google_picture or avatar_url
-        nav_display_name = google_name or profile_username
-        avatar_block_url = google_picture or avatar_url
+    # Cookie fallbacks (in case DB identity is not yet visible)
+    cookie_pic = request.cookies.get("yt_gpic")
+    if not sso_picture and cookie_pic:
+        sso_picture = cookie_pic
+
+    if provider != "local":
+        nav_avatar_url = sso_picture or avatar_url
+        nav_display_name = sso_name or profile_username
+        avatar_block_url = sso_picture or avatar_url
         show_sso_section = True
     else:
-        nav_avatar_url = avatar_url or google_picture
-        nav_display_name = profile_username or google_name or ""
-        avatar_block_url = avatar_url or google_picture
-        show_sso_section = False
+        nav_avatar_url = avatar_url or sso_picture
+        nav_display_name = profile_username or sso_name or ""
+        avatar_block_url = avatar_url or sso_picture
+        show_sso_section = len(sso_list) > 0
 
     nav_avatar_url = _cache_bust(nav_avatar_url)
     avatar_block_url = _cache_bust(avatar_block_url)
@@ -88,7 +94,7 @@ async def account_home(request: Request) -> Any:
             "current_user": {"user_uid": user["user_uid"], "username": profile_username},
             "avatar_url": avatar_block_url,
             "sso_identities": sso_list if show_sso_section else [],
-            "google_picture": google_picture,
+            "google_picture": None,
             "nav_avatar_url": nav_avatar_url,
             "nav_display_name": nav_display_name,
         },

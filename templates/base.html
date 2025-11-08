@@ -6,14 +6,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="/static/css/main.css" rel="stylesheet">
   <link href="/static/css/brand.css" rel="stylesheet">
-  <link rel="icon" type="image/png" sizes="32x32" href="{{ favicon_url|default('/static/img/YT_fav32.png') }}">
-  <link rel="apple-touch-icon" href="{{ apple_touch_icon_url|default('/static/img/YT_fav128.png') }}">
+
+  {# Normalize asset URLs to absolute if needed #}
+  {% set _brand_logo = brand_logo_url if brand_logo_url else '/static/img/YT_long.png' %}
+  {% if _brand_logo and (not _brand_logo.startswith('http') and not _brand_logo.startswith('/')) %}
+    {% set _brand_logo = '/' ~ _brand_logo %}
+  {% endif %}
+
+  {% set _favicon = favicon_url if favicon_url else '/static/img/YT_fav32.png' %}
+  {% if _favicon and (not _favicon.startswith('http') and not _favicon.startswith('/')) %}
+    {% set _favicon = '/' ~ _favicon %}
+  {% endif %}
+
+  {% set _apple_icon = apple_touch_icon_url if apple_touch_icon_url else '/static/img/YT_fav128.png' %}
+  {% if _apple_icon and (not _apple_icon.startswith('http') and not _apple_icon.startswith('/')) %}
+    {% set _apple_icon = '/' ~ _apple_icon %}
+  {% endif %}
+
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ _favicon }}">
+  <link rel="apple-touch-icon" href="{{ _apple_icon }}">
 </head>
 <body>
   <header class="site-header">
     <div class="logo">
       <a href="/" aria-label="YurTube home">
-        <img class="brand-logo" src="{{ brand_logo_url|default('/static/img/YT_long.png') }}" alt="YurTube">
+        <img class="brand-logo" src="{{ _brand_logo }}" alt="YurTube">
       </a>
       {% if brand_tagline %}
         <div class="brand-tagline">{{ brand_tagline }}</div>
@@ -25,18 +42,18 @@
     <nav class="user-nav">
       {% if current_user %}
         {% set authp = request.cookies.get('yt_authp') %}
-        {% set gpic = request.cookies.get('yt_gpic') %}
-        {% set gname_raw = request.cookies.get('yt_gname') %}
-        {% set gname = gname_raw.replace('+',' ') if gname_raw else None %}
+        {% set sso_pic = request.cookies.get('yt_gpic') %}
+        {% set sso_name_raw = request.cookies.get('yt_gname') %}
+        {% set sso_name = sso_name_raw.replace('+',' ') if sso_name_raw else None %}
 
         {% set avatar_src = '/storage/users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
-        {% if authp == 'google' and gpic %}
-          {% set avatar_src = gpic %}
+        {% if authp and authp != 'local' and sso_pic %}
+          {% set avatar_src = sso_pic %}
         {% endif %}
 
         {% set display_name = current_user['username'] %}
-        {% if authp == 'google' and gname %}
-          {% set display_name = gname %}
+        {% if authp and authp != 'local' and sso_name %}
+          {% set display_name = sso_name %}
         {% endif %}
 
         <details class="user-menu">
@@ -84,15 +101,12 @@
     </main>
   </div>
 
-  <!-- Brython runtime -->
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython_stdlib.js"></script>
-
   <script type="text/python" src="/static/brython/init.bry"></script>
-
   <script>
     window.addEventListener("DOMContentLoaded", function () {
-      try { if (window.brython) { brython({debug: 1}); } } catch (e) { console.error(e); }
+      try { if (window.brython) { brython({debug: 1}); } } catch (e) {}
     });
   </script>
 </body>

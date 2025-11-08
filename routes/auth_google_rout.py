@@ -7,18 +7,13 @@ from typing import Any, Dict, Optional
 from urllib.parse import urlencode, quote_plus
 
 import httpx
-import asyncpg
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi import status
 
-from db import get_conn, release_conn
-from db.users_db import create_user
-from db.sso_db import get_identity, create_identity, update_identity_profile
-from db.username_db import generate_unique_username
-from utils.username_ut import sanitize_username_base
-from utils.security_ut import create_session_cookie
-from utils.idgen_ut import gen_id
+from utils.security_ut import create_session_cookie, get_current_user
+from db.google_sso_flow_db import process_google_identity
+from config.config import settings as app_settings
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip()
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "").strip()
@@ -28,13 +23,12 @@ GOOGLE_DEBUG = os.getenv("GOOGLE_OAUTH_DEBUG", "0") == "1"
 
 router = APIRouter()
 
-
-def _build_state(code_verifier: str) -> str:
+def _build_state(code_verifier: str, link_mode: int) -> str:
+    # include link flag to support account linking
     csrf = secrets.token_urlsafe(16)
-    payload = {"v": code_verifier, "csrf": csrf}
+    payload = {"v": code_verifier, "csrf": csrf, "link": link_mode}
     raw = json.dumps(payload).encode("utf-8")
     return base64.urlsafe_b64encode(raw).decode("utf-8").rstrip("=")
-
 
 def _parse_state(state: str) -> Optional[Dict[str, Any]]:
     try:
@@ -42,24 +36,26 @@ def _parse_state(state: str) -> Optional[Dict[str, Any]]:
         raw = base64.urlsafe_b64decode(padded.encode("utf-8"))
         obj = json.loads(raw.decode("utf-8"))
         if isinstance(obj, dict) and "v" in obj and "csrf" in obj:
+            if "link" not in obj:
+                obj["link"] = 0
             return obj
     except Exception:
         return None
     return None
 
-
 def _code_challenge(verifier: str) -> str:
     digest = hashlib.sha256(verifier.encode("utf-8")).digest()
     return base64.urlsafe_b64encode(digest).decode("utf-8").rstrip("=")
 
-
 @router.get("/auth/google/start")
-async def google_start() -> Any:
+async def google_start(link: Optional[int] = 0) -> Any:
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET or not GOOGLE_REDIRECT_URL:
         return HTMLResponse("<h1>Google OAuth not configured</h1>", status_code=500)
 
+    link_mode = 1 if str(link) == "1" else 0
+
     code_verifier = secrets.token_urlsafe(64)
-    state_blob = _build_state(code_verifier)
+    state_blob = _build_state(code_verifier, link_mode)
     challenge = _code_challenge(code_verifier)
 
     params = {
@@ -79,13 +75,13 @@ async def google_start() -> Any:
         print("[google-oauth] auth_url=", auth_url)
     return RedirectResponse(auth_url, status_code=status.HTTP_302_FOUND)
 
-
 @router.get("/auth/google/callback")
 async def google_callback(request: Request, state: str, code: str) -> Any:
     parsed = _parse_state(state)
     if not parsed:
         return HTMLResponse("<h1>Invalid state</h1>", status_code=400)
     code_verifier = parsed["v"]
+    link_mode = int(parsed.get("link") or 0)
 
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET or not GOOGLE_REDIRECT_URL:
         return HTMLResponse("<h1>Google OAuth not configured</h1>", status_code=500)
@@ -157,88 +153,32 @@ async def google_callback(request: Request, state: str, code: str) -> Any:
         if domains and host not in domains:
             return HTMLResponse("<h1>Email domain not allowed</h1>", status_code=403)
 
-    conn = await get_conn()
-    try:
-        ident = await get_identity(conn, "google", sub)
-        if ident:
-            # Identity exists: update and reuse user
-            user_uid = ident["user_uid"]
-            await update_identity_profile(conn, "google", sub, name, picture)
-        else:
-            # Always create NEW user (never merge by email)
-            base_name = sanitize_username_base(name, email)
-            safe_name = await generate_unique_username(conn, base_name)
+    current = get_current_user(request) if link_mode == 1 else None
 
-            user_uid = gen_id(20)
-            channel_id = gen_id(24)
-
-            email_to_use = email
-            try:
-                await create_user(
-                    conn=conn,
-                    user_uid=user_uid,
-                    channel_id=channel_id,
-                    username=safe_name,
-                    email=email_to_use,
-                    password_hash="",
-                )
-            except asyncpg.UniqueViolationError:
-                # Email conflict: create alias or fall back to None
-                try:
-                    local, domain = email.split("@", 1)
-                    alias = f"{local}+g{sub[:6]}@{domain}"
-                except Exception:
-                    alias = None
-                if alias:
-                    try:
-                        await create_user(
-                            conn=conn,
-                            user_uid=user_uid,
-                            channel_id=channel_id,
-                            username=safe_name,
-                            email=alias,
-                            password_hash="",
-                        )
-                    except asyncpg.UniqueViolationError:
-                        safe_name = await generate_unique_username(conn, base_name + "-g")
-                        await create_user(
-                            conn=conn,
-                            user_uid=user_uid,
-                            channel_id=channel_id,
-                            username=safe_name,
-                            email=alias,
-                            password_hash="",
-                        )
-                else:
-                    try:
-                        await create_user(
-                            conn=conn,
-                            user_uid=user_uid,
-                            channel_id=channel_id,
-                            username=safe_name,
-                            email=None,
-                            password_hash="",
-                        )
-                    except asyncpg.UniqueViolationError:
-                        safe_name = await generate_unique_username(conn, base_name + "-g")
-                        await create_user(
-                            conn=conn,
-                            user_uid=user_uid,
-                            channel_id=channel_id,
-                            username=safe_name,
-                            email=None,
-                            password_hash="",
-                        )
-
-            await create_identity(conn, "google", sub, user_uid, email, name, picture)
-    finally:
-        await release_conn(conn)
+    user_uid = await process_google_identity(
+        sub=sub,
+        email=email,
+        email_verified=bool(email_verified),
+        name=name,
+        picture=picture,
+        link_mode=link_mode,
+        current_user_uid=(current["user_uid"] if current else None),
+        auto_link_google_by_email=app_settings.AUTO_LINK_GOOGLE_BY_EMAIL,
+    )
 
     redirect = RedirectResponse("/", status_code=302)
-    create_session_cookie(redirect, user_uid)
-    redirect.set_cookie("yt_authp", "google", httponly=True, secure=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+    if current and link_mode == 1:
+        # Keep current session; just update SSO cookies
+        redirect.set_cookie("yt_authp", "google", httponly=True, secure=True, samesite="lax",
+                            max_age=60 * 60 * 24 * 30)
+    else:
+        create_session_cookie(redirect, user_uid)
+        redirect.set_cookie("yt_authp", "google", httponly=True, secure=True, samesite="lax",
+                            max_age=60 * 60 * 24 * 30)
     if name:
-        redirect.set_cookie("yt_gname", quote_plus(name), httponly=False, secure=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+        redirect.set_cookie("yt_gname", quote_plus(name, safe='()'), httponly=False, secure=True, samesite="lax",
+                            max_age=60 * 60 * 24 * 30)
     if picture:
-        redirect.set_cookie("yt_gpic", picture, httponly=False, secure=True, samesite="lax", max_age=60 * 60 * 24 * 30)
+        redirect.set_cookie("yt_gpic", picture, httponly=False, secure=True, samesite="lax",
+                            max_age=60 * 60 * 24 * 30)
     return redirect

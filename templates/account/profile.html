@@ -41,17 +41,13 @@
   <div style="flex:1; min-width:280px;">
     <h2>Profile</h2>
 
-    {# Compute google_name without break #}
-    {% set google_name = None %}
+    {% set sso_name = None %}
     {% for ident in sso_identities %}
-      {% if ident.provider == 'google' and ident.display_name %}
-        {% if not google_name %}
-          {% set google_name = ident.display_name %}
-        {% endif %}
+      {% if ident.display_name and not sso_name %}
+        {% set sso_name = ident.display_name %}
       {% endif %}
     {% endfor %}
-
-    <p>Name: <strong>{{ google_name if google_name else current_user['username'] }}</strong></p>
+    <p>Name: <strong>{{ sso_name if sso_name else current_user['username'] }}</strong></p>
 
     <ul style="margin-top:16px;">
       <li><a href="/manage">My videos</a></li>
@@ -85,6 +81,10 @@
         <button type="submit">Unlink Google</button>
       </form>
     {% endif %}
+
+    <div style="margin-top:16px;">
+      <a class="button" href="/auth/twitter/start?link=1">Link Twitter</a>
+    </div>
   </div>
 </div>
 {% endblock %}

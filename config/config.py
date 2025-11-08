@@ -76,17 +76,30 @@ class Settings:
     BRAND_LOGO_URL: str = os.getenv("BRAND_LOGO_URL", "/static/img/YT_long.png")
     FAVICON_URL: str = os.getenv("FAVICON_URL", "/static/img/YT_fav32.png")
     APPLE_TOUCH_ICON_URL: str = os.getenv("APPLE_TOUCH_ICON_URL", "/static/img/YT_fav128.png")
-    BRAND_TAGLINE: str = os.getenv("BRAND_TAGLINE", "Your personal video space")
+    BRAND_TAGLINE: str = os.getenv("BRAND_TAGLINE", "")
 
     # Right-bar recommendations (tunable; safe defaults)
     RIGHTBAR_ENABLED: bool = _getenv_bool("RIGHTBAR_ENABLED", True)
-    RIGHTBAR_LIMIT: int = _getenv_int("RIGHTBAR_LIMIT", 10)  # default increased to 10
-    # Characteristic time for freshness decay (in days)
+    RIGHTBAR_LIMIT: int = _getenv_int("RIGHTBAR_LIMIT", 10)
     RIGHTBAR_TAU_DAYS: int = _getenv_int("RIGHTBAR_TAU_DAYS", 7)
-    # Max number of search results to consider for text-similarity source
     RIGHTBAR_SEARCH_TAKE: int = _getenv_int("RIGHTBAR_SEARCH_TAKE", 50)
-    # Quotas for top-10 diversification
     RIGHTBAR_MAX_SAME_AUTHOR_TOP10: int = _getenv_int("RIGHTBAR_MAX_SAME_AUTHOR_TOP10", 3)
     RIGHTBAR_MAX_SAME_CATEGORY_TOP10: int = _getenv_int("RIGHTBAR_MAX_SAME_CATEGORY_TOP10", 6)
+
+    # Twitter OAuth 2.0
+    TWITTER_OAUTH_CLIENT_ID: str = os.getenv("TWITTER_OAUTH_CLIENT_ID", "")
+    TWITTER_OAUTH_CLIENT_SECRET: str = os.getenv("TWITTER_OAUTH_CLIENT_SECRET", "")
+    TWITTER_OAUTH_REDIRECT_URL: str = os.getenv("TWITTER_OAUTH_REDIRECT_URL", "")
+    TWITTER_OAUTH_SCOPES: str = os.getenv("TWITTER_OAUTH_SCOPES", "")
+    TWITTER_OAUTH_DEBUG: bool = _getenv_bool("TWITTER_OAUTH_DEBUG", False)
+    TWITTER_ENABLE_OIDC: bool = _getenv_bool("TWITTER_ENABLE_OIDC", False)
+
+    # Optional pseudo-email when provider does not supply email
+    TWITTER_ALLOW_PSEUDO_EMAIL: bool = _getenv_bool("TWITTER_ALLOW_PSEUDO_EMAIL", True)
+    PSEUDO_EMAIL_DOMAIN: str = os.getenv("PSEUDO_EMAIL_DOMAIN", "twitter.local")
+
+    # Auto-linking policy
+    AUTO_LINK_GOOGLE_BY_EMAIL: bool = _getenv_bool("AUTO_LINK_GOOGLE_BY_EMAIL", True)
+
 
 settings = Settings()
