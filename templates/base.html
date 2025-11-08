@@ -7,7 +7,6 @@
   <link href="/static/css/main.css" rel="stylesheet">
   <link href="/static/css/brand.css" rel="stylesheet">
 
-  {# Normalize asset URLs to absolute if needed #}
   {% set _brand_logo = brand_logo_url if brand_logo_url else '/static/img/YT_long.png' %}
   {% if _brand_logo and (not _brand_logo.startswith('http') and not _brand_logo.startswith('/')) %}
     {% set _brand_logo = '/' ~ _brand_logo %}
@@ -57,11 +56,12 @@
         {% endif %}
 
         <details class="user-menu">
-          <summary style="display:inline-flex;align-items:center;gap:8px;">
+          <summary style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;">
             <img id="nav-avatar" src="{{ avatar_src }}" alt="me" class="avatar"
                  onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';"
-                 style="width:28px;height:28px;border-radius:50%;object-fit:cover;">
-            <span style="font-weight:600;max-width:18ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                 style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+            <span title="{{ display_name }}"
+                  style="display:block;font-weight:600;font-size:12px;line-height:1;text-align:center;width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
               {{ display_name }}
             </span>
           </summary>
@@ -81,8 +81,21 @@
           </ul>
         </details>
       {% else %}
-        <a href="/auth/login">Login</a>
-        <a href="/auth/register">Register</a>
+        {# Unauthenticated: avatar menu with caption under avatar #}
+        <details class="user-menu">
+          <summary style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;">
+            <img src="/static/img/avatar_default.svg" alt="guest" class="avatar"
+                 style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
+            <span title="Guest"
+                  style="display:block;font-weight:600;font-size:12px;line-height:1;text-align:center;width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              Guest
+            </span>
+          </summary>
+          <ul>
+            <li><a href="/auth/login">Login</a></li>
+            <li><a href="/auth/register">Register</a></li>
+          </ul>
+        </details>
       {% endif %}
     </nav>
   </header>
