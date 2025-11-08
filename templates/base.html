@@ -13,8 +13,11 @@
   <header class="site-header">
     <div class="logo">
       <a href="/" aria-label="YurTube home">
-        <img class="brand-logo" src="{{ brand_logo_url|default('/static/img/YT_long.png') }}" alt="YurTube">
+        <img class="brand-logo" src="{{ brand_logo_url }}" alt="YurTube">
       </a>
+      {% if brand_tagline %}
+        <div class="brand-tagline">{{ brand_tagline }}</div>
+      {% endif %}
     </div>
     <form class="search-form" action="/search" method="get">
       <input type="text" name="q" placeholder="Search" aria-label="Search">

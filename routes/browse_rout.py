@@ -85,6 +85,10 @@ async def trending(
     return templates.TemplateResponse(
         "trending.html",
         {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             "request": request,
             "current_user": get_current_user(request),
             "videos": videos,
@@ -127,6 +131,10 @@ async def subscriptions(
     return templates.TemplateResponse(
         "subscriptions.html",
         {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             "request": request,
             "current_user": user,
             "channels": channels,
@@ -167,6 +175,10 @@ async def history(
     return templates.TemplateResponse(
         "history.html",
         {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             "request": request,
             "current_user": user,
             "videos": videos,

@@ -99,6 +99,10 @@ async def _render_channel(request: Request, owner: Optional[Dict[str, Any]]) -> 
     return templates.TemplateResponse(
         "channel.html",
         {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             "request": request,
             "current_user": user,
             "owner": owner,

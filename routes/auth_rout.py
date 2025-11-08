@@ -14,6 +14,7 @@ from utils.security_ut import (
     get_current_user,
     hash_password,
 )
+from config.config import settings
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -23,7 +24,15 @@ templates = Jinja2Templates(directory="templates")
 async def login_page(request: Request) -> Any:
     if get_current_user(request):
         return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse("auth/login.html", {"request": request, "current_user": None})
+    return templates.TemplateResponse("auth/login.html", 
+    {
+        "brand_logo_url": settings.BRAND_LOGO_URL,
+        "brand_tagline": settings.BRAND_TAGLINE,
+        "favicon_url": settings.FAVICON_URL,
+        "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+        "request": request, 
+        "current_user": None
+    })
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -42,6 +51,10 @@ async def login(
         return templates.TemplateResponse(
             "auth/login.html",
             {
+                "brand_logo_url": settings.BRAND_LOGO_URL,
+                "brand_tagline": settings.BRAND_TAGLINE,
+                "favicon_url": settings.FAVICON_URL,
+                "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                 "request": request,
                 "current_user": None,
                 "error": "Invalid username or password",
@@ -63,7 +76,15 @@ async def login(
 async def register_page(request: Request) -> Any:
     if get_current_user(request):
         return RedirectResponse("/", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse("auth/register.html", {"request": request, "current_user": None})
+    return templates.TemplateResponse("auth/register.html", 
+    {
+        "brand_logo_url": settings.BRAND_LOGO_URL,
+        "brand_tagline": settings.BRAND_TAGLINE,
+        "favicon_url": settings.FAVICON_URL,
+        "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+        "request": request, 
+        "current_user": None
+    })
 
 
 @router.post("/register", response_class=HTMLResponse)
@@ -80,6 +101,10 @@ async def register(
             return templates.TemplateResponse(
                 "auth/register.html",
                 {
+                    "brand_logo_url": settings.BRAND_LOGO_URL,
+                    "brand_tagline": settings.BRAND_TAGLINE,
+                    "favicon_url": settings.FAVICON_URL,
+                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                     "request": request,
                     "current_user": None,
                     "error": "Username already taken",
@@ -93,6 +118,10 @@ async def register(
             return templates.TemplateResponse(
                 "auth/register.html",
                 {
+                    "brand_logo_url": settings.BRAND_LOGO_URL,
+                    "brand_tagline": settings.BRAND_TAGLINE,
+                    "favicon_url": settings.FAVICON_URL,
+                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                     "request": request,
                     "current_user": None,
                     "error": "Email is already registered",
@@ -116,6 +145,10 @@ async def register(
             return templates.TemplateResponse(
                 "auth/register.html",
                 {
+                    "brand_logo_url": settings.BRAND_LOGO_URL,
+                    "brand_tagline": settings.BRAND_TAGLINE,
+                    "favicon_url": settings.FAVICON_URL,
+                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                     "request": request,
                     "current_user": None,
                     "error": "Username or email is already registered",

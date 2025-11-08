@@ -65,7 +65,16 @@ async def manage_home(request: Request) -> Any:
 
     return templates.TemplateResponse(
         "manage/my_videos.html",
-        {"request": request, "current_user": user, "videos": videos, "subscribers_count": subs_count},
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request, 
+            "current_user": user, 
+            "videos": videos, 
+            "subscribers_count": subs_count
+        },
         headers={"Cache-Control": "no-store"},
     )
 
@@ -109,7 +118,15 @@ async def upload_page(request: Request) -> Any:
 
     return templates.TemplateResponse(
         "manage/upload.html",
-        {"request": request, "current_user": user, "categories": cats},
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request, 
+            "current_user": user, 
+            "categories": cats
+        },
     )
 
 
@@ -149,6 +166,10 @@ async def upload_video(
             return templates.TemplateResponse(
                 "manage/upload.html",
                 {
+                    "brand_logo_url": settings.BRAND_LOGO_URL,
+                    "brand_tagline": settings.BRAND_TAGLINE,
+                    "favicon_url": settings.FAVICON_URL,
+                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                     "request": request,
                     "current_user": user,
                     "categories": cats,
@@ -235,6 +256,10 @@ async def upload_video(
     return templates.TemplateResponse(
         "manage/select_thumbnail.html",
         {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             "request": request,
             "current_user": user,
             "video_id": video_id,

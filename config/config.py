@@ -76,6 +76,7 @@ class Settings:
     BRAND_LOGO_URL: str = os.getenv("BRAND_LOGO_URL", "/static/img/YT_long.png")
     FAVICON_URL: str = os.getenv("FAVICON_URL", "/static/img/YT_fav32.png")
     APPLE_TOUCH_ICON_URL: str = os.getenv("APPLE_TOUCH_ICON_URL", "/static/img/YT_fav128.png")
+    BRAND_TAGLINE: str = os.getenv("BRAND_TAGLINE", "Your personal video space")
 
     # Right-bar recommendations (tunable; safe defaults)
     RIGHTBAR_ENABLED: bool = _getenv_bool("RIGHTBAR_ENABLED", True)

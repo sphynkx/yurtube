@@ -124,6 +124,10 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
     return templates.TemplateResponse(
         "manage/edit_video.html",
         {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             "request": request,
             "current_user": user,
             "video": video,
@@ -325,7 +329,16 @@ async def pick_thumb_page(request: Request, v: str = Query(..., min_length=12, m
 
     return templates.TemplateResponse(
         "manage/pick_thumbnail.html",
-        {"request": request, "current_user": user, "video": video, "candidates": items},
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request, 
+            "current_user": user, 
+            "video": video, 
+            "candidates": items
+        },
     )
 
 

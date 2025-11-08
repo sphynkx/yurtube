@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
+from config.config import settings
 
 templates = Jinja2Templates(directory="templates")
 
@@ -19,7 +20,13 @@ async def favicon() -> Any:
 async def privacy_page(request: Request) -> Any:
     return templates.TemplateResponse(
         "auth/privacy.html",
-        {"request": request},
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request
+        },
     )
 
 
@@ -27,10 +34,23 @@ async def privacy_page(request: Request) -> Any:
 async def terms_page(request: Request) -> Any:
     return templates.TemplateResponse(
         "auth/terms.html",
-        {"request": request},
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request
+        },
     )
 
 
 @router.get("/about", response_class=HTMLResponse)
 async def about_page(request: Request) -> Any:
-    return templates.TemplateResponse("about.html", {"request": request})
+    return templates.TemplateResponse("about.html", 
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request
+        })

@@ -127,6 +127,10 @@ async def watch_page(request: Request, v: str) -> Any:
             return templates.TemplateResponse(
                 "watch.html",
                 {
+                    "brand_logo_url": settings.BRAND_LOGO_URL,
+                    "brand_tagline": settings.BRAND_TAGLINE,
+                    "favicon_url": settings.FAVICON_URL,
+                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                     "request": request,
                     "current_user": user,
                     "video": video,
@@ -186,6 +190,10 @@ async def watch_page(request: Request, v: str) -> Any:
         return templates.TemplateResponse(
             "watch.html",
             {
+                "brand_logo_url": settings.BRAND_LOGO_URL,
+                "brand_tagline": settings.BRAND_TAGLINE,
+                "favicon_url": settings.FAVICON_URL,
+                "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                 "request": request,
                 "current_user": user,
                 "video": video,
@@ -227,6 +235,10 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
             return templates.TemplateResponse(
                 "embed.html",
                 {
+                    "brand_logo_url": settings.BRAND_LOGO_URL,
+                    "brand_tagline": settings.BRAND_TAGLINE,
+                    "favicon_url": settings.FAVICON_URL,
+                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                     "request": request,
                     "video": video,
                     "player_name": settings.VIDEO_PLAYER,
@@ -260,6 +272,10 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
         return templates.TemplateResponse(
             "embed.html",
             {
+                "brand_logo_url": settings.BRAND_LOGO_URL,
+                "brand_tagline": settings.BRAND_TAGLINE,
+                "favicon_url": settings.FAVICON_URL,
+                "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                 "request": request,
                 "video": video,
                 "player_name": settings.VIDEO_PLAYER,

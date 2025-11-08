@@ -56,5 +56,13 @@ async def index(request: Request) -> Any:
     videos = [_augment(dict(r)) for r in rows]
     return templates.TemplateResponse(
         "index.html",
-        {"request": request, "videos": videos, "current_user": user},
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request, 
+            "videos": videos, 
+            "current_user": user
+        },
     )
