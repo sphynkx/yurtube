@@ -13,7 +13,7 @@
   <header class="site-header">
     <div class="logo">
       <a href="/" aria-label="YurTube home">
-        <img class="brand-logo" src="{{ brand_logo_url }}" alt="YurTube">
+        <img class="brand-logo" src="{{ brand_logo_url|default('/static/img/YT_long.png') }}" alt="YurTube">
       </a>
       {% if brand_tagline %}
         <div class="brand-tagline">{{ brand_tagline }}</div>
@@ -84,11 +84,15 @@
     </main>
   </div>
 
+  <!-- Brython runtime -->
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython_stdlib.js"></script>
+
+  <script type="text/python" src="/static/brython/init.bry"></script>
+
   <script>
     window.addEventListener("DOMContentLoaded", function () {
-      try { if (window.brython) { brython(); } } catch (e) {}
+      try { if (window.brython) { brython({debug: 1}); } } catch (e) { console.error(e); }
     });
   </script>
 </body>
