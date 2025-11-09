@@ -37,12 +37,23 @@
       flex-wrap:wrap;
       gap:12px;
       align-items:center;
-      padding:4px 12px 6px;
+      padding:4px 12px 20px;
       background:#fff;
     }
 
+    .brand-block {
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      flex:0 0 auto;
+    }
+    .brand-line {
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+
     .btn-hamburger {
-      order:0;
       display:inline-flex; align-items:center; justify-content:center;
       width:44px; height:44px;
       background:transparent; border:0; cursor:pointer; border-radius:6px;
@@ -57,16 +68,25 @@
     .btn-hamburger .bars::before { top:-8px; }
     .btn-hamburger .bars::after  { top: 8px; }
 
-    .logo { order:1; display:flex; align-items:center; gap:12px; flex:0 0 auto; }
-    .search-form { order:2; flex:1 1 360px; display:flex; }
-    .user-nav { order:3; display:flex; align-items:center; flex:0 0 auto; }
+    .logo { display:flex; align-items:center; gap:12px; flex:0 0 auto; }
+
+    .brand-tagline {
+      color: var(--brand-accent);
+      font-weight: 600;
+      font-size: 20px;
+      line-height: 1.2;
+      letter-spacing: .2px;
+      margin-top: 2px;
+    }
+
+    .search-form { flex:1 1 360px; display:flex; }
+    .user-nav { display:flex; align-items:center; flex:0 0 auto; }
 
     @media (max-width: 760px) {
       .site-header { align-items:flex-start; }
-      .btn-hamburger { order:0; }
-      .logo { order:1; }
-      .user-nav { order:2; margin-left:8px; }
-      .search-form { order:4; flex:1 1 100%; width:100%; }
+      .user-nav { margin-left:8px; }
+      .search-form { flex:1 1 100%; width:100%; }
+      .brand-tagline { font-size: 16px; }
     }
     @media (max-width: 480px) {
       .search-form input { width:100%; }
@@ -75,18 +95,23 @@
 </head>
 <body>
   <header class="site-header">
-    <button id="btn-toggle-topmenu"
-            class="btn-hamburger"
-            aria-label="Open menu"
-            aria-controls="top-menu-panel"
-            aria-expanded="false">
-      <span class="bars" aria-hidden="true"></span>
-    </button>
+    <div class="brand-block">
+      <div class="brand-line">
+        <button id="btn-toggle-topmenu"
+                class="btn-hamburger"
+                aria-label="Open menu"
+                aria-controls="top-menu-panel"
+                aria-expanded="false">
+          <span class="bars" aria-hidden="true"></span>
+        </button>
 
-    <div class="logo">
-      <a href="/" aria-label="YurTube home">
-        <img class="brand-logo" src="{{ _brand_logo }}" alt="YurTube">
-      </a>
+        <div class="logo">
+          <a href="/" aria-label="YurTube home">
+            <img class="brand-logo" src="{{ _brand_logo }}" alt="YurTube">
+          </a>
+        </div>
+      </div>
+
       {% if brand_tagline %}
         <div class="brand-tagline">{{ brand_tagline }}</div>
       {% endif %}
