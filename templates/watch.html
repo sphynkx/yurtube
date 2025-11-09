@@ -6,7 +6,6 @@
 {% set _not_found = not_found|default(false) %}
 {% set _fallback_img = fallback_image_url|default("/static/img/fallback_video_notfound.gif") %}
 
-{# Determine sidebar source (priority: recommended_videos) #}
 {% set sidebar_list = [] %}
 {% if recommended_videos is defined and recommended_videos %}
   {% set sidebar_list = recommended_videos %}
@@ -30,7 +29,6 @@
 {% set _has_right = (sidebar_list|length > 0) and (not _not_found) %}
 
 <style>
-/* Original theater behavior from main branch */
 .watch-layout.theater-mode {
   grid-template-columns: 1fr !important;
 }
@@ -161,7 +159,6 @@
       <h2 class="watch-title">Video not found</h2>
     {% endif %}
 
-    {# Tabs for narrow (hidden wide via CSS) #}
     <section class="watch-tabs" id="watch-tabs" data-active="upnext">
       <div class="tabs-nav" role="tablist" aria-label="Video sections">
         <button id="tab-upnext" role="tab" aria-controls="panel-upnext" aria-selected="true">Up next</button>

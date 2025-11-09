@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="/static/css/main.css" rel="stylesheet">
   <link href="/static/css/brand.css" rel="stylesheet">
+  <link href="/static/css/side-menu.css" rel="stylesheet">
 
   {% set _brand_logo = brand_logo_url if brand_logo_url else '/static/img/YT_long.png' %}
   {% if _brand_logo and (not _brand_logo.startswith('http') and not _brand_logo.startswith('/')) %}
@@ -26,48 +27,47 @@
   <link rel="apple-touch-icon" href="{{ _apple_icon }}">
 
   <style>
-    /* Wide layout: logo (left) — search (flex) — avatar (right) */
+    :root { --brand-accent: #2aa4ff; }
+
     .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 1002;      /* above panel/overlay */
       display:flex;
       flex-wrap:wrap;
       gap:12px;
       align-items:center;
       padding:4px 12px 6px;
+      background:#fff;
     }
-    .site-header .logo {
-      display:flex;
-      align-items:center;
-      gap:12px;
-      flex:0 0 auto;
-      order:1;
+
+    .btn-hamburger {
+      order:0;
+      display:inline-flex; align-items:center; justify-content:center;
+      width:44px; height:44px;
+      background:transparent; border:0; cursor:pointer; border-radius:6px;
     }
-    .search-form {
-      flex:1 1 360px;
-      display:flex;
-      order:2;           /* search stays between logo and avatar on wide screens */
-    }
-    .user-nav {
-      display:flex;
-      align-items:center;
-      flex:0 0 auto;
-      order:3;           /* avatar at the right end on wide screens */
-      margin-left:0;
-    }
+    .btn-hamburger:hover { background: rgba(42,164,255,.10); }
+    .btn-hamburger .bars,
+    .btn-hamburger .bars::before,
+    .btn-hamburger .bars::after { background: var(--brand-accent); }
+    .btn-hamburger .bars { position:relative; width:26px; height:3px; border-radius:2px; }
+    .btn-hamburger .bars::before,
+    .btn-hamburger .bars::after { content:""; position:absolute; left:0; width:26px; height:3px; border-radius:2px; }
+    .btn-hamburger .bars::before { top:-8px; }
+    .btn-hamburger .bars::after  { top: 8px; }
+
+    .logo { order:1; display:flex; align-items:center; gap:12px; flex:0 0 auto; }
+    .search-form { order:2; flex:1 1 360px; display:flex; }
+    .user-nav { order:3; display:flex; align-items:center; flex:0 0 auto; }
 
     @media (max-width: 760px) {
       .site-header { align-items:flex-start; }
+      .btn-hamburger { order:0; }
       .logo { order:1; }
-      .user-nav {
-        order:2;
-        margin-left:8px;
-      }
-      .search-form {
-        order:4;
-        flex:1 1 100%;
-        width:100%;
-      }
+      .user-nav { order:2; margin-left:8px; }
+      .search-form { order:4; flex:1 1 100%; width:100%; }
     }
-
     @media (max-width: 480px) {
       .search-form input { width:100%; }
     }
@@ -75,6 +75,14 @@
 </head>
 <body>
   <header class="site-header">
+    <button id="btn-toggle-topmenu"
+            class="btn-hamburger"
+            aria-label="Open menu"
+            aria-controls="top-menu-panel"
+            aria-expanded="false">
+      <span class="bars" aria-hidden="true"></span>
+    </button>
+
     <div class="logo">
       <a href="/" aria-label="YurTube home">
         <img class="brand-logo" src="{{ _brand_logo }}" alt="YurTube">
@@ -153,15 +161,13 @@
     </nav>
   </header>
 
+  <!-- Top dropdown panel + overlay -->
+  <div id="menu-overlay" class="menu-overlay" aria-hidden="true" tabindex="-1"></div>
+  <div id="top-menu-panel" class="top-menu-panel" aria-hidden="true" aria-label="Main navigation">
+    {% include "partials/side_menu.html" %}
+  </div>
+
   <div class="layout">
-    <aside class="sidebar">
-      <ul>
-        <li><a href="/">Home</a></li>
-        <li><a href="/trending">Trending</a></li>
-        <li><a href="/subscriptions">Subscriptions</a></li>
-        <li><a href="/history">History</a></li>
-      </ul>
-    </aside>
     <main class="content">
       {% block content %}{% endblock %}
     </main>
@@ -174,6 +180,91 @@
     window.addEventListener("DOMContentLoaded", function () {
       try { if (window.brython) { brython({debug: 1}); } } catch (e) {}
     });
+
+    (function(){
+      var panel   = document.getElementById('top-menu-panel');
+      var overlay = document.getElementById('menu-overlay');
+      var btn     = document.getElementById('btn-toggle-topmenu');
+      var header  = document.querySelector('.site-header');
+      var lastFocus = null;
+
+      function clamp(n,a,b){ return Math.max(a, Math.min(n,b)); }
+      function logoWidth(){
+        var logo = document.querySelector('.brand-logo');
+        if(!logo) return 280;
+        var r = logo.getBoundingClientRect();
+        return clamp(Math.round(r.width||logo.offsetWidth||280), 220, 480);
+      }
+      function setMetrics(){
+        if(!panel || !overlay) return;
+        var w = logoWidth();
+        panel.style.width = w+'px';
+        var hb = header ? header.getBoundingClientRect().bottom : 56;
+        panel.style.top = Math.round(hb)+'px';
+        panel.style.left = '12px';
+        overlay.style.setProperty('--overlay-top', Math.round(hb)+'px');
+      }
+
+      function openPanel(){
+        if(panel.classList.contains('open')) return;
+        lastFocus = document.activeElement;
+        setMetrics();
+        panel.classList.add('open');
+        overlay.classList.add('open');
+        panel.setAttribute('aria-hidden','false');
+        overlay.setAttribute('aria-hidden','false');
+        if(btn) btn.setAttribute('aria-expanded','true');
+      }
+      function closePanel(){
+        if(!panel.classList.contains('open')) return;
+        panel.classList.remove('open');
+        overlay.classList.remove('open');
+        panel.setAttribute('aria-hidden','true');
+        overlay.setAttribute('aria-hidden','true');
+        if(btn) btn.setAttribute('aria-expanded','false');
+        try { if(lastFocus) lastFocus.focus(); } catch(e){}
+      }
+      function togglePanel(){ panel.classList.contains('open') ? closePanel() : openPanel(); }
+      function onKey(e){ if(e.key === 'Escape') closePanel(); }
+
+      if(btn) btn.addEventListener('click', togglePanel);
+      if(overlay) overlay.addEventListener('click', closePanel);
+
+      // Close by click on header (except click to avatar's button/menu)
+      if(header){
+        header.addEventListener('click', function(e){
+          if(!panel.classList.contains('open')) return;
+          if(e.target.closest('#btn-toggle-topmenu')) return;
+          if(e.target.closest('#top-menu-panel')) return;
+          if(e.target.closest('.user-menu')) return;
+          closePanel();
+        });
+      }
+
+      window.addEventListener('resize', function(){ if(panel.classList.contains('open')) setMetrics(); });
+      setMetrics();
+    })();
+
+    // Tabs
+    (function(){
+      var tabsRoot = document.getElementById('watch-tabs');
+      if(!tabsRoot) return;
+      document.addEventListener('click', function(e){
+        var t = e.target.closest('[role="tab"]');
+        if(!t || !tabsRoot.contains(t)) return;
+        e.preventDefault();
+        var targetId = t.getAttribute('data-target') || t.getAttribute('aria-controls');
+        if(!targetId) return;
+        document.querySelectorAll('.tab-panel').forEach(function(p){
+          p.classList.toggle('active', p.id === targetId);
+        });
+        tabsRoot.querySelectorAll('[role="tab"]').forEach(function(tab){
+          var id = tab.getAttribute('data-target') || tab.getAttribute('aria-controls');
+          tab.setAttribute('aria-selected', String(id === targetId));
+        });
+        tabsRoot.dataset.active = targetId.indexOf('comments') !== -1 ? 'comments' : 'upnext';
+      });
+    })();
   </script>
 </body>
 </html>
