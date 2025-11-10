@@ -29,26 +29,55 @@
 {% set _has_right = (sidebar_list|length > 0) and (not _not_found) %}
 
 <style>
+/* Base grid: left-  content, right - "up next" */
+.watch-layout {
+  display:grid;
+  gap:16px;
+  align-items:start;
+  grid-template-columns:{% if _has_right %} minmax(0,1fr) 360px {% else %} 1fr {% endif %};
+}
+
+/* Theater: single col */
 .watch-layout.theater-mode {
   grid-template-columns: 1fr !important;
 }
+
 .watch-right {
   width:360px;
   justify-self:end;
+  align-self:start;
 }
 .watch-layout.theater-mode .watch-right {
-  margin-top:16px;
-  width:360px;
-  justify-self:end;
+  /* for theater - hide aside, move it's content into under-right-slot */
+  display:none !important;
+}
+
+/* Short width: 1 col, right col is hidden; tabs displayed; placeholder is hidden */
+@media (max-width:1100px) {
+  .watch-layout { grid-template-columns: 1fr !important; }
+  .watch-right { display:none !important; }
+  .watch-tabs { display:block !important; }
+  .watch-layout.theater-mode .watch-tabs { display:block !important; }
+  #comments-mount-wide .comments-placeholder { display: none; }
 }
 
 /* Mobile width for original rail */
 @media (max-width:420px) {
-  .watch-right {
-    width:100%;
-    justify-self:stretch;
+  .watch-right { width:100%; justify-self:stretch; }
+}
+
+/* Row under player: for teater - 2 cols; else -just block */
+.under-row { display:block; }
+@media (min-width:1101px) {
+  .watch-layout.theater-mode .under-row {
+    display:grid;
+    grid-template-columns: minmax(0,1fr) 360px;
+    gap:16px;
+    align-items:start;
   }
 }
+.under-left { min-width:0; }
+.under-right-slot { width:360px; }
 
 /* Hover thumbs */
 .rb-item .rb-thumb { position:relative; width:160px; flex:0 0 160px; aspect-ratio:16/9; background:#000; overflow:hidden; }
@@ -58,6 +87,7 @@
 .rb-item:hover .rb-thumb .rb-thumb-static { opacity:0; }
 .rb-item:hover .rb-thumb .rb-thumb-anim { opacity:1; }
 
+/* Tabs */
 .watch-tabs { display:none; }
 .tabs-nav { display:flex; gap:6px; border-bottom:1px solid #ddd; margin-top:14px; }
 .tabs-nav button {
@@ -69,33 +99,22 @@
 .tab-panel { display:none; }
 .tab-panel.active { display:block; }
 
-/* Narrow layout: collapse to single column; hide rail, show tabs */
-@media (max-width:1100px) {
-  .watch-layout {
-    grid-template-columns: 1fr !important;
-  }
-  .watch-right {
-    display:none !important;
-  }
-  .watch-tabs {
-    display:block !important;
-  }
-  /* Theater + narrow: still tabs, rail hidden */
-  .watch-layout.theater-mode .watch-right {
-    display:none !important;
-  }
-  .watch-layout.theater-mode .watch-tabs {
-    display:block !important;
-  }
+.comments-placeholder {
+  margin-top:16px;
+  border:1px dashed #c7d8e6;
+  padding:14px 16px;
+  border-radius:8px;
+  background:#f7fbff;
+  font-size:14px;
+  color:#335;
 }
+.comments-placeholder-inner { font-style:italic; opacity:.9; }
+
+/* Debug option: Enable borders: data-debug="1" */
+body[data-debug="0"] .watch-layout * { outline:5px dashed rgba(0, 100, 255, .15); }
 </style>
 
-<div class="watch-layout" style="
-  display:grid;
-  grid-template-columns:{% if _has_right %} minmax(0,1fr) 360px {% else %} 1fr {% endif %};
-  gap:16px;
-  align-items:start;
-">
+<div class="watch-layout">
 
   <div class="watch-main">
     <div class="player-wrapper">
@@ -116,172 +135,146 @@
       {% endif %}
     </div>
 
-    {% if video %}
-      <h2 class="watch-title">{{ video['title'] }}</h2>
+    <!-- (1) Row under player -->
+    <div class="under-row" id="under-row">
+      <!-- (1.1) Left block -->
+      <div class="under-left" id="under-left">
+        {% if video %}
+          <h2 class="watch-title">{{ video['title'] }}</h2>
 
-      <div class="video-info">
-        <div class="watch-meta" style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
-          <div class="author-line" style="display:inline-flex;align-items:center;gap:8px;">
-            {% if avatar_url %}
-              <img class="mini-avatar" src="{{ avatar_url }}" alt="avatar">
-            {% endif %}
-            {% if video.channel_id %}
-              <a class="author-name" href="/channel/{{ video.channel_id }}">{{ (video.username or video.channel_id) or "" }}</a>
-            {% elif video.username %}
-              <a class="author-name" href="/user/{{ video.username }}">{{ video.username }}</a>
-            {% else %}
-              <span class="author-name">{{ (video.username or video.channel_id) or "" }}</span>
-            {% endif %}
-          </div>
-          <div class="watch-date">
-            {% if video.created_at %}
-              {% if video.created_at.__class__.__name__ == 'datetime' %}
-                {{ video.created_at.strftime("%Y-%m-%d") }}
-              {% else %}
-                {{ video.created_at }}
-              {% endif %}
-            {% endif %}
-          </div>
-          <div class="watch-stats" style="display:inline-flex;align-items:center;gap:10px;">
-            <span class="views">{{ video.views_count or 0 }} views</span>
-            {% if video.likes_count %}
-              <span class="likes">{{ video.likes_count }} likes</span>
-            {% endif %}
-            {% if video.category %}
-              <span class="category">in {{ video.category }}</span>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-
-      <p>{{ video['description'] }}</p>
-    {% else %}
-      <h2 class="watch-title">Video not found</h2>
-    {% endif %}
-
-    <section class="watch-tabs" id="watch-tabs" data-active="upnext">
-      <div class="tabs-nav" role="tablist" aria-label="Video sections">
-        <button id="tab-upnext" role="tab" aria-controls="panel-upnext" aria-selected="true">Up next</button>
-        <button id="tab-comments" role="tab" aria-controls="panel-comments" aria-selected="false">
-          Comments{% if comments_list and comments_list|length %} ({{ comments_list|length }}){% endif %}
-        </button>
-      </div>
-      <div class="tab-panels">
-        <div id="panel-upnext" class="tab-panel active" role="tabpanel" aria-labelledby="tab-upnext">
-          {% if sidebar_list and sidebar_list|length > 0 %}
-            <div class="upnext-list" style="display:flex;flex-direction:column;gap:10px;">
-              {% for r in sidebar_list %}
-                {% set vid = r.video_id if r.video_id is defined else r['video_id'] %}
-                {% set title_txt = r.title if r.title is defined else r['title'] %}
-                {% set thumb_static = r.thumb_url if r.thumb_url is defined else r.get('thumb_url') %}
-                {% set thumb_anim = r.thumb_url_anim if r.thumb_url_anim is defined else r.get('thumb_url_anim') %}
-                <a class="rb-item" href="/watch?v={{ vid }}" style="display:flex;gap:8px;text-decoration:none;color:inherit;">
-                  <div class="rb-thumb">
-                    {% if thumb_static %}
-                      <img class="rb-thumb-static" src="{{ thumb_static }}" alt="{{ title_txt }}">
-                    {% endif %}
-                    {% if thumb_anim %}
-                      <img class="rb-thumb-anim" src="{{ thumb_anim }}" alt="{{ title_txt }}">
-                    {% endif %}
-                  </div>
-                  <div class="rb-info" style="min-width:0;">
-                    <div class="rb-title" style="font-weight:600;line-height:1.2;max-height:2.4em;overflow:hidden;">
-                      {{ title_txt }}
-                    </div>
-                    <div class="rb-author" style="font-size:12px;color:#666;">
-                      {{ r.author or r.username or '' }}
-                    </div>
-                    <div class="rb-meta" style="font-size:12px;color:#666;">
-                      {{ r.views_count or 0 }} views{% if r.uploaded_at %} • {{ r.uploaded_at }}{% endif %}
-                    </div>
-                  </div>
-                </a>
-              {% endfor %}
-            </div>
-          {% else %}
-            <div>No recommendations.</div>
-          {% endif %}
-        </div>
-
-        <div id="panel-comments" class="tab-panel" role="tabpanel" aria-labelledby="tab-comments">
-          {% if comments_list and comments_list|length > 0 %}
-            <div class="comments-list" style="display:flex;flex-direction:column;gap:12px;">
-              {% for c in comments_list %}
-                <div class="comment" style="display:flex;gap:10px;">
-                  {% if c.avatar_url %}
-                    <img src="{{ c.avatar_url }}" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;">
+          <div class="video-info">
+            <div class="watch-meta" style="margin-top:12px; display:flex; flex-direction:column; gap:6px;">
+              <div class="author-line" style="display:inline-flex;align-items:center;gap:8px;">
+                {% if avatar_url %}<img class="mini-avatar" src="{{ avatar_url }}" alt="avatar">{% endif %}
+                {% if video.channel_id %}
+                  <a class="author-name" href="/channel/{{ video.channel_id }}">{{ (video.username or video.channel_id) or "" }}</a>
+                {% elif video.username %}
+                  <a class="author-name" href="/user/{{ video.username }}">{{ video.username }}</a>
+                {% else %}
+                  <span class="author-name">{{ (video.username or video.channel_id) or "" }}</span>
+                {% endif %}
+              </div>
+              <div class="watch-date">
+                {% if video.created_at %}
+                  {% if video.created_at.__class__.__name__ == 'datetime' %}
+                    {{ video.created_at.strftime("%Y-%m-%d") }}
+                  {% else %}
+                    {{ video.created_at }}
                   {% endif %}
-                  <div style="min-width:0;">
-                    <div style="font-weight:600;">
-                      {{ c.author or 'User' }}
-                      <span style="color:#666;font-weight:400;">{{ c.created_at or '' }}</span>
-                    </div>
-                    <div>{{ c.text or '' }}</div>
-                  </div>
-                </div>
-              {% endfor %}
+                {% endif %}
+              </div>
+              <div class="watch-stats" style="display:inline-flex;align-items:center;gap:10px;">
+                <span class="views">{{ video.views_count or 0 }} views</span>
+                {% if video.likes_count %}<span class="likes">{{ video.likes_count }} likes</span>{% endif %}
+                {% if video.category %}<span class="category">in {{ video.category }}</span>{% endif %}
+              </div>
             </div>
-          {% else %}
-            <div>No comments yet.</div>
-          {% endif %}
-        </div>
-      </div>
-    </section>
+          </div>
 
-    {% if allow_embed %}
-      <details class="embed-box" style="margin-top:10px;">
-        <summary>Embed</summary>
-        <div style="margin-top:8px;">
-          <label for="embed-code">Iframe:</label>
-          <textarea id="embed-code" class="embed-code" readonly rows="3" style="width:100%;font-family:monospace;">&lt;iframe width="560" height="315" src="{{ embed_url }}" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen&gt;&lt;/iframe&gt;</textarea>
-          <button type="button" class="btn-copy-embed" style="margin-top:6px;">Copy</button>
+          <p>{{ video['description'] }}</p>
+        {% else %}
+          <h2 class="watch-title">Video not found</h2>
+        {% endif %}
+
+        {% if allow_embed %}
+          <details class="embed-box" style="margin-top:10px;">
+            <summary>Embed</summary>
+            <div style="margin-top:8px;">
+              <label for="embed-code">Iframe:</label>
+              <textarea id="embed-code" class="embed-code" readonly rows="3" style="width:100%;font-family:monospace;">&lt;iframe width="560" height="315" src="{{ embed_url }}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen&gt;&lt;/iframe&gt;</textarea>
+              <button type="button" class="btn-copy-embed" style="margin-top:6px;">Copy</button>
+            </div>
+          </details>
+          <script>
+          (function(){
+            var box=document.querySelector(".embed-box");
+            if(!box) return;
+            var btn=box.querySelector(".btn-copy-embed");
+            var ta=box.querySelector(".embed-code");
+            if(btn && ta){
+              btn.addEventListener("click",function(){
+                try{ ta.select(); document.execCommand("copy"); }catch(e){}
+                ta.blur();
+              });
+            }
+          })();
+          </script>
+        {% endif %}
+
+        <!-- (1.1.1) Comments placeholder -->
+        <div id="comments-mount-wide">
+          <div class="comments-placeholder">
+            <div class="comments-placeholder-inner">No comments..</div>
+          </div>
         </div>
-      </details>
-      <script>
-      (function(){
-        var box=document.querySelector(".embed-box");
-        if(!box) return;
-        var btn=box.querySelector(".btn-copy-embed");
-        var ta=box.querySelector(".embed-code");
-        if(btn && ta){
-          btn.addEventListener("click",function(){
-            try{
-              ta.select();
-              document.execCommand("copy");
-            }catch(e){}
-            ta.blur();
-          });
-        }
-      })();
-      </script>
-    {% endif %}
+
+        <!-- Tabs under player -->
+        <section class="watch-tabs" id="watch-tabs" data-active="upnext">
+          <div class="tabs-nav" role="tablist" aria-label="Video sections">
+            <button id="tab-upnext" role="tab" aria-controls="panel-upnext" aria-selected="true">Up next</button>
+            <button id="tab-comments" role="tab" aria-controls="panel-comments" aria-selected="false">Comments</button>
+          </div>
+          <div class="tab-panels">
+            <div id="panel-upnext" class="tab-panel active" role="tabpanel" aria-labelledby="tab-upnext">
+              {% if sidebar_list and sidebar_list|length > 0 %}
+                <div class="upnext-list" style="display:flex;flex-direction:column;gap:10px;">
+                  {% for r in sidebar_list %}
+                    {% set vid = r.video_id if r.video_id is defined else r['video_id'] %}
+                    {% set title_txt = r.title if r.title is defined else r['title'] %}
+                    {% set thumb_static = r.thumb_url if r.thumb_url is defined else r.get('thumb_url') %}
+                    {% set thumb_anim = r.thumb_url_anim if r.thumb_url_anim is defined else r.get('thumb_url_anim') %}
+                    <a class="rb-item" href="/watch?v={{ vid }}" style="display:flex;gap:8px;text-decoration:none;color:inherit;">
+                      <div class="rb-thumb">
+                        {% if thumb_static %}<img class="rb-thumb-static" src="{{ thumb_static }}" alt="{{ title_txt }}">{% endif %}
+                        {% if thumb_anim %}<img class="rb-thumb-anim" src="{{ thumb_anim }}" alt="{{ title_txt }}">{% endif %}
+                      </div>
+                      <div class="rb-info" style="min-width:0;">
+                        <div class="rb-title" style="font-weight:600;line-height:1.2;max-height:2.4em;overflow:hidden;">{{ title_txt }}</div>
+                        <div class="rb-author" style="font-size:12px;color:#666;">{{ r.author or r.username or '' }}</div>
+                        <div class="rb-meta" style="font-size:12px;color:#666;">{{ r.views_count or 0 }} views{% if r.uploaded_at %} • {{ r.uploaded_at }}{% endif %}</div>
+                      </div>
+                    </a>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <div>No recommendations.</div>
+              {% endif %}
+            </div>
+            <div id="panel-comments" class="tab-panel" role="tabpanel" aria-labelledby="tab-comments">
+              <div id="comments-mount-narrow">
+                <div class="comments-placeholder">
+                  <div class="comments-placeholder-inner">No comments..</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- (1.2) Right slot: to here will moved "up next" -->
+      <div class="under-right-slot" id="under-right-slot"></div>
+    </div>
   </div>
 
   {% if _has_right %}
-  <aside class="watch-right" aria-label="Up next">
-    <h3 style="margin:0 0 8px 0;">Up next</h3>
-    <div class="rb-list" style="display:flex;flex-direction:column;gap:10px;">
-      {% for r in sidebar_list %}
-      <a class="rb-item" href="/watch?v={{ r['video_id'] }}" style="display:flex;gap:8px;text-decoration:none;color:inherit;">
-        <div class="rb-thumb">
-          {% if r['thumb_url'] %}
-            <img class="rb-thumb-static" src="{{ r['thumb_url'] }}" alt="{{ r['title'] }}">
-          {% endif %}
-          {% if r['thumb_url_anim'] %}
-            <img class="rb-thumb-anim" src="{{ r['thumb_url_anim'] }}" alt="{{ r['title'] }}">
-          {% endif %}
-        </div>
-        <div class="rb-info" style="min-width:0;">
-          <div class="rb-title" style="font-weight:600;line-height:1.2;max-height:2.4em;overflow:hidden;">
-            {{ r['title'] }}
+  <aside class="watch-right" aria-label="Up next" id="watch-right">
+    <div class="upnext-block" id="upnext-block">
+      <h3 style="margin:0 0 8px 0;">Up next</h3>
+      <div class="rb-list" style="display:flex;flex-direction:column;gap:10px;">
+        {% for r in sidebar_list %}
+        <a class="rb-item" href="/watch?v={{ r['video_id'] }}" style="display:flex;gap:8px;text-decoration:none;color:inherit;">
+          <div class="rb-thumb">
+            {% if r['thumb_url'] %}<img class="rb-thumb-static" src="{{ r['thumb_url'] }}" alt="{{ r['title'] }}">{% endif %}
+            {% if r['thumb_url_anim'] %}<img class="rb-thumb-anim" src="{{ r['thumb_url_anim'] }}" alt="{{ r['title'] }}">{% endif %}
           </div>
-          <div class="rb-author" style="font-size:12px;color:#666;">{{ r['author'] or r['username'] or '' }}</div>
-          <div class="rb-meta" style="font-size:12px;color:#666;">
-            {{ r['views_count'] or 0 }} views{% if r['uploaded_at'] %} • {{ r['uploaded_at'] }}{% endif %}
+          <div class="rb-info" style="min-width:0;">
+            <div class="rb-title" style="font-weight:600;line-height:1.2;max-height:2.4em;overflow:hidden;">{{ r['title'] }}</div>
+            <div class="rb-author" style="font-size:12px;color:#666;">{{ r['author'] or r['username'] or '' }}</div>
+            <div class="rb-meta" style="font-size:12px;color:#666;">{{ r['views_count'] or 0 }} views{% if r['uploaded_at'] %} • {{ r['uploaded_at'] }}{% endif %}</div>
           </div>
-        </div>
-      </a>
-      {% endfor %}
+        </a>
+        {% endfor %}
+      </div>
     </div>
   </aside>
   {% endif %}
@@ -300,10 +293,10 @@
   function setTheater(flag){
     if(flag) layout.classList.add("theater-mode");
     else layout.classList.remove("theater-mode");
+    relocateUpNext();
   }
 
   function getPlayerRoot(){
-    // primary: .yrp-container, fallback: .player-host
     return document.querySelector(".yrp-container") || document.querySelector(".player-host");
   }
 
@@ -315,21 +308,28 @@
       setTheater(host.classList.contains("yrp-theater"));
     });
     moPlayer.observe(host, { attributes:true, attributeFilter:["class"] });
-    // initial sync
     setTheater(host.classList.contains("yrp-theater"));
   }
 
-  // Observe DOM to re-bind when player root is re-created
-  var moDom = new MutationObserver(function(){
-    // if current host gone or replaced — rebind
-    bindObserver();
-  });
+  /*  For theater mode: move "up next"into under-right-slot */
+  function isNarrow(){ return window.matchMedia('(max-width:1100px)').matches; }
+  function relocateUpNext(){
+    var block = document.getElementById('upnext-block');
+    var aside = document.getElementById('watch-right');
+    var slot  = document.getElementById('under-right-slot');
+    if (!block || !aside || !slot) return;
+    if (layout.classList.contains('theater-mode') && !isNarrow()) {
+      if (slot.firstElementChild !== block) slot.appendChild(block);
+    } else {
+      if (aside && aside.firstElementChild !== block) aside.appendChild(block);
+    }
+  }
+  window.addEventListener('resize', relocateUpNext);
+
+  var moDom = new MutationObserver(function(){ bindObserver(); });
   moDom.observe(document.body, { childList:true, subtree:true });
 
-  // Fallback poll (shorter interval)
-  poll = setInterval(function(){
-    bindObserver();
-  }, 150);
+  poll = setInterval(function(){ bindObserver(); }, 150);
 
   window.addEventListener("beforeunload", function(){
     try{ moDom.disconnect(); }catch(e){}
@@ -337,8 +337,8 @@
     try{ clearInterval(poll); }catch(e){}
   });
 
-  // first bind
   bindObserver();
+  relocateUpNext();
 })();
 </script>
 

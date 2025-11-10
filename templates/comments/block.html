@@ -1,0 +1,24 @@
+<div id="comments-root" data-video-id="{{ video['video_id'] if video else '' }}">
+  <div class="comments-head">
+    <h3>Comments</h3>
+    <div class="comments-actions">
+      <button id="comment-refresh" type="button">Refresh</button>
+    </div>
+  </div>
+
+  <div id="comments-list" class="comments-list">
+    <div class="comments-empty">No comments.</div>
+  </div>
+
+  <div class="comment-new">
+    <textarea id="comment-text" rows="3" maxlength="1000" placeholder="Add a comment..."></textarea>
+    <div class="comment-new-actions">
+      <button id="comment-send" type="button">Send</button>
+    </div>
+  </div>
+</div>
+
+<link rel="stylesheet" href="/static/css/comments/comments.css">
+<script src="/static/js/comments/comments_api.js"></script>
+<script src="/static/js/comments/comments_tree.js"></script>
+<script src="/static/js/comments/comments_ui.js"></script>

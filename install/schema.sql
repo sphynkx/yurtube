@@ -57,25 +57,27 @@ CREATE TABLE IF NOT EXISTS categories (
 
 -- Videos
 CREATE TABLE IF NOT EXISTS videos (
-    video_id           TEXT PRIMARY KEY,
-    author_uid         TEXT NOT NULL REFERENCES users(user_uid) ON DELETE CASCADE,
-    title              TEXT NOT NULL,
-    description        TEXT NOT NULL DEFAULT '',
-    duration_sec       INTEGER NOT NULL DEFAULT 0 CHECK (duration_sec >= 0),
-    status             TEXT NOT NULL CHECK (status IN ('public','private','unlisted')),
-    processing_status  TEXT NOT NULL DEFAULT 'uploaded' CHECK (processing_status IN ('uploaded','processing','ready','failed')),
-    created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    views_count        INTEGER NOT NULL DEFAULT 0 CHECK (views_count >= 0),
-    likes_count        INTEGER NOT NULL DEFAULT 0 CHECK (likes_count >= 0),
-    is_age_restricted  BOOLEAN NOT NULL DEFAULT FALSE,
-    is_made_for_kids   BOOLEAN NOT NULL DEFAULT FALSE,
-    category_id        TEXT NULL REFERENCES categories(category_id) ON DELETE SET NULL,
-    storage_path       TEXT NOT NULL,
-    allow_comments     BOOLEAN NOT NULL DEFAULT TRUE,
-    allow_embed        BOOLEAN NOT NULL DEFAULT TRUE,
-    embed_params       JSONB   NOT NULL DEFAULT '{}'::jsonb,
-    license            TEXT    NOT NULL DEFAULT 'standard',
-    thumb_pref_offset  INTEGER NOT NULL DEFAULT 0 CHECK (thumb_pref_offset >= 0),
+    video_id             TEXT PRIMARY KEY,
+    author_uid           TEXT NOT NULL REFERENCES users(user_uid) ON DELETE CASCADE,
+    title                TEXT NOT NULL,
+    description          TEXT NOT NULL DEFAULT '',
+    duration_sec         INTEGER NOT NULL DEFAULT 0 CHECK (duration_sec >= 0),
+    status               TEXT NOT NULL CHECK (status IN ('public','private','unlisted')),
+    processing_status    TEXT NOT NULL DEFAULT 'uploaded' CHECK (processing_status IN ('uploaded','processing','ready','failed')),
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    views_count          INTEGER NOT NULL DEFAULT 0 CHECK (views_count >= 0),
+    likes_count          INTEGER NOT NULL DEFAULT 0 CHECK (likes_count >= 0),
+    is_age_restricted    BOOLEAN NOT NULL DEFAULT FALSE,
+    is_made_for_kids     BOOLEAN NOT NULL DEFAULT FALSE,
+    category_id          TEXT NULL REFERENCES categories(category_id) ON DELETE SET NULL,
+    storage_path         TEXT NOT NULL,
+    allow_comments       BOOLEAN NOT NULL DEFAULT TRUE,
+    allow_embed          BOOLEAN NOT NULL DEFAULT TRUE,
+    embed_params         JSONB   NOT NULL DEFAULT '{}'::jsonb,
+    license              TEXT    NOT NULL DEFAULT 'standard',
+    thumb_pref_offset    INTEGER NOT NULL DEFAULT 0 CHECK (thumb_pref_offset >= 0),
+    comments_enabled     BOOLEAN NOT NULL DEFAULT TRUE,
+    comments_root_doc_id TEXT NULL,
 
     CONSTRAINT videos_video_id_len CHECK (char_length(video_id) = 12)
 );
@@ -84,6 +86,8 @@ CREATE INDEX IF NOT EXISTS videos_author_created_idx ON videos (author_uid, crea
 CREATE INDEX IF NOT EXISTS videos_status_created_idx ON videos (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS videos_created_idx ON videos (created_at DESC);
 CREATE INDEX IF NOT EXISTS videos_category_idx ON videos (category_id);
+CREATE INDEX IF NOT EXISTS idx_videos_comments_enabled ON videos(comments_enabled);
+UPDATE videos SET comments_enabled = true WHERE comments_enabled IS NULL;
 
 -- Reactions
 CREATE TABLE IF NOT EXISTS reactions (

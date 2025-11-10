@@ -15,6 +15,11 @@ from .account_password_rout import router as account_password_router
 from .auth_google_rout import router as auth_google_router
 from .auth_twitter_rout import router as auth_twitter_router
 
+from routes.comments.create_rout import router as comments_create_router
+from routes.comments.list_rout import router as comments_list_router
+from routes.comments.like_rout import router as comments_like_router
+
+
 def register_routes(app: FastAPI) -> None:
     app.include_router(root_router)
     app.include_router(auth_router, prefix="/auth")
@@ -29,5 +34,8 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(auth_twitter_router)
     app.include_router(static_router)
     app.include_router(edit_router)
-    app.include_router(search_router
-)
+    app.include_router(search_router)
+
+    app.include_router(comments_create_router)
+    app.include_router(comments_list_router)
+    app.include_router(comments_like_router)
