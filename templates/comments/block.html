@@ -1,20 +1,46 @@
-<div id="comments-root" data-video-id="{{ video['video_id'] if video else '' }}">
-  <div class="comments-head">
-    <h3>Comments</h3>
-    <div class="comments-actions">
-      <button id="comment-refresh" type="button">Refresh</button>
+<div id="comments-root"
+     data-video-id="{{ video['video_id'] if video else '' }}"
+     data-current-uid="{{ (current_user['user_uid'] if current_user else '') }}"
+     data-max-len="1000"
+     class="comments-root">
+
+  {% set _authp = request.cookies.get('yt_authp') if request else None %}
+  {% set _sso_pic = request.cookies.get('yt_gpic') if request else None %}
+  {% set _avatar_src = None %}
+  {% if current_user %}
+    {% set _avatar_src = '/storage/users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
+    {% if _authp and _authp != 'local' and _sso_pic %}
+      {% set _avatar_src = _sso_pic %}
+    {% endif %}
+  {% endif %}
+  {% if not _avatar_src %}
+    {% set _avatar_src = '/static/img/avatar_default.svg' %}
+  {% endif %}
+
+  <div class="comment-composer" id="comment-composer">
+    <img class="composer-avatar"
+         src="{{ _avatar_src }}"
+         alt="me"
+         onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
+    <div class="composer-main">
+      <textarea id="comment-textarea"
+                class="composer-textarea"
+                rows="2"
+                maxlength="1000"
+                placeholder="Add a comment..."></textarea>
+      <div class="composer-actions" id="composer-actions" hidden>
+        <button id="comment-cancel" type="button" class="btn-secondary">Cancel</button>
+        <button id="comment-post"   type="button" class="btn-primary" disabled>Comment</button>
+      </div>
     </div>
+  </div>
+
+  <div class="comments-head-row">
+    <h3 class="comments-title">Comments</h3>
   </div>
 
   <div id="comments-list" class="comments-list">
-    <div class="comments-empty">No comments.</div>
-  </div>
-
-  <div class="comment-new">
-    <textarea id="comment-text" rows="3" maxlength="1000" placeholder="Add a comment..."></textarea>
-    <div class="comment-new-actions">
-      <button id="comment-send" type="button">Send</button>
-    </div>
+    <div class="comments-empty">No comments..</div>
   </div>
 </div>
 

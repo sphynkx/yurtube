@@ -1,0 +1,6 @@
+use yt_comments
+db.createUser({
+  user: "yt_user",
+  pwd: "***********",
+  roles: [ { role: "readWrite", db: "yt_comments" } ]
+})

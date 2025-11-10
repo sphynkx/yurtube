@@ -1,80 +1,85 @@
-// Wire up UI events
+// Comments UI wiring: composer + list refresh + relocate between placeholders
 (function(){
-  const root = document.getElementById('comments-root');
-  if (!root) return;
+  // Build comment tree one, thir block moves between placeholders
+  const rootEl = document.getElementById('comments-root');
+  if (!rootEl) return;
 
-  const videoId = root.dataset.videoId || '';
-  const listEl = document.getElementById('comments-list');
-  const btnSend = document.getElementById('comment-send');
-  const btnRefresh = document.getElementById('comment-refresh');
-  const ta = document.getElementById('comment-text');
-  const INLINE_LIMIT = 3;
+  const videoId    = rootEl.dataset.videoId || '';
+  const currentUid = rootEl.dataset.currentUid || '';
+  const maxLen     = parseInt(rootEl.dataset.maxLen || '1000', 10);
 
-  async function load() {
-    try {
-      const data = await CommentsAPI.list(videoId, false);
-      CommentsTree.renderTree(listEl, {
-        roots: data.roots || [],
-        children_map: data.children_map || {},
-        comments: data.comments || {}
-      }, data.texts || {}, INLINE_LIMIT);
-    } catch (e) {
-      listEl.innerHTML = '<div class="comments-empty">No comments.</div>';
+  // forwarding for likes
+  window.CommentsTreeVideoId = videoId;
+
+  // find placeholders
+  const mountWidePH   = document.querySelector('#comments-mount-wide .comments-placeholder');
+  const mountNarrowPH = document.querySelector('#comments-mount-narrow .comments-placeholder');
+
+  function isNarrow(){ return window.matchMedia('(max-width:1100px)').matches; }
+  function moveBlock(){
+    if (!mountWidePH || !mountNarrowPH) return;
+    if (isNarrow()){
+      if (mountNarrowPH.contains(rootEl)) return;
+      mountNarrowPH.innerHTML = ''; // clean placeholder
+      mountNarrowPH.appendChild(rootEl);
+    } else {
+      if (mountWidePH.contains(rootEl)) return;
+      mountWidePH.innerHTML = ''; // clean placeholder
+      mountWidePH.appendChild(rootEl);
     }
   }
+  moveBlock();
+  window.addEventListener('resize', moveBlock);
 
-  // Simple delegation for like/dislike
-  listEl.addEventListener('click', async (e) => {
-    const btn = e.target.closest('.btn-like, .btn-dislike, .btn-reply');
-    if (!btn) return;
-    const cid = btn.getAttribute('data-cid');
-    if (!cid) return;
+  const listEl   = document.getElementById('comments-list');
+  const ta       = document.getElementById('comment-textarea');
+  const actions  = document.getElementById('composer-actions');
+  const btnCancel= document.getElementById('comment-cancel');
+  const btnPost  = document.getElementById('comment-post');
 
-    if (btn.classList.contains('btn-reply')) {
-      // Prepend reply hint
-      const authorTitle = btn.closest('.comment-item')?.querySelector('.comment-title')?.textContent || '';
-      if (ta) {
-        const prefix = `For @${authorTitle}: `;
-        if (!ta.value.startsWith(prefix)) {
-          ta.value = prefix + ta.value;
-        }
-        ta.focus();
-      }
-      return;
-    }
+  function showActions(){ if (actions) actions.hidden = false; }
+  function hideActions(){ if (actions) actions.hidden = true; }
+  function resetComposer(){
+    if (ta) ta.value = '';
+    hideActions();
+    if (btnPost) btnPost.disabled = true;
+  }
+  function validate(){
+    const v = (ta?.value || '').trim();
+    const ok = v.length > 0 && v.length <= maxLen;
+    if (btnPost) btnPost.disabled = !ok;
+  }
 
-    const delta = parseInt(btn.getAttribute('data-delta') || '0', 10);
-    const payload = {
-      video_id: videoId,
-      comment_id: cid,
-      delta_like: delta > 0 ? 1 : 0,
-      delta_dislike: delta < 0 ? 1 : 0
-    };
-    try {
-      await CommentsAPI.like(payload);
-      // Optimistic update UI
-      const span = btn.querySelector('span');
-      if (span) span.textContent = String(parseInt(span.textContent || '0',10) + 1);
-    } catch (e) {
-      console.warn('like failed', e);
-    }
-  });
+  ta?.addEventListener('focus', showActions);
+  ta?.addEventListener('input', validate);
+  btnCancel?.addEventListener('click', resetComposer);
 
-  btnSend?.addEventListener('click', async () => {
+  btnPost?.addEventListener('click', async () => {
     const text = (ta?.value || '').trim();
-    if (!text) return;
-    if (text.length > 1000) return;
-
+    if (!text || text.length > maxLen) return;
     try {
       await CommentsAPI.create({ video_id: videoId, text });
-      ta.value = '';
+      resetComposer();
       await load();
     } catch (e) {
       console.warn('create failed', e);
     }
   });
 
-  btnRefresh?.addEventListener('click', load);
+  async function load(){
+    try {
+      const data = await CommentsAPI.list(videoId, false);
+      CommentsTree.renderTree(
+        listEl,
+        { roots: data.roots || [], children_map: data.children_map || {}, comments: data.comments || {} },
+        data.texts || {},
+        3,
+        { currentUid }
+      );
+    } catch (e){
+      listEl.innerHTML = '<div class="comments-empty">No comments..</div>';
+    }
+  }
 
   load();
 })();

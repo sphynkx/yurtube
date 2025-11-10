@@ -10,6 +10,9 @@ __pycache__/
 .idea/
 .vscode/
 
+mongo_setup.js
+install/mongo_setup.js
+
 .venv/
 .env
 install/.env

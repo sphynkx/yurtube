@@ -29,7 +29,7 @@
 {% set _has_right = (sidebar_list|length > 0) and (not _not_found) %}
 
 <style>
-/* Base grid: left-  content, right - "up next" */
+/* Base grid: left - content, right - "up next" */
 .watch-layout {
   display:grid;
   gap:16px;
@@ -110,8 +110,9 @@
 }
 .comments-placeholder-inner { font-style:italic; opacity:.9; }
 
-/* Debug option: Enable borders: data-debug="1" */
-body[data-debug="0"] .watch-layout * { outline:5px dashed rgba(0, 100, 255, .15); }
+/* Debug option: Enable borders: data-debug="1"
+body[data-debug="1"] .watch-layout * { outline:1px dashed rgba(0, 100, 255, .15); }
+*/
 </style>
 
 <div class="watch-layout">
@@ -204,7 +205,7 @@ body[data-debug="0"] .watch-layout * { outline:5px dashed rgba(0, 100, 255, .15)
         <!-- (1.1.1) Comments placeholder -->
         <div id="comments-mount-wide">
           <div class="comments-placeholder">
-            <div class="comments-placeholder-inner">No comments..</div>
+            {% include "comments/block.html" %}
           </div>
         </div>
 
@@ -241,11 +242,11 @@ body[data-debug="0"] .watch-layout * { outline:5px dashed rgba(0, 100, 255, .15)
               {% endif %}
             </div>
             <div id="panel-comments" class="tab-panel" role="tabpanel" aria-labelledby="tab-comments">
-              <div id="comments-mount-narrow">
-                <div class="comments-placeholder">
-                  <div class="comments-placeholder-inner">No comments..</div>
-                </div>
-              </div>
+				<div id="comments-mount-narrow">
+				  <div class="comments-placeholder">
+					{% include "comments/block.html" %}
+				  </div>
+				</div>
             </div>
           </div>
         </section>
@@ -268,9 +269,13 @@ body[data-debug="0"] .watch-layout * { outline:5px dashed rgba(0, 100, 255, .15)
             {% if r['thumb_url_anim'] %}<img class="rb-thumb-anim" src="{{ r['thumb_url_anim'] }}" alt="{{ r['title'] }}">{% endif %}
           </div>
           <div class="rb-info" style="min-width:0;">
-            <div class="rb-title" style="font-weight:600;line-height:1.2;max-height:2.4em;overflow:hidden;">{{ r['title'] }}</div>
+            <div class="rb-title" style="font-weight:600;line-height:1.2;max-height:2.4em;overflow:hidden;">
+              {{ r['title'] }}
+            </div>
             <div class="rb-author" style="font-size:12px;color:#666;">{{ r['author'] or r['username'] or '' }}</div>
-            <div class="rb-meta" style="font-size:12px;color:#666;">{{ r['views_count'] or 0 }} views{% if r['uploaded_at'] %} • {{ r['uploaded_at'] }}{% endif %}</div>
+            <div class="rb-meta" style="font-size:12px;color:#666;">
+              {{ r['views_count'] or 0 }} views{% if r['uploaded_at'] %} • {{ r['uploaded_at'] }}{% endif %}
+            </div>
           </div>
         </a>
         {% endfor %}
