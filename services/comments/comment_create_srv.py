@@ -1,129 +1,67 @@
-from typing import Optional, Dict, Any
+from typing import Dict, Any
+from time import time
+from db.comments.mongo_conn import root_coll, chunk_coll
 from bson import ObjectId
-from config.comments_config import comments_settings
-from db.comments.root_db import ensure_root, update_root
-from db.comments.mongo_conn import root_coll
-from db.comments.chunks_db import create_chunk, append_text
-from services.comments.comment_sanitize_srv import sanitize_comment
-from utils.comments.id_ut import short_uuid
-from utils.comments.time_ut import now_unix
-from utils.comments.size_ut import estimate_root_comment_entry_size
 
 
-async def create_comment(
-    video_id: str,
-    author_uid: str,
-    author_name: str,
-    parent_id: Optional[str],
-    raw_text: str,
-    reply_to_user_uid: Optional[str],
-    is_owner_moderator: bool = False
-) -> Dict[str, Any]:
-    root = await ensure_root(video_id)
+try:
+    from utils.comments.id_ut import short_uuid
+except ImportError:
+    short_uuid = None
 
-    # Check ban state (full = permit to comment; soft = only hide)
-    if any(b.get("user_uid") == author_uid for b in root.get("bans", {}).get("full", [])):
-        return {"error": "user_fully_banned"}
-    if any(b.get("user_uid") == author_uid for b in root.get("bans", {}).get("soft", [])):
-        # MVP: permit to publish ( or change to visible=False)
-        return {"error": "user_soft_banned"}
+async def create_comment(video_id: str, user: Dict[str, Any], text: str, parent_id: str | None = None) -> Dict[str, Any]:
+    rc = root_coll()
+    cc = chunk_coll()
 
-    safe_text, errors = sanitize_comment(raw_text)
-    if errors:
-        return {"error": "sanitize_failed", "details": errors}
+    root = await rc.find_one({"video_id": video_id})
+    if not root:
+        root = {
+            "video_id": video_id,
+            "comments": {},
+            "tree_aux": {"children_map": {}, "depth_index": {"0": []}}
+        }
+        ins = await rc.insert_one(root)
+        root["_id"] = ins.inserted_id
 
-    max_depth = root.get("settings_snapshot", {}).get("max_depth", comments_settings.COMMENTS_MAX_DEPTH)
+    chunk_doc = {"video_id": video_id, "texts": {}}
+    ins_chunk = await cc.insert_one(chunk_doc)
+    chunk_id = ins_chunk.inserted_id
 
-    # tree depth
-    depth = 0
-    if parent_id:
-        parent = root.get("comments", {}).get(parent_id)
-        if not parent:
-            return {"error": "parent_not_found"}
-        depth = (parent.get("depth") or 0) + 1
-        if depth > max_depth:
-            # Cut to parent
-            gp = parent.get("parent_id")
-            if gp and root["comments"].get(gp):
-                parent_id = gp
-                depth = (root["comments"][gp].get("depth") or 0) + 1
-            else:
-                parent_id = None
-                depth = 0
-
-    # Choose chunk (last valid or create new)
-    chunks = root.get("chunks", [])
-    use_chunk_id: ObjectId
-    if not chunks:
-        use_chunk_id = await create_chunk(video_id)
+    if short_uuid:
+        local_id = short_uuid(prefix="b")
     else:
-        last = chunks[-1]
-        if (last.get("approx_size") or 0) >= comments_settings.COMMENTS_SOFT_CHUNK_LIMIT_BYTES:
-            use_chunk_id = await create_chunk(video_id)
-        else:
-            use_chunk_id = last["chunk_id"]
+        local_id = "b" + str(ObjectId())[:8]
 
-    comment_id = short_uuid(prefix="c")
-    local_id = short_uuid(prefix="b")
+    await cc.update_one({"_id": chunk_id}, {"$set": {f"texts.{local_id}": text}})
 
-    # Write comment text
-    await append_text(video_id, ObjectId(use_chunk_id), local_id, safe_text)
-
-    visible = True
-    created_ts = now_unix()
-
-    # Build tech-record
-    new_entry = {
-        "author_uid": author_uid,
-        "author_name": author_name,
-        "parent_id": parent_id,
-        "reply_to_user_uid": reply_to_user_uid,
-        "depth": depth,
-        "visible": visible,
-        "hidden_reason": None,
+    cid = str(ObjectId())
+    ts = int(time())
+    comments = root["comments"]
+    comments[cid] = {
+        "author_uid": user["user_uid"],
+        "author_name": user.get("username") or user.get("login") or user["user_uid"],
+        "created_at": ts,
+        "edited": False,
+        "visible": True,
         "likes": 0,
         "dislikes": 0,
-        "reactions": {},
-        "created_at": created_ts,
-        "edited_at": None,
-        "edited": False,
-        "format_flags": {},
-        "chunk_ref": {"chunk_id": str(use_chunk_id), "local_id": local_id}
+        "votes": {},
+        "chunk_ref": {"chunk_id": str(chunk_id), "local_id": local_id},
+        "parent_id": parent_id
     }
 
-    # Assessment of additional size of root (approx.)
-    add_sz = estimate_root_comment_entry_size(comment_id, new_entry)
+    tree = root["tree_aux"]
+    children_map = tree.get("children_map", {})
+    depth_index = tree.get("depth_index", {})
 
-    # Refresh root: comments, totals, seq, approx_size
-    set_patch = {
-        f"comments.{comment_id}": new_entry,
-        "updated_at": created_ts,
-    }
-    inc_patch = {
-        "totals.comments_count_total": 1,
-        "totals.comments_count_visible": 1,
-        "comment_seq": 1,
-        "approx_size": add_sz
-    }
-    await update_root(video_id, set_patch, inc_patch)
-
-    # Refresh tree
-    tree_updates = {}
-    # children_map
     if parent_id:
-        # Add child to array (MVP)
-        parent_children = root.get("tree_aux", {}).get("children_map", {}).get(parent_id, [])
-        parent_children = parent_children + [comment_id]
-        tree_updates[f"tree_aux.children_map.{parent_id}"] = parent_children
+        children_map.setdefault(parent_id, []).append(cid)
     else:
-        tree_updates[f"tree_aux.children_map.{comment_id}"] = []
+        depth_index.setdefault("0", []).append(cid)
 
-    # depth_index
-    dkey = str(depth)
-    dlist = root.get("tree_aux", {}).get("depth_index", {}).get(dkey, [])
-    dlist = dlist + [comment_id]
-    tree_updates[f"tree_aux.depth_index.{dkey}"] = dlist
+    await rc.update_one(
+        {"_id": root["_id"]},
+        {"$set": {"comments": comments, "tree_aux": {"children_map": children_map, "depth_index": depth_index}}}
+    )
 
-    await update_root(video_id, tree_updates)
-
-    return {"ok": True, "comment_id": comment_id, "created_at": created_ts}
+    return {"comment_id": cid}

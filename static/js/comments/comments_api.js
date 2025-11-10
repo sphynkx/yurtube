@@ -1,4 +1,3 @@
-// Simple API client for comments
 const CommentsAPI = (() => {
   async function list(videoId, includeHidden=false) {
     const url = `/comments/list?video_id=${encodeURIComponent(videoId)}&include_hidden=${includeHidden?'true':'false'}`;
@@ -14,23 +13,20 @@ const CommentsAPI = (() => {
       credentials: 'same-origin',
       body: JSON.stringify({ video_id, text, parent_id, reply_to_user_uid })
     });
-    if (!r.ok) {
-      const err = await r.json().catch(()=>({}));
-      throw new Error(err?.detail?.error || 'Failed to create comment');
-    }
+    if (!r.ok) throw new Error((await r.json().catch(()=>({})))?.detail?.error || 'Failed to create comment');
     return r.json();
   }
 
-  async function like({ video_id, comment_id, delta_like=0, delta_dislike=0 }) {
-    const r = await fetch('/comments/like', {
+  async function vote({ video_id, comment_id, vote }) {
+    const r = await fetch('/comments/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ video_id, comment_id, delta_like, delta_dislike })
+      body: JSON.stringify({ video_id, comment_id, vote })
     });
-    if (!r.ok) throw new Error('Failed to like');
+    if (!r.ok) throw new Error('Failed to vote');
     return r.json();
   }
 
-  return { list, create, like };
+  return { list, create, vote };
 })();

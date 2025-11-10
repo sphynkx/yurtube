@@ -1,53 +1,66 @@
-// Comments UI wiring: composer + list refresh + relocate between placeholders
 (function(){
-  // Build comment tree one, thir block moves between placeholders
-  const rootEl = document.getElementById('comments-root');
-  if (!rootEl) return;
+  if (window.__comments_ui_once) return;
+  window.__comments_ui_once = true;
 
-  const videoId    = rootEl.dataset.videoId || '';
-  const currentUid = rootEl.dataset.currentUid || '';
-  const maxLen     = parseInt(rootEl.dataset.maxLen || '1000', 10);
+  const root = document.getElementById('comments-root');
+  if (!root) return;
 
-  // forwarding for likes
-  window.CommentsTreeVideoId = videoId;
-
-  // find placeholders
-  const mountWidePH   = document.querySelector('#comments-mount-wide .comments-placeholder');
-  const mountNarrowPH = document.querySelector('#comments-mount-narrow .comments-placeholder');
+  // Save orig parent in order we could to retun back the block to wide!!
+  const rootHome = root.parentElement;
 
   function isNarrow(){ return window.matchMedia('(max-width:1100px)').matches; }
-  function moveBlock(){
-    if (!mountWidePH || !mountNarrowPH) return;
-    if (isNarrow()){
-      if (mountNarrowPH.contains(rootEl)) return;
-      mountNarrowPH.innerHTML = ''; // clean placeholder
-      mountNarrowPH.appendChild(rootEl);
-    } else {
-      if (mountWidePH.contains(rootEl)) return;
-      mountWidePH.innerHTML = ''; // clean placeholder
-      mountWidePH.appendChild(rootEl);
-    }
+  function getNarrowTarget(){
+    return document.getElementById('comments-mount-narrow')
+        || document.getElementById('panel-comments')
+        || null;
   }
-  moveBlock();
-  window.addEventListener('resize', moveBlock);
+  function moveToNarrow(){
+    const target = getNarrowTarget();
+    if (target && !target.contains(root)) target.appendChild(root);
+  }
+  function moveToWide(){
+    if (rootHome && root.parentElement !== rootHome) rootHome.appendChild(root);
+  }
+  function relocate(){
+    if (isNarrow()) moveToNarrow(); else moveToWide();
+  }
 
-  const listEl   = document.getElementById('comments-list');
-  const ta       = document.getElementById('comment-textarea');
-  const actions  = document.getElementById('composer-actions');
-  const btnCancel= document.getElementById('comment-cancel');
-  const btnPost  = document.getElementById('comment-post');
+  // Move on start or on resize
+  relocate();
+  window.addEventListener('resize', relocate);
+
+  // Move by click on Comments tab
+  const tabBtn = document.getElementById('tab-comments');
+  tabBtn?.addEventListener('click', () => {
+    // immediately move so that the block is visible when the panel is activated.
+    moveToNarrow();
+  });
+
+  const videoId    = root.dataset.videoId || '';
+  const currentUid = root.dataset.currentUid || '';
+  const maxLen     = parseInt(root.dataset.maxLen || '1000', 10);
+  window.CommentsTreeVideoId = videoId;
+
+  const listEl    = document.getElementById('comments-list');
+  const ta        = document.getElementById('comment-textarea');
+  const actions   = document.getElementById('composer-actions');
+  const btnCancel = document.getElementById('comment-cancel');
+  const btnPost   = document.getElementById('comment-post');
+
+  let isPosting = false;
 
   function showActions(){ if (actions) actions.hidden = false; }
   function hideActions(){ if (actions) actions.hidden = true; }
+  function validate(){
+    const v=(ta?.value||'').trim();
+    const ok = v.length>0 && v.length<=maxLen && !isPosting;
+    if (btnPost) btnPost.disabled = !ok;
+  }
   function resetComposer(){
     if (ta) ta.value = '';
     hideActions();
+    isPosting = false;
     if (btnPost) btnPost.disabled = true;
-  }
-  function validate(){
-    const v = (ta?.value || '').trim();
-    const ok = v.length > 0 && v.length <= maxLen;
-    if (btnPost) btnPost.disabled = !ok;
   }
 
   ta?.addEventListener('focus', showActions);
@@ -55,28 +68,60 @@
   btnCancel?.addEventListener('click', resetComposer);
 
   btnPost?.addEventListener('click', async () => {
-    const text = (ta?.value || '').trim();
-    if (!text || text.length > maxLen) return;
-    try {
+    if (isPosting) return;
+    const text = (ta?.value||'').trim();
+    if (!text || text.length>maxLen) return;
+    isPosting = true; validate();
+    try{
       await CommentsAPI.create({ video_id: videoId, text });
       resetComposer();
       await load();
-    } catch (e) {
+    }catch(e){
       console.warn('create failed', e);
+      isPosting = false; validate();
     }
   });
 
+  if (!listEl.dataset.voteBound){
+    listEl.addEventListener('click', async (e) => {
+      const like = e.target.closest('.btn-like');
+      const dislike = e.target.closest('.btn-dislike');
+      const btn = like || dislike; if (!btn) return;
+      const cid = btn.dataset.cid; if (!cid) return;
+      const isLike = !!like;
+      const otherSel = isLike ? '.btn-dislike' : '.btn-like';
+      const other = btn.parentElement.querySelector(`${otherSel}[data-cid="${cid}"]`);
+      const wasActive = btn.classList.contains('active');
+      const want = wasActive ? 0 : (isLike ? 1 : -1);
+      try{
+        const res = await CommentsAPI.vote({ video_id: videoId, comment_id: cid, vote: want });
+        if (!res || !res.ok) return;
+        const likeBtn = isLike ? btn : other;
+        const dislikeBtn = isLike ? other : btn;
+        if (likeBtn){
+          const s = likeBtn.querySelector('span'); if (s) s.textContent = String(res.likes);
+          likeBtn.classList.toggle('active', res.my_vote === 1);
+        }
+        if (dislikeBtn){
+          const s = dislikeBtn.querySelector('span'); if (s) s.textContent = String(res.dislikes);
+          dislikeBtn.classList.toggle('active', res.my_vote === -1);
+        }
+      }catch(err){ console.warn('vote failed', err); }
+    });
+    listEl.dataset.voteBound = '1';
+  }
+
   async function load(){
-    try {
+    try{
       const data = await CommentsAPI.list(videoId, false);
       CommentsTree.renderTree(
         listEl,
-        { roots: data.roots || [], children_map: data.children_map || {}, comments: data.comments || {} },
-        data.texts || {},
+        { roots: data.roots||[], children_map: data.children_map||{}, comments: data.comments||{} },
+        data.texts||{},
         3,
         { currentUid }
       );
-    } catch (e){
+    }catch(e){
       listEl.innerHTML = '<div class="comments-empty">No comments..</div>';
     }
   }
