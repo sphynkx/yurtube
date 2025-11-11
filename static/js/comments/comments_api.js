@@ -13,7 +13,7 @@ const CommentsAPI = (() => {
       credentials: 'same-origin',
       body: JSON.stringify({ video_id, text, parent_id, reply_to_user_uid })
     });
-    if (!r.ok) throw new Error((await r.json().catch(()=>({})))?.detail?.error || 'Failed to create comment');
+    if (!r.ok) throw new Error('Failed to create comment');
     return r.json();
   }
 
@@ -28,5 +28,27 @@ const CommentsAPI = (() => {
     return r.json();
   }
 
-  return { list, create, vote };
+  async function update({ video_id, comment_id, text }) {
+    const r = await fetch('/comments/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ video_id, comment_id, text })
+    });
+    if (!r.ok) throw new Error('Failed to update');
+    return r.json();
+  }
+
+  async function remove({ video_id, comment_id }) {
+    const r = await fetch('/comments/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ video_id, comment_id })
+    });
+    if (!r.ok) throw new Error('Failed to delete');
+    return r.json();
+  }
+
+  return { list, create, vote, update, remove };
 })();
