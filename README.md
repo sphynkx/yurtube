@@ -1,3 +1,26 @@
+[YurTube](https://yurtube.sphynkx.org.ua/) is a self‑hosted video hosting engine written in Python and built on FastAPI, PostgreSQL, MongoDB, and ffmpeg. UX is inspired by [Youtube service](https://www.youtube.com/) and [ClipBucket engine](https://github.com/sphynkx/clipbucket-v5), with a modular design that runs cleanly on a single host or scales out by moving services to external nodes via configuration.
+
+Highlights
+* Accounts and authentication: local sign‑in and SSO (Google, X)
+* Two video players: a custom YouTube‑style player and a simple HTML5 player
+* Uploading and editing videos with automatic thumbnails and animated previews
+* Watch and embed videos
+* Search powered by [Manticore](https://manticoresearch.com/) and PostgreSQL FTS
+* Comments with like/dislike and persistent user votes
+* Channels and subscriptions, user avatars, responsive UI
+
+
+Application is WIP now. Available base functional:
+* Register and authentification - local and SSO (Gmail, X)
+* Two video players - custom (fully inspired by Youtube's one) and simple standard.
+* View and embed videos
+* Upload and edit videos, generation of animated previews.
+* Two Search engines (Manticore and Postgres FTS)
+* Comments
+
+Design notes
+* Modular by default: swap or externalize services through config without code changes
+* Scales from a single instance to multi‑server deployments as your load grows
 
 
 ## Download repo
@@ -66,6 +89,35 @@ psql -U yt_user -h 127.0.0.1 -d yt_db -f install/schema.sql
 psql -U yt_user -h 127.0.0.1 -d yt_db -f install/seed.sql
 ```
 
+
+## Configure DB for comments engine (MongoDB)
+At the `.env` fill fields:
+```conf
+# MongoDB
+MONGO_HOST=127.0.0.1
+MONGO_PORT=27017
+MONGO_DB_NAME=yt_comments
+MONGO_USER=yt_user
+MONGO_PASSWORD=*********
+```
+according your configuration.
+
+Edit `/etc/mongod.conf` - temporarily disable "security" section, restart mongodb:
+```bash
+service mongod restart
+```
+Copy sample file with mono user configuring:
+```bash
+cp install/mongo_setup.js-sample install/mongo_setup.js
+```
+Edit it - set password and apply:
+```bash
+mongosh < install/mongo_setup.js
+```
+Edit `/etc/mongod.conf` again - enable "security" section, restart mongodb:
+```bash
+service mongod restart
+```
 
 
 ## Configure application .env
