@@ -5,7 +5,7 @@
   const root = document.getElementById('comments-root');
   if (!root) return;
 
-  // Save orig parent in order we could to retun back the block to wide!!
+  // Save orig parent in order we could return back the block to wide!!
   const rootHome = root.parentElement;
 
   function isNarrow(){ return window.matchMedia('(max-width:1100px)').matches; }
@@ -32,7 +32,6 @@
   // Move by click on Comments tab
   const tabBtn = document.getElementById('tab-comments');
   tabBtn?.addEventListener('click', () => {
-    // immediately move so that the block is visible when the panel is activated.
     moveToNarrow();
   });
 
@@ -119,7 +118,7 @@
         { roots: data.roots||[], children_map: data.children_map||{}, comments: data.comments||{} },
         data.texts||{},
         3,
-        { currentUid }
+        { currentUid, avatars: data.avatars || {} }
       );
     }catch(e){
       listEl.innerHTML = '<div class="comments-empty">No comments..</div>';

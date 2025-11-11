@@ -25,11 +25,34 @@ async def list_comments(
 
     payload = build_tree_payload(root, current_uid=uid, show_hidden=include_hidden)
     texts = await fetch_texts_for_comments(video_id, root, show_hidden=include_hidden)
+    # Collect unique author UIDs
+    author_uids = set()
+    for cid, meta in payload["comments"].items():
+        uid = meta.get("author_uid")
+        if uid:
+            author_uids.add(uid)
+
+    author_avatars: Dict[str, str] = {}
+    if author_uids:
+        from db import get_conn, release_conn
+        from db.user_assets_db import get_user_avatar_path
+        from utils.url_ut import build_storage_url
+        conn = await get_conn()
+        try:
+            for au in author_uids:
+                p = await get_user_avatar_path(conn, au)
+                if p:
+                    author_avatars[au] = build_storage_url(p)
+                else:
+                    author_avatars[au] = "/static/img/avatar_default.svg"
+        finally:
+            await release_conn(conn)
 
     return {
         "ok": True,
         "roots": payload["roots"],
         "children_map": payload["children_map"],
         "comments": payload["comments"],
-        "texts": texts
+        "texts": texts,
+        "avatars": author_avatars
     }

@@ -60,6 +60,82 @@ body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubunt
 .video-overlay img { width:100%; height:100%; display:block; }
 .player-wrap.playing .video-overlay { opacity:0; pointer-events:none; }
 
+
+/* moved embeb-block*/
+.title-row {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+  margin-top:12px;
+}
+.title-row .watch-title {
+  margin:0;
+  flex:1 1 auto;
+  min-width:200px;
+}
+.embed-inline {
+  flex:0 0 auto;
+  align-self:flex-start;
+  display:flex;
+  justify-content:flex-end;
+  max-width:160px; /* player width.. maybe deprecated.. Sees in watch.html */
+}
+
+.embed-box summary {
+  cursor:pointer;
+  font-weight:600;
+  padding:4px 8px;
+  border-radius:6px;
+  background:#f3f3f3;
+}
+.embed-box summary:hover {
+  background:#e9e9e9;
+}
+.embed-body {
+  margin-top:6px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.embed-code {
+  width:100%;
+  font-family:monospace;
+  font-size:12px;
+  padding:6px;
+  border:1px solid #ccc;
+  border-radius:6px;
+  resize:vertical;
+  background:#fff;
+  box-sizing:border-box;
+}
+.btn-copy-embed {
+  align-self:flex-end;
+  padding:4px 10px;
+  font-size:12px;
+  border:1px solid #bbb;
+  background:#fff;
+  border-radius:6px;
+  cursor:pointer;
+}
+.btn-copy-embed:hover {
+  background:#f0f0f0;
+}
+@media (max-width:700px){
+  .title-row {
+    flex-direction:column;
+    align-items:stretch;
+  }
+  .embed-inline {
+    justify-content:flex-start;
+    margin-top:8px;
+  }
+}
+/* /moved embeb-block*/
+
+
+
 /* Alerts */
 .alert { padding:10px 12px; border-radius:6px; margin:10px 0; border:1px solid transparent; }
 .alert-error { background:#fde8e8; color:#8a1f1f; border-color:#f5c2c7; }
