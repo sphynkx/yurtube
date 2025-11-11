@@ -128,11 +128,12 @@ Copy sample:
 cp install/.env-sample .env
 ```
  and edit params/secrets:
-* DATABASE_URL=postgresql://yt_user:SECRET@127.0.0.1:5432/yt_db
-* SECRET_KEY=replace-with-strong-secret
-* STORAGE_ROOT=/var/www/yurtube/storage
-* SESSION_COOKIE_SECURE=true
-
+```conf
+DATABASE_URL=postgresql://yt_user:SECRET@127.0.0.1:5432/yt_db
+SECRET_KEY=replace-with-strong-secret
+STORAGE_ROOT=/var/www/yurtube/storage
+SESSION_COOKIE_SECURE=true
+```
 
 ## Create admin account
 ```bash
