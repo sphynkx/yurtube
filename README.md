@@ -23,6 +23,8 @@ Design notes
 * Scales from a single instance to multi‑server deployments as your load grows
 
 
+# Base install and config
+
 ## Download repo
 ```bash
 cd /var/www
