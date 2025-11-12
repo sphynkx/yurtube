@@ -16,6 +16,6 @@ async def vote_comment(data: VoteIn, request: Request, user=Depends(get_current_
         raise HTTPException(status_code=401, detail={"error": "auth required"})
     try:
         likes, dislikes, my_vote = await apply_vote(data.video_id, user["user_uid"], data.comment_id, data.vote)
-        return {"ok": True, "likes": likes, "dislikes": dislikes, "my_vote": my_vote}
+        return {"ok": True, "likes": likes, "dislikes": dislikes, "my_vote": my_vote, "user_id": user["user_uid"]}
     except Exception as e:
         raise HTTPException(status_code=400, detail={"error": str(e)})

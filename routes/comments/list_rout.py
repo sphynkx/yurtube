@@ -25,12 +25,37 @@ async def list_comments(
 
     payload = build_tree_payload(root, current_uid=uid, show_hidden=include_hidden)
     texts = await fetch_texts_for_comments(video_id, root, show_hidden=include_hidden)
-    # Collect unique author UIDs
+
+    # Get video author to mark author's likes on comments
+    video_author_uid: Optional[str] = None
+    try:
+        from db import get_conn, release_conn
+        from db.videos_db import get_video
+        conn = await get_conn()
+        try:
+            v = await get_video(conn, video_id)
+            if v and "author_uid" in v:
+                video_author_uid = v["author_uid"]
+        finally:
+            await release_conn(conn)
+    except Exception:
+        video_author_uid = None
+
+    # Collect unique author UIDs for avatars
     author_uids = set()
     for cid, meta in payload["comments"].items():
-        uid = meta.get("author_uid")
-        if uid:
-            author_uids.add(uid)
+        # mark liked_by_author
+        if video_author_uid:
+            votes = (meta.get("votes") or {})
+            try:
+                meta["liked_by_author"] = int(votes.get(video_author_uid, 0)) == 1
+            except Exception:
+                meta["liked_by_author"] = False
+            payload["comments"][cid] = meta
+
+        uid_meta = meta.get("author_uid")
+        if uid_meta:
+            author_uids.add(uid_meta)
 
     author_avatars: Dict[str, str] = {}
     if author_uids:

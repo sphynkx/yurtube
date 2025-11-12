@@ -24,9 +24,11 @@
     if (isNarrow()) moveToNarrow(); else moveToWide();
   }
 
+  // Move on start or on resize
   relocate();
   window.addEventListener('resize', relocate);
 
+  // Move by click on Comments tab
   const tabBtn = document.getElementById('tab-comments');
   tabBtn?.addEventListener('click', () => { moveToNarrow(); });
 
@@ -40,6 +42,7 @@
   const actions   = document.getElementById('composer-actions');
   const btnCancel = document.getElementById('comment-cancel');
   const btnPost   = document.getElementById('comment-post');
+  const countEl   = document.getElementById('comments-count');
 
   let isPosting = false;
 
@@ -108,6 +111,7 @@
   async function load(){
     try{
       const data = await CommentsAPI.list(videoId, false);
+      // Render tree
       CommentsTree.renderTree(
         listEl,
         { roots: data.roots||[], children_map: data.children_map||{}, comments: data.comments||{} },
@@ -115,11 +119,25 @@
         3,
         { currentUid, avatars: data.avatars || {} }
       );
+      // Refresh counter
+      if (countEl){
+        const all = data.comments || {};
+        const visibleCount = Object.values(all).filter(m => m && m.visible).length;
+        if (visibleCount > 0){
+          countEl.hidden = false;
+          countEl.textContent = `${visibleCount} comment${visibleCount===1?'':'s'}`;
+        } else {
+          countEl.hidden = true;
+          countEl.textContent = '';
+        }
+      }
     }catch(e){
       listEl.innerHTML = '<div class="comments-empty">No comments..</div>';
+      if (countEl){ countEl.hidden = true; countEl.textContent = ''; }
     }
   }
 
+  // export global reload
   window.CommentsReload = load;
 
   load();

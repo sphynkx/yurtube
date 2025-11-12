@@ -1,15 +1,14 @@
 /**
  * CommentsTree
  * - Reply / Edit / Delete / Like / Dislike
- * - Tombstone ("Removed") no avatar/author/data/buttons
- * - Mention highlighting
- * - Depth clamp for replys (MAX_DEPTH)
- * - Fallback text for immediate text edition 
+ * - Tombstone ("Removed") minimal node
+ * - Mention linking: "@username: ..." -> <a href="/@username">@username</a>
+ * - contenteditable reply editor with blue, deletable "@username: "
+ * - Global state refreshed each render (no stale closures)
  */
 
 const CommentsTree = (() => {
 
-  // Global state (actualize for every renderTree)
   const state = {
     activeReplyBox: null,
     replyParentCid: null,
@@ -43,7 +42,6 @@ const CommentsTree = (() => {
     }
     return d;
   }
-
   function clampParentForDepth(targetCid){
     let d = depthOf(targetCid);
     let cur = targetCid;
@@ -54,16 +52,17 @@ const CommentsTree = (() => {
     return cur;
   }
 
+  // contenteditable reply composer with blue @mention
   function buildReplyComposer(parentCid, parentMeta){
     const wrapper = document.createElement('div');
     wrapper.className = 'reply-composer';
 
-    const ta = document.createElement('textarea');
-    ta.rows = 2;
-    ta.maxLength = 1000;
-    ta.className = 'reply-textarea';
+    const ed = document.createElement('div');
+    ed.className = 'reply-editor';
+    ed.contentEditable = 'true';
+    ed.spellcheck = true;
     const uname = parentMeta.author_name || parentMeta.author_uid || 'user';
-    ta.value = `For ${uname} `;
+    ed.innerHTML = `<span class="mention">@${uname}</span>: `; // deletable
 
     const bar = document.createElement('div');
     bar.className = 'reply-actions';
@@ -79,7 +78,11 @@ const CommentsTree = (() => {
     btnSend.textContent = 'Reply';
     btnSend.disabled = true;
 
-    ta.addEventListener('input', ()=>{ btnSend.disabled = ta.value.trim().length === 0; });
+    function currentText(){
+      // innerText gives plain text like "@user: rest"
+      return (ed.innerText || '').replace(/\u00A0/g,' ').trim();
+    }
+    ed.addEventListener('input', ()=>{ btnSend.disabled = currentText().length === 0; });
 
     btnCancel.addEventListener('click', ()=>{
       if (state.activeReplyBox){
@@ -90,7 +93,7 @@ const CommentsTree = (() => {
     });
 
     btnSend.addEventListener('click', async ()=>{
-      const raw = ta.value.trim();
+      const raw = currentText();
       if (!raw) return;
       btnSend.disabled = true;
       try{
@@ -111,12 +114,19 @@ const CommentsTree = (() => {
 
     bar.appendChild(btnCancel);
     bar.appendChild(btnSend);
-    wrapper.appendChild(ta);
+    wrapper.appendChild(ed);
     wrapper.appendChild(bar);
-    setTimeout(()=>{ ta.focus(); ta.selectionStart = ta.value.length; }, 10);
+    setTimeout(()=>{ // place cursor at end
+      ed.focus();
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount){
+        sel.collapse(ed, ed.childNodes.length);
+      }
+    }, 10);
     return wrapper;
   }
 
+  // Render comment text; '@username: ' -> link; any inline @username -> link
   function renderText(originalTxt, visible){
     if (!visible){
       const d = document.createElement('div');
@@ -126,26 +136,33 @@ const CommentsTree = (() => {
     }
     const div = document.createElement('div');
     div.className = 'comment-text';
-    const prefixMatch = originalTxt.match(/^For\s+([A-Za-z0-9_-]{1,64})\s+(.*)$/);
+
+    const prefixMatch = originalTxt.match(/^\@([A-Za-z0-9_-]{1,64})\:\s*(.*)$/);
     if (prefixMatch){
-      const mentionSpan = document.createElement('span');
-      mentionSpan.className = 'mention';
-      mentionSpan.textContent = '@' + prefixMatch[1];
-      div.appendChild(mentionSpan);
-      div.appendChild(document.createTextNode(' ' + prefixMatch[2]));
-    } else {
-      const parts = originalTxt.split(/(\@[A-Za-z0-9_-]{1,64})/g);
-      parts.forEach(p=>{
-        if (/^\@[A-Za-z0-9_-]{1,64}$/.test(p)){
-          const m = document.createElement('span');
-          m.className = 'mention';
-          m.textContent = p;
-          div.appendChild(m);
-        } else {
-          div.appendChild(document.createTextNode(p));
-        }
-      });
+      const uname = prefixMatch[1];
+      const rest  = prefixMatch[2] || '';
+      const a = document.createElement('a');
+      a.className = 'mention';
+      a.href = '/@' + uname;
+      a.textContent = '@' + uname;
+      div.appendChild(a);
+      div.appendChild(document.createTextNode(': ' + rest));
+      return div;
     }
+
+    const parts = originalTxt.split(/(\@[A-Za-z0-9_-]{1,64})/g);
+    parts.forEach(p=>{
+      if (/^\@[A-Za-z0-9_-]{1,64}$/.test(p)){
+        const uname = p.slice(1);
+        const a = document.createElement('a');
+        a.className = 'mention';
+        a.href = '/@' + uname;
+        a.textContent = p;
+        div.appendChild(a);
+      } else {
+        div.appendChild(document.createTextNode(p));
+      }
+    });
     return div;
   }
 
@@ -153,7 +170,6 @@ const CommentsTree = (() => {
     const meta = state.comments[cid];
     if (!meta) return document.createElement('div');
 
-    // Tombstone - min.block
     if (meta.tombstone){
       const tomb = document.createElement('div');
       tomb.className = 'comment-item comment-tombstone';
@@ -226,9 +242,9 @@ const CommentsTree = (() => {
     const interactive = meta.visible === true;
 
     if (interactive){
-      // Like
       const like = document.createElement('button');
       like.className = 'btn-like';
+      if (meta.liked_by_author) like.classList.add('by-author'); // red heart overlay
       like.dataset.cid = cid;
       like.dataset.vote = '1';
       like.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18">
@@ -237,7 +253,6 @@ const CommentsTree = (() => {
       if ((meta.my_vote||0) === 1) like.classList.add('active');
       actions.appendChild(like);
 
-      // Dislike
       const dislike = document.createElement('button');
       dislike.className = 'btn-dislike';
       dislike.dataset.cid = cid;
@@ -248,7 +263,6 @@ const CommentsTree = (() => {
       if ((meta.my_vote||0) === -1) dislike.classList.add('active');
       actions.appendChild(dislike);
 
-      // Reply
       const replyBtn = document.createElement('button');
       replyBtn.className = 'btn-reply';
       replyBtn.dataset.cid = cid;
@@ -257,7 +271,6 @@ const CommentsTree = (() => {
         </svg>`;
       actions.appendChild(replyBtn);
 
-      // Edit/Delete
       if (state.currentUid && meta.author_uid === state.currentUid){
         const editBtn = document.createElement('button');
         editBtn.className = 'btn-edit';
@@ -281,7 +294,6 @@ const CommentsTree = (() => {
     div.appendChild(bodyNode);
     div.appendChild(actions);
 
-    // Children
     const kidsRaw = state.children_map[cid] || [];
     const kids = kidsRaw.filter(k => !!state.comments[k]);
     if (kids.length){
@@ -305,8 +317,7 @@ const CommentsTree = (() => {
     return div;
   }
 
-  function renderTree(container, payload, texts, inlineLimit, opts){
-    // Refresh global state with fresh data
+  function render(container, payload, texts, inlineLimit, opts){
     state.comments = payload.comments || {};
     state.children_map = payload.children_map || {};
     state.texts = texts || {};
@@ -316,7 +327,6 @@ const CommentsTree = (() => {
 
     container.innerHTML = '';
     const roots = payload.roots || [];
-
     roots.forEach(cid => container.appendChild(node(cid)));
     if (!roots.length){
       const empty = document.createElement('div');
@@ -325,10 +335,8 @@ const CommentsTree = (() => {
       container.appendChild(empty);
     }
 
-    // Delegates - once
     if (!state.bound){
       container.addEventListener('click', async (e) => {
-        // Reply
         const replyBtn = e.target.closest('.btn-reply');
         if (replyBtn){
           const cid = replyBtn.dataset.cid;
@@ -349,7 +357,6 @@ const CommentsTree = (() => {
           return;
         }
 
-        // Edit
         const editBtn = e.target.closest('.btn-edit');
         if (editBtn){
           const cid = editBtn.dataset.cid;
@@ -419,7 +426,6 @@ const CommentsTree = (() => {
           return;
         }
 
-        // Delete
         const delBtn = e.target.closest('.btn-delete');
         if (delBtn){
           const cid = delBtn.dataset.cid;
@@ -438,22 +444,19 @@ const CommentsTree = (() => {
           return;
         }
 
-        // like/dislike – here only allow click
         const voteBtn = e.target.closest('.btn-like, .btn-dislike');
         if (voteBtn){
           const cid = voteBtn.dataset.cid;
           const meta = state.comments[cid];
           if (!meta || !meta.visible || meta.tombstone) {
-            // Blcok interaction
             e.stopPropagation();
             e.preventDefault();
           }
         }
-
       });
       state.bound = true;
     }
   }
 
-  return { renderTree };
+  return { renderTree: render };
 })();

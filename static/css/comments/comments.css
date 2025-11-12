@@ -21,38 +21,51 @@
   min-height:40px;
   resize:vertical;
   border:1px solid #ccc;
-  border-radius:6px;
+  border-radius:8px;
   padding:8px;
   font-size:14px;
   background:#fff;
   box-sizing:border-box;
 }
+
+.composer-textarea::-webkit-resizer,
+.reply-textarea::-webkit-resizer { display:none; }
 @media (max-width:600px){
   .composer-textarea { max-width:100%; }
 }
 .composer-actions { display:flex; gap:8px; margin-top:6px; }
+
+/* Buttons: pill style */
 .btn-primary {
-  padding:6px 12px;
-  border-radius:6px;
-  border:1px solid #0a84d6;
+  padding:6px 14px;
+  border-radius:9999px;
+  border:0;
   background:#0a84d6;
   color:#fff;
   cursor:pointer;
-  transition:background .15s ease;
+  transition:background .15s ease, transform .05s ease;
 }
 .btn-primary:hover { background:#086fb1; }
+.btn-primary:active { transform:translateY(1px); }
 .btn-primary[disabled] { opacity:.5; cursor:default; }
+
 .btn-secondary {
-  padding:6px 12px;
-  border-radius:6px;
-  border:1px solid #bbb;
-  background:#fff;
+  padding:6px 14px;
+  border-radius:9999px;
+  border:0;
+  background:transparent;
+  color:#222;
   cursor:pointer;
   transition:background .15s ease;
 }
-.btn-secondary:hover { background:#f6f6f6; }
+.btn-secondary:hover { background:rgba(10,132,214,.08); }
 
 /* List / empty */
+.comments-head-row { display:flex; justify-content:space-between; align-items:flex-end; margin:8px 0; }
+.comments-title { margin:0; font-size:16px; }
+.comments-title-wrap { display:flex; flex-direction:column; gap:2px; }
+.comments-count { font-size:12px; color:#666; line-height:1; }
+
 .comments-list { display:flex; flex-direction:column; gap:10px; }
 .comments-empty { color:#666; font-size:14px; }
 
@@ -67,6 +80,11 @@
   opacity:.65;
   background:#fafafa;
 }
+.comment-item.comment-tombstone {
+  border:1px dashed #ccc;
+  background:#f8f8f8;
+}
+
 .comment-head {
   display:flex;
   align-items:center;
@@ -97,8 +115,23 @@
   font-size:14px;
   margin-top:6px;
 }
+.comment-text.comment-tombstone {
+  font-style:italic;
+  color:#555;
+  padding:4px 6px;
+  border-radius:4px;
+}
 
-/* Actions (like/dislike/edit/delete) */
+/* Mention link / highlight */
+.comment-text .mention,
+.comment-text .mention a {
+  color:#0a84d6;
+  font-weight:600;
+  text-decoration:none;
+}
+.comment-text .mention a:hover { text-decoration:underline; }
+
+/* Actions (like/dislike/reply/edit/delete) */
 .comment-actions {
   display:flex;
   align-items:center;
@@ -107,7 +140,6 @@
   flex-wrap:wrap;
 }
 
-/* Base style for action buttons */
 .comment-actions button {
   background:transparent;
   border:0;
@@ -119,50 +151,58 @@
   border-radius:18px;
   font-size:13px;
   line-height:1;
-  color:#0a84d6; /* for cyphers and linkx */
+  color:#0a84d6;
   transition:background .15s ease, color .15s ease;
 }
-
-/* Contour of like/dislike button  */
+.comment-actions button:hover { background:rgba(10,132,214,.08); }
 .comment-actions button svg path {
   fill:none;
   stroke:#0a84d6;
   stroke-width:1.8px;
 }
-
-/* Hover - lite fon */
-.comment-actions button:hover {
-  background:rgba(10,132,214,.08);
-}
-
-/* Active like/dislike - fill it contours */
-.comment-actions .btn-like.active svg path,
-.comment-actions .btn-dislike.active svg path {
+.comment-actions button.active svg path {
   fill:#0a84d6;
   stroke:#0a84d6;
 }
-.comment-actions .btn-like.active,
-.comment-actions .btn-dislike.active {
-  /* harden cyphers for active */
-  font-weight:600;
+
+/* Like from video's author */
+.comment-actions .btn-like.by-author::after {
+  content:'❤';
+  color:#d62828;
+  font-size:12px;
+  margin-left:2px;
+  line-height:1;
+  position:relative;
+  top:-1px;
 }
 
-/* Red colored diskikes!! Overhead all prev. To disable feature just comment block below */
-.comment-actions .btn-dislike svg path { stroke:#d62828; }
-.comment-actions .btn-dislike.active svg path { fill:#d62828; stroke:#d62828; }
-.comment-actions .btn-dislike { color:#d62828; }
-
-
-/* Edit / Delete - same way.. */
-.comment-actions .btn-edit,
-.comment-actions .btn-delete {
-  padding:4px;
-  width:30px;
-  justify-content:center;
+/* Reply composer */
+.reply-composer {
+  margin-top:8px;
+  padding:8px;
+  border:1px solid #e3f1fc;
+  background:#f7fbff;
+  border-radius:6px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
 }
-.comment-actions .btn-edit:hover,
-.comment-actions .btn-delete:hover {
-  background:rgba(10,132,214,.08);
+.reply-textarea {
+  width:100%;
+  resize:vertical;
+  border:1px solid #ccc;
+  border-radius:8px;
+  padding:6px;
+  font-size:13px;
+  font-family:inherit;
+  box-sizing:border-box;
+  background:#fff;
+  min-height:34px;
+}
+.reply-actions {
+  display:flex;
+  gap:8px;
+  justify-content:flex-end;
 }
 
 /* Children */
@@ -185,35 +225,35 @@
   background:#e2f0ff;
 }
 
-/* Deleted text style */
-.comment-item.comment-hidden .comment-text {
-  font-style:italic;
-  color:#666;
-}
-
 /* Narrow adjustments */
 @media (max-width:480px){
   .comment-head { gap:6px; }
   .comment-actions button { padding:4px 8px; }
 }
 
+/* Base mention color for both editor and rendered text */
+.mention { color:#0a84d6; font-weight:600; }
 
-/* Reply composer */
-.reply-composer {
-  margin-top:8px;
-  padding:8px;
-  border:1px solid #e3f1fc;
-  background:#f7fbff;
-  border-radius:6px;
-  display:flex;
-  flex-direction:column;
-  gap:6px;
+/* Reply editor (contenteditable) */
+.reply-editor {
+  width:100%;
+  min-height:34px;
+  padding:6px;
+  border:1px solid #ccc;
+  border-radius:8px;
+  background:#fff;
+  font-size:13px;
+  line-height:1.4;
+  box-sizing:border-box;
+  white-space:pre-wrap;
+  outline:none;
 }
+/* Keep support for the old textarea if present */
 .reply-textarea {
   width:100%;
   resize:vertical;
   border:1px solid #ccc;
-  border-radius:6px;
+  border-radius:8px;
   padding:6px;
   font-size:13px;
   font-family:inherit;
@@ -221,45 +261,14 @@
   background:#fff;
   min-height:34px;
 }
-.reply-actions {
-  display:flex;
-  gap:8px;
-  justify-content:flex-end;
-}
 
-/* Mention highlight */
-.comment-text .mention {
-  color:#0a84d6;
-  font-weight:600;
-  background:rgba(10,132,214,.08);
-  padding:0 3px;
-  border-radius:4px;
-}
-
-/* Contour icons */
-.comment-actions button svg path {
-  fill:none;
-  stroke:#0a84d6;
-  stroke-width:1.8px;
-}
-.comment-actions button.active svg path {
-  fill:#0a84d6;
-  stroke:#0a84d6;
-}
-.btn-reply svg path { /* same way */ }
-
-/* Shrot mode: enpress reply composer */
-@media (max-width:480px){
-  .reply-composer { padding:6px; }
-  .reply-textarea { font-size:12px; }
-}
-.comment-item.comment-tombstone {
-  border:1px dashed #ccc;
-  background:#f8f8f8;
-}
-.comment-text.comment-tombstone {
-  font-style:italic;
-  color:#555;
-  padding:4px 6px;
-  border-radius:4px;
+/* Heart overlay for author's like (class added in JS) */
+.comment-actions .btn-like.by-author::after {
+  content:'❤';
+  color:#d62828;
+  font-size:12px;
+  margin-left:2px;
+  line-height:1;
+  position:relative;
+  top:-1px;
 }
