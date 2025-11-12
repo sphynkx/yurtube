@@ -10,7 +10,8 @@ async def fetch_texts_for_comments(video_id: str, root_doc: Dict[str, Any], show
     for cid, meta in root_doc.get("comments", {}).items():
         if not meta:
             continue
-        if not show_hidden and not meta.get("visible", True):
+        if not show_hidden and not meta.get("visible", True) and not meta.get("tombstone"):
+            # tombstone - alway show text as [Removed], but chunk no need
             continue
         cref = meta.get("chunk_ref") or {}
         ch = cref.get("chunk_id")
@@ -29,6 +30,8 @@ async def fetch_texts_for_comments(video_id: str, root_doc: Dict[str, Any], show
             continue
         texts: Dict[str, str] = chunk.get("texts", {})
         for lid in lids:
+            if lid in out:
+                continue
             txt = texts.get(lid)
             if txt is not None:
                 out[lid] = txt
@@ -41,9 +44,12 @@ def build_tree_payload(root_doc: Dict[str, Any], current_uid: Optional[str], sho
     roots = depth_idx.get("0", [])
 
     if not show_hidden:
-        roots = [cid for cid in roots if comments.get(cid, {}).get("visible", True)]
+        # Roots: leave tombstone even if visible=False
+        def _keep(cid: str) -> bool:
+            m = comments.get(cid, {})
+            return m.get("visible", True) or m.get("tombstone")
+        roots = [cid for cid in roots if _keep(cid)]
 
-    # Reverse order by creation time
     def _created(cid: str) -> int:
         return int(comments.get(cid, {}).get("created_at", 0))
     roots = sorted(roots, key=_created, reverse=True)

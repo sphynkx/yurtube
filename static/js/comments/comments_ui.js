@@ -5,7 +5,6 @@
   const root = document.getElementById('comments-root');
   if (!root) return;
 
-  // Save orig parent in order we could return back the block to wide!!
   const rootHome = root.parentElement;
 
   function isNarrow(){ return window.matchMedia('(max-width:1100px)').matches; }
@@ -25,15 +24,11 @@
     if (isNarrow()) moveToNarrow(); else moveToWide();
   }
 
-  // Move on start or on resize
   relocate();
   window.addEventListener('resize', relocate);
 
-  // Move by click on Comments tab
   const tabBtn = document.getElementById('tab-comments');
-  tabBtn?.addEventListener('click', () => {
-    moveToNarrow();
-  });
+  tabBtn?.addEventListener('click', () => { moveToNarrow(); });
 
   const videoId    = root.dataset.videoId || '';
   const currentUid = root.dataset.currentUid || '';
@@ -124,6 +119,8 @@
       listEl.innerHTML = '<div class="comments-empty">No comments..</div>';
     }
   }
+
+  window.CommentsReload = load;
 
   load();
 })();

@@ -196,3 +196,70 @@
   .comment-head { gap:6px; }
   .comment-actions button { padding:4px 8px; }
 }
+
+
+/* Reply composer */
+.reply-composer {
+  margin-top:8px;
+  padding:8px;
+  border:1px solid #e3f1fc;
+  background:#f7fbff;
+  border-radius:6px;
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.reply-textarea {
+  width:100%;
+  resize:vertical;
+  border:1px solid #ccc;
+  border-radius:6px;
+  padding:6px;
+  font-size:13px;
+  font-family:inherit;
+  box-sizing:border-box;
+  background:#fff;
+  min-height:34px;
+}
+.reply-actions {
+  display:flex;
+  gap:8px;
+  justify-content:flex-end;
+}
+
+/* Mention highlight */
+.comment-text .mention {
+  color:#0a84d6;
+  font-weight:600;
+  background:rgba(10,132,214,.08);
+  padding:0 3px;
+  border-radius:4px;
+}
+
+/* Contour icons */
+.comment-actions button svg path {
+  fill:none;
+  stroke:#0a84d6;
+  stroke-width:1.8px;
+}
+.comment-actions button.active svg path {
+  fill:#0a84d6;
+  stroke:#0a84d6;
+}
+.btn-reply svg path { /* same way */ }
+
+/* Shrot mode: enpress reply composer */
+@media (max-width:480px){
+  .reply-composer { padding:6px; }
+  .reply-textarea { font-size:12px; }
+}
+.comment-item.comment-tombstone {
+  border:1px dashed #ccc;
+  background:#f8f8f8;
+}
+.comment-text.comment-tombstone {
+  font-style:italic;
+  color:#555;
+  padding:4px 6px;
+  border-radius:4px;
+}
