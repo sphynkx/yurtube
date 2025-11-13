@@ -96,11 +96,11 @@
         const likeBtn = isLike ? btn : other;
         const dislikeBtn = isLike ? other : btn;
         if (likeBtn){
-          const s = likeBtn.querySelector('span'); if (s) s.textContent = String(res.likes);
+          const s = likeBtn.querySelector('.count'); if (s) s.textContent = String(res.likes);
           likeBtn.classList.toggle('active', res.my_vote === 1);
         }
         if (dislikeBtn){
-          const s = dislikeBtn.querySelector('span'); if (s) s.textContent = String(res.dislikes);
+          const s = dislikeBtn.querySelector('.count'); if (s) s.textContent = String(res.dislikes);
           dislikeBtn.classList.toggle('active', res.my_vote === -1);
         }
       }catch(err){ console.warn('vote failed', err); }
@@ -111,6 +111,16 @@
   async function load(){
     try{
       const data = await CommentsAPI.list(videoId, false);
+
+      // Save author IDfor hearts-addon and for debug
+      const vAuthor = data.video_author_uid || data.author_uid || '';
+      if (vAuthor){
+        root.dataset.videoAuthorUid = vAuthor;
+        if (window.__COMMENTS_DEBUG_HEART) console.log('[comments-ui] videoAuthorUid from list:', vAuthor);
+      }else{
+        if (window.__COMMENTS_DEBUG_HEART) console.log('[comments-ui] videoAuthorUid missing in list');
+      }
+
       // Render tree
       CommentsTree.renderTree(
         listEl,
@@ -119,6 +129,7 @@
         3,
         { currentUid, avatars: data.avatars || {} }
       );
+
       // Refresh counter
       if (countEl){
         const all = data.comments || {};

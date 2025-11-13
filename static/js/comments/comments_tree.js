@@ -244,12 +244,12 @@ const CommentsTree = (() => {
     if (interactive){
       const like = document.createElement('button');
       like.className = 'btn-like';
-      if (meta.liked_by_author) like.classList.add('by-author'); // red heart overlay
       like.dataset.cid = cid;
       like.dataset.vote = '1';
+      // Embed heart (hidden by default)!!
       like.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18">
           <path d="M9 21h9a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-5.31l.95-4.57.02-.23a1 1 0 0 0-.3-.7L12.17 3 6.59 8.59A2 2 0 0 0 6 10v9a2 2 0 0 0 2 2h1z"/>
-        </svg><span>${meta.likes||0}</span>`;
+        </svg><span class="count">${meta.likes||0}</span><span class="author-heart" data-cid="${cid}" style="display:none">❤</span>`;
       if ((meta.my_vote||0) === 1) like.classList.add('active');
       actions.appendChild(like);
 
@@ -259,7 +259,7 @@ const CommentsTree = (() => {
       dislike.dataset.vote = '-1';
       dislike.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18">
           <path d="M15 3H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h5.31l-.95 4.57-.02.23a1 1 0 0 0 .3.7l1.49 1.5 5.58-5.59A2 2 0 0 0 18 14V5a2 2 0 0 0-2-2h-1z"/>
-        </svg><span>${meta.dislikes||0}</span>`;
+        </svg><span class="count">${meta.dislikes||0}</span>`;
       if ((meta.my_vote||0) === -1) dislike.classList.add('active');
       actions.appendChild(dislike);
 
