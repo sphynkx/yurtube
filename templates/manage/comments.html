@@ -1,13 +1,36 @@
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>Manage comments</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <link rel="stylesheet" href="/static/css/manage/comments_admin.css">
-</head>
-<body>
-  <div id="manage-comments-root" data-video-id="{{ video_id }}"></div>
-  <script src="/static/js/manage/comments_admin.js"></script>
-</body>
-</html>
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="/static/css/manage/comments_admin.css">
+
+<div class="manage-comments-layout">
+  <aside class="mc-nav">
+    <div class="mc-nav-title">Menu</div>
+    <nav class="mc-nav-links">
+      <a href="/account">Profile</a>
+      <a href="/manage">My videos</a>
+      <a href="/subscriptions">My subscriptions</a>
+      <a href="/history">My history</a>
+      <a href="/account/password">Change password</a>
+    </nav>
+    <hr class="mc-nav-sep">
+    <div class="mc-nav-title">Video</div>
+    <nav class="mc-nav-links">
+      <a href="/watch?v={{ video_id }}">Open video</a>
+      <a href="/manage/edit?v={{ video_id }}">Edit video</a>
+    </nav>
+  </aside>
+
+  <main class="mc-main">
+    <div class="mc-top-bar">
+      <h1 class="mc-page-title">Comments management</h1>
+      <div class="mc-back-link">
+        <a href="/manage">Back to My Videos</a>
+      </div>
+    </div>
+
+    <div id="manage-comments-root" data-video-id="{{ video_id }}"></div>
+  </main>
+</div>
+
+<script src="/static/js/manage/comments_admin.js"></script>
+{% endblock %}
