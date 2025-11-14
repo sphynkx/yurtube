@@ -1,5 +1,5 @@
 """
-Manage comments admin for a specific video (FastAPI).
+Manage comments admin for a specific video.
 
 Routes:
 - GET  /manage/comments?v=<video_id>
@@ -7,16 +7,8 @@ Routes:
 - POST /api/manage/comments/settings
 - GET  /api/manage/comments/users?v=<video_id>
 - POST /api/manage/comments/ban
-
-Persists:
-- comments_enabled via videos.allow_comments
-- hide_deleted via videos.embed_params['comments_hide_deleted']
-- per-user bans via videos.embed_params arrays:
-    comments_soft_ban_uids, comments_hard_ban_uids
-- per-user notes via videos.embed_params object:
-    comments_ban_notes: { "<user_uid>": "<text>" }
+- POST /api/manage/comments/delete-all
 """
-
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
@@ -37,6 +29,7 @@ from db.videos_query_db import (
 from db.videos_db import get_video as db_get_video
 from db.user_assets_db import get_user_avatar_path
 from db.users_db import get_usernames_by_uids
+from db.comments.root_db import delete_all_comments_for_video
 from utils.url_ut import build_storage_url
 from utils.security_ut import get_current_user
 
@@ -90,7 +83,11 @@ class BanPost(BaseModel):
     user_uid: str = Field(..., min_length=1)
     soft_ban: bool = False
     hard_ban: bool = False
-    note: Optional[str] = ""  # optional moderator note for this user on this video
+    note: Optional[str] = ""
+
+
+class DeleteAllPost(BaseModel):
+    video_id: str = Field(..., min_length=12, max_length=12)
 
 
 @router.get("/api/manage/comments/settings")
@@ -284,7 +281,6 @@ async def api_comments_ban_post(request: Request, payload: BanPost) -> Any:
             if note_str:
                 notes[target_uid] = note_str
             else:
-                # empty note clears existing note
                 notes.pop(target_uid, None)
             ep["comments_ban_notes"] = notes
 
@@ -292,3 +288,27 @@ async def api_comments_ban_post(request: Request, payload: BanPost) -> Any:
         return {"ok": True}
     finally:
         await release_conn(conn)
+
+
+@router.post("/api/manage/comments/delete-all")
+async def api_comments_delete_all(request: Request, payload: DeleteAllPost) -> Any:
+    """
+    Danger: delete all comments for the given video from Mongo (root + chunks).
+    Only video owner can perform this operation.
+    """
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    video_id = payload.video_id.strip()
+
+    conn = await get_conn()
+    try:
+        owned = await db_get_owned_video_full(conn, video_id, user["user_uid"])
+        if not owned:
+            return JSONResponse({"ok": False, "error": "forbidden"}, status_code=403)
+    finally:
+        await release_conn(conn)
+
+    stats = await delete_all_comments_for_video(video_id)
+    return {"ok": True, "deleted": stats}

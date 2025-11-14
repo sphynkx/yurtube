@@ -6,7 +6,7 @@
   if (!root) return;
 
   const videoId = root.dataset.videoId || '';
-  const ui = { status:null, settingsWrap:null, usersWrap:null };
+  const ui = { status:null, settingsWrap:null, usersWrap:null, dangerWrap:null };
 
   function el(tag, cls, text){
     const n = document.createElement(tag);
@@ -18,7 +18,7 @@
     if (!ui.status) return;
     ui.status.textContent = msg || '';
     ui.status.className = 'mc-status ' + (type||'');
-    if (msg) setTimeout(()=>{ ui.status.textContent=''; ui.status.className='mc-status'; }, 1600);
+    if (msg) setTimeout(()=>{ ui.status.textContent=''; ui.status.className='mc-status'; }, 1800);
   }
   async function apiGet(url){
     const r = await fetch(url, { credentials:'same-origin' });
@@ -151,6 +151,29 @@
     ui.usersWrap.appendChild(card);
   }
 
+  function renderDanger(){
+    ui.dangerWrap.innerHTML = '';
+
+    const card = el('div', 'mc-card');
+    card.appendChild(el('div', 'mc-h', 'Danger zone'));
+    const desc = el('div', 'mc-desc', 'Delete all comments for this video (irreversible).');
+    const btn = el('button', 'mc-btn mc-btn-danger', 'Delete all comments');
+    btn.addEventListener('click', async ()=>{
+      const ok = window.confirm('This will permanently delete all comments for this video. Continue?');
+      if (!ok) return;
+      btn.disabled = true;
+      try{
+        const res = await apiPost('/api/manage/comments/delete-all', { video_id: videoId });
+        const d = res?.deleted || {};
+        showStatus(`Deleted: root=${d.root_deleted||0}, chunks=${d.chunks_deleted||0}`, 'ok');
+      }catch(e){ console.warn(e); showStatus('Delete failed', 'err'); }
+      finally{ btn.disabled = false; }
+    });
+    card.appendChild(desc);
+    card.appendChild(btn);
+    ui.dangerWrap.appendChild(card);
+  }
+
   async function loadAll(){
     try{
       showStatus('Loading...', 'info');
@@ -160,6 +183,7 @@
       ]);
       renderSettings(settingsRes?.settings || { comments_enabled:true, hide_deleted:'all' });
       renderUsers(usersRes?.users || []);
+      renderDanger();
       showStatus('');
     }catch(e){ console.warn(e); showStatus('Load failed', 'err'); }
   }
@@ -170,7 +194,12 @@
   ui.status = el('div', 'mc-status');
   ui.settingsWrap = el('div', 'mc-section');
   ui.usersWrap = el('div', 'mc-section');
-  wrap.appendChild(title); wrap.appendChild(ui.status); wrap.appendChild(ui.settingsWrap); wrap.appendChild(ui.usersWrap);
+  ui.dangerWrap = el('div', 'mc-section');
+  wrap.appendChild(title);
+  wrap.appendChild(ui.status);
+  wrap.appendChild(ui.settingsWrap);
+  wrap.appendChild(ui.usersWrap);
+  wrap.appendChild(ui.dangerWrap);
   root.appendChild(wrap);
 
   loadAll();
