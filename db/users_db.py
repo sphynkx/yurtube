@@ -1,4 +1,4 @@
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, List
 
 import asyncpg
 
@@ -82,3 +82,23 @@ async def user_has_password(conn: asyncpg.Connection, user_uid: str) -> bool:
     )
     pwd = (row["password_hash"] if row else "") or ""
     return bool(pwd)
+
+
+async def get_usernames_by_uids(conn: asyncpg.Connection, uids: List[str]) -> Dict[str, str]:
+    """
+    Return a mapping of user_uid -> username for the provided list of UIDs.
+    If a username is NULL, the mapping will contain None which callers may replace with UID.
+    """
+    if not uids:
+        return {}
+    rows = await conn.fetch(
+        "SELECT user_uid, username FROM users WHERE user_uid = ANY($1::text[])",
+        uids,
+    )
+    out: Dict[str, str] = {}
+    for r in rows:
+        uid = r["user_uid"]
+        nm = r["username"]
+        if uid:
+            out[str(uid)] = nm
+    return out

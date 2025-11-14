@@ -34,6 +34,7 @@ from db.videos_query_db import (
 )
 from db.videos_db import get_video as db_get_video
 from db.user_assets_db import get_user_avatar_path
+from db.users_db import get_usernames_by_uids
 from utils.url_ut import build_storage_url
 from utils.security_ut import get_current_user
 
@@ -191,15 +192,7 @@ async def api_comments_users_get(request: Request, v: str = Query(..., min_lengt
 
         uids = list(counts.keys())
         if uids:
-            rows = await conn.fetch(
-                "SELECT user_uid, username FROM users WHERE user_uid = ANY($1::text[])",
-                uids,
-            )
-            for r in rows:
-                uid = r["user_uid"]
-                nm = r["username"]
-                if uid:
-                    names[uid] = nm or uid
+            names = await get_usernames_by_uids(conn, uids)
             for au in uids:
                 p = await get_user_avatar_path(conn, au)
                 avatars[au] = build_storage_url(p) if p else "/static/img/avatar_default.svg"
@@ -210,7 +203,7 @@ async def api_comments_users_get(request: Request, v: str = Query(..., min_lengt
     for uid, cnt in counts.items():
         users.append({
             "uid": uid,
-            "name": names.get(uid) or uid,
+            "name": (names.get(uid) or uid),
             "avatar": avatars.get(uid) or "/static/img/avatar_default.svg",
             "comments_count": int(cnt),
             "soft_ban": uid in soft_set,
