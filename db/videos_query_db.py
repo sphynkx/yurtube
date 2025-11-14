@@ -1,10 +1,8 @@
 from typing import Any, Dict, List, Optional
+import json
 
 
 async def get_owned_video_full(conn, video_id: str, owner_uid: str) -> Optional[Dict[str, Any]]:
-    """
-    Fetch full video row for edit pages, restricted to owner.
-    """
     row = await conn.fetchrow(
         """
         SELECT v.*,
@@ -38,9 +36,6 @@ async def update_video_meta(
     allow_comments: bool,
     license_str: str,
 ) -> None:
-    """
-    Update meta fields of a video.
-    """
     await conn.execute(
         """
         UPDATE videos
@@ -67,9 +62,6 @@ async def update_video_meta(
 
 
 async def update_thumb_pref_offset(conn, video_id: str, offset_sec: int) -> None:
-    """
-    Store preferred thumbnail offset.
-    """
     await conn.execute(
         "UPDATE videos SET thumb_pref_offset = $2 WHERE video_id = $1",
         video_id,
@@ -78,9 +70,6 @@ async def update_thumb_pref_offset(conn, video_id: str, offset_sec: int) -> None
 
 
 async def set_video_embed_params(conn, video_id: str, allow_embed: bool, params_json: str) -> None:
-    """
-    Update allow_embed and embed_params for a video.
-    """
     await conn.execute(
         """
         UPDATE videos
@@ -95,9 +84,6 @@ async def set_video_embed_params(conn, video_id: str, allow_embed: bool, params_
 
 
 async def fetch_watch_video_full(conn, video_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Fetch watch page data for a video.
-    """
     row = await conn.fetchrow(
         """
         SELECT
@@ -145,9 +131,6 @@ async def fetch_watch_video_full(conn, video_id: str) -> Optional[Dict[str, Any]
 
 
 async def fetch_embed_video_info(conn, video_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Fetch minimal embed data for a video.
-    """
     row = await conn.fetchrow(
         """
         SELECT v.video_id, v.title, v.storage_path,
@@ -160,3 +143,38 @@ async def fetch_embed_video_info(conn, video_id: str) -> Optional[Dict[str, Any]
         video_id,
     )
     return dict(row) if row else None
+
+
+async def set_video_allow_comments(conn, video_id: str, allow: bool) -> None:
+    await conn.execute(
+        "UPDATE videos SET allow_comments = $2 WHERE video_id = $1",
+        video_id,
+        bool(allow),
+    )
+
+
+async def set_video_comments_hide_deleted(conn, video_id: str, hide_deleted: str) -> None:
+    if hide_deleted not in ("none", "owner", "all"):
+        hide_deleted = "all"
+    await conn.execute(
+        """
+        UPDATE videos
+        SET embed_params = COALESCE(embed_params, '{}'::jsonb)
+                           || jsonb_build_object('comments_hide_deleted', $2::text)
+        WHERE video_id = $1
+        """,
+        video_id,
+        hide_deleted,
+    )
+
+
+async def set_video_embed_params_raw(conn, video_id: str, params: Dict[str, Any]) -> None:
+    """
+    Overwrite embed_params with provided JSON dict.
+    """
+    payload = json.dumps(params or {})
+    await conn.execute(
+        "UPDATE videos SET embed_params = $2::jsonb WHERE video_id = $1",
+        video_id,
+        payload,
+    )

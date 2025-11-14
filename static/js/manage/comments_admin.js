@@ -18,7 +18,7 @@
     if (!ui.status) return;
     ui.status.textContent = msg || '';
     ui.status.className = 'mc-status ' + (type||'');
-    if (msg) setTimeout(()=>{ ui.status.textContent=''; ui.status.className='mc-status'; }, 2500);
+    if (msg) setTimeout(()=>{ ui.status.textContent=''; ui.status.className='mc-status'; }, 1600);
   }
   async function apiGet(url){
     const r = await fetch(url, { credentials:'same-origin' });
@@ -79,7 +79,7 @@
         const enabled = !!cb.checked;
         await apiPost('/api/manage/comments/settings', { video_id: videoId, comments_enabled: enabled, hide_deleted: hide });
         showStatus('Saved', 'ok');
-      }catch(e){ console.warn(e); showStatus('Failed to save', 'err'); }
+      }catch(e){ console.warn(e); showStatus('Failed', 'err'); }
     }
     cb.addEventListener('change', saveSettings);
     ui.settingsWrap.querySelectorAll('input[name="mc-hide-deleted"]').forEach(radio=>{
@@ -93,7 +93,7 @@
     card.appendChild(el('div', 'mc-h', 'Commenters'));
     const table = el('table', 'mc-table');
     const thead = el('thead'); const trh = el('tr');
-    ['User','Comments','Soft ban','Hard ban',''].forEach(t=> trh.appendChild(el('th', null, t)));
+    ['User','Comments','Soft ban','Hard ban','Actions'].forEach(t=> trh.appendChild(el('th', null, t)));
     thead.appendChild(trh); table.appendChild(thead);
     const tbody = el('tbody');
 
@@ -110,18 +110,30 @@
       const tdSoft = el('td', 'mc-check'); const cbSoft = document.createElement('input'); cbSoft.type='checkbox'; cbSoft.checked=!!u.soft_ban; tdSoft.appendChild(cbSoft);
       const tdHard = el('td', 'mc-check'); const cbHard = document.createElement('input'); cbHard.type='checkbox'; cbHard.checked=!!u.hard_ban; tdHard.appendChild(cbHard);
 
-      const tdSave = el('td', 'mc-save'); const btn = el('button', 'mc-btn', 'Save');
-      btn.addEventListener('click', async ()=>{
-        btn.disabled = true;
-        try{
-          await apiPost('/api/manage/comments/ban', { video_id: videoId, user_uid: u.uid, soft_ban: !!cbSoft.checked, hard_ban: !!cbHard.checked });
-          showStatus('Saved', 'ok');
-        }catch(e){ console.warn(e); showStatus('Failed to save', 'err'); }
-        finally{ btn.disabled = false; }
-      });
-      tdSave.appendChild(btn);
+      const tdAct = el('td', 'mc-save');
+      const btnSave = el('button', 'mc-btn', 'Save');
 
-      tr.appendChild(tdUser); tr.appendChild(tdCnt); tr.appendChild(tdSoft); tr.appendChild(tdHard); tr.appendChild(tdSave);
+      btnSave.addEventListener('click', async ()=>{
+        btnSave.disabled = true;
+        try{
+          await apiPost('/api/manage/comments/ban', {
+            video_id: videoId,
+            user_uid: u.uid,
+            soft_ban: !!cbSoft.checked,
+            hard_ban: !!cbHard.checked
+          });
+          showStatus('Saved', 'ok');
+        }catch(e){ console.warn(e); showStatus('Failed', 'err'); }
+        finally{ btnSave.disabled = false; }
+      });
+
+      tdAct.appendChild(btnSave);
+
+      tr.appendChild(tdUser);
+      tr.appendChild(tdCnt);
+      tr.appendChild(tdSoft);
+      tr.appendChild(tdHard);
+      tr.appendChild(tdAct);
       tbody.appendChild(tr);
     });
 

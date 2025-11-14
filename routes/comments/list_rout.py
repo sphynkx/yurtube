@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Query, Depends
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Set
 from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
 from config.comments_config import comments_settings
 from utils.security_ut import get_current_user
+import json
 
 router = APIRouter(prefix="/comments", tags=["comments"])
+
 
 @router.get("/list")
 async def list_comments(
@@ -13,38 +15,60 @@ async def list_comments(
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
 ) -> Dict[str, Any]:
     if not comments_settings.COMMENTS_ENABLED:
-        return {"ok": True, "comments": [], "roots": []}
+        return _empty(False)
 
-    root = await fetch_root(video_id)
-    if not root:
-        return {"ok": True, "comments": [], "roots": []}
-
-    uid = None
-    if current_user and "user_uid" in current_user:
-        uid = current_user["user_uid"]
-
-    payload = build_tree_payload(root, current_uid=uid, show_hidden=include_hidden)
-    texts = await fetch_texts_for_comments(video_id, root, show_hidden=include_hidden)
-
-    # Get video author to mark author's likes on comments
+    video_allow = True
     video_author_uid: Optional[str] = None
+    hide_deleted: str = "all"
+    soft_banned: Set[str] = set()
+
     try:
         from db import get_conn, release_conn
         from db.videos_db import get_video
         conn = await get_conn()
         try:
             v = await get_video(conn, video_id)
-            if v and "author_uid" in v:
-                video_author_uid = v["author_uid"]
+            if v:
+                video_allow = bool(v.get("allow_comments", True))
+                video_author_uid = v.get("author_uid")
+                ep = v.get("embed_params")
+                ep = _parse_ep(ep)
+                hv = str(ep.get("comments_hide_deleted", "") or "").strip()
+                if hv in ("none", "owner", "all"):
+                    hide_deleted = hv
+                s_list = ep.get("comments_soft_ban_uids") or []
+                if isinstance(s_list, list):
+                    soft_banned = set([str(x).strip() for x in s_list if isinstance(x, str)])
         finally:
             await release_conn(conn)
     except Exception:
-        video_author_uid = None
+        pass
 
-    # Collect unique author UIDs for avatars
+    if not video_allow:
+        return _empty(False)
+
+    root = await fetch_root(video_id)
+    if not root:
+        return _empty(True)
+
+    uid = current_user.get("user_uid") if current_user and "user_uid" in current_user else None
+    payload = build_tree_payload(root, current_uid=uid, show_hidden=include_hidden)
+    texts = await fetch_texts_for_comments(video_id, root, show_hidden=include_hidden)
+
+    # Apply soft-ban filter
+    if soft_banned:
+        payload = _filter_and_reparent_by_authors(payload, soft_banned)
+
+    # Apply hide_deleted
+    if hide_deleted in ("none", "owner"):
+        viewer_is_owner = (uid is not None and video_author_uid is not None and uid == video_author_uid)
+        must_hide = (hide_deleted == "none") or (hide_deleted == "owner" and not viewer_is_owner)
+        if must_hide:
+            payload = _filter_and_reparent_tombstones(payload)
+
+    # Mark liked_by_author and collect authors
     author_uids = set()
     for cid, meta in payload["comments"].items():
-        # mark liked_by_author
         if video_author_uid:
             votes = (meta.get("votes") or {})
             try:
@@ -52,11 +76,11 @@ async def list_comments(
             except Exception:
                 meta["liked_by_author"] = False
             payload["comments"][cid] = meta
+        au = meta.get("author_uid")
+        if au:
+            author_uids.add(au)
 
-        uid_meta = meta.get("author_uid")
-        if uid_meta:
-            author_uids.add(uid_meta)
-
+    # Avatars
     author_avatars: Dict[str, str] = {}
     if author_uids:
         from db import get_conn, release_conn
@@ -66,18 +90,137 @@ async def list_comments(
         try:
             for au in author_uids:
                 p = await get_user_avatar_path(conn, au)
-                if p:
-                    author_avatars[au] = build_storage_url(p)
-                else:
-                    author_avatars[au] = "/static/img/avatar_default.svg"
+                author_avatars[au] = build_storage_url(p) if p else "/static/img/avatar_default.svg"
         finally:
             await release_conn(conn)
 
     return {
         "ok": True,
+        "comments_enabled": True,
         "roots": payload["roots"],
         "children_map": payload["children_map"],
         "comments": payload["comments"],
         "texts": texts,
-        "avatars": author_avatars
+        "avatars": author_avatars,
     }
+
+
+def _empty(enabled: bool) -> Dict[str, Any]:
+    return {
+        "ok": True,
+        "comments_enabled": enabled,
+        "comments": {},
+        "roots": [],
+        "children_map": {},
+        "texts": {},
+        "avatars": {},
+    }
+
+
+def _parse_ep(raw) -> Dict[str, Any]:
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw) if raw.strip() else {}
+        except Exception:
+            return {}
+    if isinstance(raw, dict):
+        return dict(raw)
+    return {}
+
+
+def _filter_and_reparent_tombstones(payload: Dict[str, Any]) -> Dict[str, Any]:
+    comments: Dict[str, Dict[str, Any]] = dict(payload.get("comments") or {})
+    children: Dict[Optional[str], List[str]] = {}
+    for cid, meta in comments.items():
+        pid = meta.get("parent_id")
+        children.setdefault(pid, []).append(cid)
+
+    def is_tomb(meta: Dict[str, Any]) -> bool:
+        if bool(meta.get("tombstone")) is True:
+            return True
+        vis = meta.get("visible")
+        if vis in (False, 0, "false", "False"):
+            return True
+        return False
+
+    to_remove = set([cid for cid, m in comments.items() if is_tomb(m)])
+    if not to_remove:
+        return {**payload, "children_map": _build_children_map(comments)}
+
+    for rid in to_remove:
+        pid = comments.get(rid, {}).get("parent_id")
+        if pid in children:
+            children[pid] = [x for x in children[pid] if x != rid]
+
+    def nearest_alive(parent_id: Optional[str]) -> Optional[str]:
+        cur = parent_id
+        while cur is not None:
+            if cur not in to_remove:
+                return cur
+            cur = comments.get(cur, {}).get("parent_id")
+        return None
+
+    for rid in list(to_remove):
+        for child in list(children.get(rid, []) or []):
+            new_parent = nearest_alive(comments.get(rid, {}).get("parent_id"))
+            comments[child]["parent_id"] = new_parent
+            children.setdefault(new_parent, []).append(child)
+        children[rid] = []
+
+    for rid in to_remove:
+        comments.pop(rid, None)
+
+    new_roots = [cid for cid, m in comments.items() if m.get("parent_id") is None]
+    return {**payload, "roots": new_roots, "comments": comments, "children_map": _build_children_map(comments)}
+
+
+def _filter_and_reparent_by_authors(payload: Dict[str, Any], banned_authors: Set[str]) -> Dict[str, Any]:
+    comments: Dict[str, Dict[str, Any]] = dict(payload.get("comments") or {})
+    children: Dict[Optional[str], List[str]] = {}
+    for cid, meta in comments.items():
+        pid = meta.get("parent_id")
+        children.setdefault(pid, []).append(cid)
+
+    to_remove = set()
+    for cid, meta in comments.items():
+        au = str(meta.get("author_uid") or "").strip()
+        if au in banned_authors:
+            to_remove.add(cid)
+
+    if not to_remove:
+        return {**payload, "children_map": _build_children_map(comments)}
+
+    for rid in to_remove:
+        pid = comments.get(rid, {}).get("parent_id")
+        if pid in children:
+            children[pid] = [x for x in children[pid] if x != rid]
+
+    def nearest_alive(parent_id: Optional[str]) -> Optional[str]:
+        cur = parent_id
+        while cur is not None:
+            if cur not in to_remove:
+                return cur
+            cur = comments.get(cur, {}).get("parent_id")
+        return None
+
+    for rid in list(to_remove):
+        for child in list(children.get(rid, []) or []):
+            new_parent = nearest_alive(comments.get(rid, {}).get("parent_id"))
+            comments[child]["parent_id"] = new_parent
+            children.setdefault(new_parent, []).append(child)
+        children[rid] = []
+    for rid in to_remove:
+        comments.pop(rid, None)
+
+    new_roots = [cid for cid, m in comments.items() if m.get("parent_id") is None]
+    return {**payload, "roots": new_roots, "comments": comments, "children_map": _build_children_map(comments)}
+
+
+def _build_children_map(comments: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
+    mapping: Dict[str, List[str]] = {}
+    for cid, meta in comments.items():
+        pid = meta.get("parent_id")
+        if pid is None:
+            continue
+        mapping.setdefault(pid, []).append(cid)
+    return mapping

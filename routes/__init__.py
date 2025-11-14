@@ -21,7 +21,7 @@ from routes.comments.like_rout import router as comments_like_router
 from routes.comments.vote_rout import router as comments_vote_router
 from routes.comments.update_rout import router as comments_update_router
 
-from .manage_comments import router as manage_comments_router  # added
+from .manage_comments import router as manage_comments_router
 
 def register_routes(app: FastAPI) -> None:
     app.include_router(root_router)
@@ -45,4 +45,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(comments_vote_router)
     app.include_router(comments_update_router)
 
-    app.include_router(manage_comments_router)  # added
+    app.include_router(manage_comments_router)
