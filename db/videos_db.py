@@ -2,6 +2,8 @@ from typing import List, Optional
 
 import asyncpg
 
+from db.comments.root_db import delete_all_comments_for_video
+
 
 async def create_video(
     conn: asyncpg.Connection,
@@ -64,7 +66,7 @@ async def set_video_ready(
 async def list_latest_public_videos(
     conn: asyncpg.Connection,
     limit: int = 20,
-) -> List[asyncpg.Record]:
+):
     return await conn.fetch(
         """
         SELECT v.*, u.username, u.channel_id,
@@ -89,7 +91,7 @@ async def list_trending_public_videos(
     period: str,
     limit: int,
     offset: int,
-) -> List[asyncpg.Record]:
+):
     if period == "day":
         interval = "1 day"
     elif period == "week":
@@ -104,10 +106,25 @@ async def list_trending_public_videos(
                ua.path AS avatar_asset_path
         FROM videos v
         JOIN users u ON u.user_uid = v.author_uid
-        LEFT JOIN video_assets a
-          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
-        LEFT JOIN user_assets ua
-          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
+        LEFT JOIN categories vcat ON vcat.category_id = v.category_id
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_default'
+          LIMIT 1
+        ) vthumb ON true
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_anim'
+          LIMIT 1
+        ) vanim ON true
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM user_assets
+          WHERE user_uid = v.author_uid AND asset_type = 'avatar'
+          LIMIT 1
+        ) uava ON true
         WHERE v.status = 'public'
           AND v.processing_status = 'ready'
           AND v.created_at >= NOW() - INTERVAL '{interval}'
@@ -124,7 +141,7 @@ async def list_subscription_feed(
     subscriber_uid: str,
     limit: int,
     offset: int,
-) -> List[asyncpg.Record]:
+):
     return await conn.fetch(
         """
         SELECT v.*, u.username, u.channel_id,
@@ -154,7 +171,7 @@ async def list_history_distinct_latest(
     user_uid: str,
     limit: int,
     offset: int,
-) -> List[asyncpg.Record]:
+):
     return await conn.fetch(
         """
         WITH last_view AS (
@@ -188,7 +205,7 @@ async def list_author_public_videos(
     author_uid: str,
     limit: int,
     offset: int,
-) -> List[asyncpg.Record]:
+):
     return await conn.fetch(
         """
         SELECT v.*, u.username, u.channel_id,
@@ -215,7 +232,7 @@ async def list_author_public_videos(
 async def get_video(
     conn: asyncpg.Connection,
     video_id: str,
-) -> Optional[asyncpg.Record]:
+):
     return await conn.fetchrow(
         """
         SELECT v.*, u.username, u.channel_id,
@@ -234,7 +251,7 @@ async def list_my_videos(
     conn: asyncpg.Connection,
     author_uid: str,
     limit: int = 100,
-) -> List[asyncpg.Record]:
+):
     return await conn.fetch(
         """
         SELECT v.*, a.path AS thumb_asset_path
@@ -254,7 +271,7 @@ async def get_owned_video(
     conn: asyncpg.Connection,
     video_id: str,
     owner_uid: str,
-) -> Optional[asyncpg.Record]:
+):
     return await conn.fetchrow(
         """
         SELECT video_id, author_uid, storage_path
@@ -271,6 +288,21 @@ async def delete_video(
     video_id: str,
     owner_uid: str,
 ) -> bool:
+    """
+    Delete a video row (owned by owner_uid).
+    Also delete the associated comments tree (Mongo root + chunks) for this video.
+    Reuses a single shared helper (delete_all_comments_for_video) to avoid duplication.
+    """
+    owned = await get_owned_video(conn, video_id, owner_uid)
+    if not owned:
+        return False
+
+    # Best-effort cleanup of comments tree; do not block SQL deletion
+    try:
+        await delete_all_comments_for_video(video_id)
+    except Exception:
+        pass
+
     res = await conn.execute(
         """
         DELETE FROM videos
