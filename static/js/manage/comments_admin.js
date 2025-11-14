@@ -93,7 +93,7 @@
     card.appendChild(el('div', 'mc-h', 'Commenters'));
     const table = el('table', 'mc-table');
     const thead = el('thead'); const trh = el('tr');
-    ['User','Comments','Soft ban','Hard ban','Actions'].forEach(t=> trh.appendChild(el('th', null, t)));
+    ['User','Comments','Soft ban','Hard ban','Note','Actions'].forEach(t=> trh.appendChild(el('th', null, t)));
     thead.appendChild(trh); table.appendChild(thead);
     const tbody = el('tbody');
 
@@ -110,6 +110,14 @@
       const tdSoft = el('td', 'mc-check'); const cbSoft = document.createElement('input'); cbSoft.type='checkbox'; cbSoft.checked=!!u.soft_ban; tdSoft.appendChild(cbSoft);
       const tdHard = el('td', 'mc-check'); const cbHard = document.createElement('input'); cbHard.type='checkbox'; cbHard.checked=!!u.hard_ban; tdHard.appendChild(cbHard);
 
+      const tdNote = el('td', 'mc-note');
+      const note = document.createElement('input');
+      note.type = 'text';
+      note.className = 'mc-note-input';
+      note.placeholder = 'Optional note';
+      note.value = u.note || '';
+      tdNote.appendChild(note);
+
       const tdAct = el('td', 'mc-save');
       const btnSave = el('button', 'mc-btn', 'Save');
 
@@ -120,20 +128,22 @@
             video_id: videoId,
             user_uid: u.uid,
             soft_ban: !!cbSoft.checked,
-            hard_ban: !!cbHard.checked
+            hard_ban: !!cbHard.checked,
+            note: String(note.value || '')
           });
           showStatus('Saved', 'ok');
         }catch(e){ console.warn(e); showStatus('Failed', 'err'); }
         finally{ btnSave.disabled = false; }
       });
 
-      tdAct.appendChild(btnSave);
-
       tr.appendChild(tdUser);
       tr.appendChild(tdCnt);
       tr.appendChild(tdSoft);
       tr.appendChild(tdHard);
+      tr.appendChild(tdNote);
       tr.appendChild(tdAct);
+      tdAct.appendChild(btnSave);
+
       tbody.appendChild(tr);
     });
 

@@ -13,6 +13,8 @@ Persists:
 - hide_deleted via videos.embed_params['comments_hide_deleted']
 - per-user bans via videos.embed_params arrays:
     comments_soft_ban_uids, comments_hard_ban_uids
+- per-user notes via videos.embed_params object:
+    comments_ban_notes: { "<user_uid>": "<text>" }
 """
 
 from __future__ import annotations
@@ -88,6 +90,7 @@ class BanPost(BaseModel):
     user_uid: str = Field(..., min_length=1)
     soft_ban: bool = False
     hard_ban: bool = False
+    note: Optional[str] = ""  # optional moderator note for this user on this video
 
 
 @router.get("/api/manage/comments/settings")
@@ -170,6 +173,7 @@ async def api_comments_users_get(request: Request, v: str = Query(..., min_lengt
 
     soft_set: set = set()
     hard_set: set = set()
+    notes_map: Dict[str, str] = {}
 
     conn = await get_conn()
     names: Dict[str, str] = {}
@@ -189,6 +193,11 @@ async def api_comments_users_get(request: Request, v: str = Query(..., min_lengt
                 soft_set = set([str(x).strip() for x in s_list if isinstance(x, str)])
             if isinstance(h_list, list):
                 hard_set = set([str(x).strip() for x in h_list if isinstance(x, str)])
+            nm = ep.get("comments_ban_notes") or {}
+            if isinstance(nm, dict):
+                for k, v in nm.items():
+                    if isinstance(k, str) and (isinstance(v, str) or v is None):
+                        notes_map[k] = (v or "").strip()
 
         uids = list(counts.keys())
         if uids:
@@ -208,6 +217,7 @@ async def api_comments_users_get(request: Request, v: str = Query(..., min_lengt
             "comments_count": int(cnt),
             "soft_ban": uid in soft_set,
             "hard_ban": uid in hard_set,
+            "note": notes_map.get(uid, ""),
         })
 
     users.sort(key=lambda x: (-x["comments_count"], x["uid"]))
@@ -224,6 +234,7 @@ async def api_comments_ban_post(request: Request, payload: BanPost) -> Any:
     target_uid = str(payload.user_uid).strip()
     new_soft = bool(payload.soft_ban)
     new_hard = bool(payload.hard_ban)
+    note_raw = payload.note if payload.note is not None else None
 
     conn = await get_conn()
     try:
@@ -245,6 +256,7 @@ async def api_comments_ban_post(request: Request, payload: BanPost) -> Any:
         if not isinstance(ep, dict):
             ep = {}
 
+        # update bans
         s_list = ep.get("comments_soft_ban_uids")
         h_list = ep.get("comments_hard_ban_uids")
         if not isinstance(s_list, list):
@@ -262,6 +274,19 @@ async def api_comments_ban_post(request: Request, payload: BanPost) -> Any:
 
         ep["comments_soft_ban_uids"] = add_or_remove(s_list, target_uid, new_soft)
         ep["comments_hard_ban_uids"] = add_or_remove(h_list, target_uid, new_hard)
+
+        # update note
+        if note_raw is not None:
+            note_str = str(note_raw).strip()
+            notes = ep.get("comments_ban_notes")
+            if not isinstance(notes, dict):
+                notes = {}
+            if note_str:
+                notes[target_uid] = note_str
+            else:
+                # empty note clears existing note
+                notes.pop(target_uid, None)
+            ep["comments_ban_notes"] = notes
 
         await db_set_video_embed_params_raw(conn, video_id, ep)
         return {"ok": True}
