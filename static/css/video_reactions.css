@@ -33,14 +33,12 @@
 
 #video-reactions .btn-v-like:hover,
 #video-reactions .btn-v-dislike:hover{
-  background: color-mix(in srgb, var(--brand-accent) 15%, transparent);
   background: rgba(42,164,255,.12);
 }
 
 #video-reactions .btn-v-like.active,
 #video-reactions .btn-v-dislike.active{
   color: var(--brand-accent);
-  background: color-mix(in srgb, var(--brand-accent) 18%, transparent);
   background: rgba(42,164,255,.16);
 }
 
@@ -64,4 +62,72 @@
   #video-reactions .btn-v-dislike{
     padding:8px 12px;
   }
+}
+
+/* Actions row: reactions + embed (one line) */
+.video-actions-row{
+  display:flex;
+  align-items:center;
+  gap:200px;
+  flex-wrap:wrap;
+  margin-top:12px;
+  margin-bottom:4px;
+  max-width:650px;
+}
+
+/* Embed inline */
+.embed-inline{
+  position:relative;
+  display:flex;
+  flex:0 0 auto;
+  align-items:center;
+}
+
+.embed-trigger{
+  appearance:none; border:1px solid #bbb; background:#fff;
+  padding:6px 12px; border-radius:6px; cursor:pointer;
+  font-weight:600; font-size:13px; line-height:1;
+  display:inline-flex; align-items:center;
+}
+.embed-trigger:hover{ background:#f3f3f3; }
+
+#embed-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.15);
+  z-index:3990; display:block;
+}
+#embed-backdrop[hidden]{ display:none; }
+
+.embed-flyout{
+  position:absolute; right:0; top:calc(100% + 8px);
+  width:360px; max-width:min(92vw, 420px);
+  background:#fff; border:1px solid #ddd; border-radius:8px;
+  box-shadow:0 10px 30px rgba(0,0,0,.15);
+  z-index:4000; padding:10px;
+}
+.embed-flyout[hidden]{ display:none; }
+
+.embed-caret{
+  position:absolute; right:14px; top:-7px; width:12px; height:12px;
+  background:#fff; border-left:1px solid #ddd; border-top:1px solid #ddd;
+  transform:rotate(45deg);
+}
+
+.embed-body{ display:flex; flex-direction:column; gap:6px; }
+.embed-label{ font-size:12px; color:#333; }
+.embed-code{
+  width:100%; font-family:monospace; font-size:12px;
+  padding:6px; border:1px solid #ccc; border-radius:6px; resize:vertical; background:#fff; box-sizing:border-box;
+}
+.embed-actions{ display:flex; gap:8px; justify-content:flex-end; }
+.btn-copy-embed, .btn-close-embed{
+  padding:4px 10px; font-size:12px; border:1px solid #bbb; background:#fff; border-radius:6px; cursor:pointer;
+}
+.btn-copy-embed:hover, .btn-close-embed:hover{ background:#f0f0f0; }
+
+@media (max-width:700px){
+  .embed-flyout{
+    position:fixed; left:50%; transform:translateX(-50%);
+    right:auto; top:10vh; width:min(92vw, 420px); max-width:92vw;
+  }
+  .embed-caret{ display:none; }
 }
