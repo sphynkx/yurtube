@@ -12,7 +12,9 @@ router = APIRouter()
 
 @router.get("/favicon.ico")
 async def favicon() -> Any:
-    path = Path("static/img/YT_fav32.png")
+    path = Path(settings.FAVICON_URL.lstrip("/"))
+    if not path.exists():
+        path = Path("static/img/YT_fav32.png")
     return FileResponse(str(path))
 
 

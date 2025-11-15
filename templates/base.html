@@ -4,23 +4,26 @@
   <meta charset="utf-8">
   <title>YurTube</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!-- Core styles -->
   <link href="/static/css/main.css" rel="stylesheet">
   <link href="/static/css/brand.css" rel="stylesheet">
   <link href="/static/css/side-menu.css" rel="stylesheet">
-  <!-- notifications css -->
+  <!-- Notifications styles -->
   <link href="/static/css/notifications.css" rel="stylesheet">
 
-  {% set _brand_logo = brand_logo_url if brand_logo_url else '/static/img/YT_long.png' %}
+  {# Brand assets are passed in every template context (fallbacks already handled in settings) #}
+  {% set _brand_logo = brand_logo_url %}
   {% if _brand_logo and (not _brand_logo.startswith('http') and not _brand_logo.startswith('/')) %}
     {% set _brand_logo = '/' ~ _brand_logo %}
   {% endif %}
 
-  {% set _favicon = favicon_url if favicon_url else '/static/img/YT_fav32.png' %}
+  {% set _favicon = favicon_url %}
   {% if _favicon and (not _favicon.startswith('http') and not _favicon.startswith('/')) %}
     {% set _favicon = '/' ~ _favicon %}
   {% endif %}
 
-  {% set _apple_icon = apple_touch_icon_url if apple_touch_icon_url else '/static/img/YT_fav128.png' %}
+  {% set _apple_icon = apple_touch_icon_url %}
   {% if _apple_icon and (not _apple_icon.startswith('http') and not _apple_icon.startswith('/')) %}
     {% set _apple_icon = '/' ~ _apple_icon %}
   {% endif %}
@@ -34,7 +37,7 @@
     .site-header {
       position: sticky;
       top: 0;
-      z-index: 1002;      /* above panel/overlay */
+      z-index: 1002;
       display:flex;
       flex-wrap:wrap;
       gap:12px;
@@ -144,11 +147,12 @@
           {% set display_name = sso_name %}
         {% endif %}
 
+        {# Notifications bell #}
         {% include "partials/notifications_bell.html" %}
 
         <details class="user-menu">
           <summary style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;">
-            <img id="nav-avatar" src="{{ avatar_src }}\" alt="me" class="avatar"
+            <img id="nav-avatar" src="{{ avatar_src }}" alt="me" class="avatar"
                  onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';"
                  style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
             <span title="{{ display_name }}"
@@ -202,10 +206,12 @@
     </main>
   </div>
 
+  <!-- Brython (legacy code still used) -->
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython_stdlib.js"></script>
   <script type="text/python" src="/static/brython/init.bry"></script>
 
+  <!-- Notifications JS -->
   <script defer src="/static/js/notifications_bell.js"></script>
 
   <script>
@@ -257,12 +263,11 @@
         try { if(lastFocus) lastFocus.focus(); } catch(e){}
       }
       function togglePanel(){ panel.classList.contains('open') ? closePanel() : openPanel(); }
-      function onKey(e){ if(e.key === 'Escape') closePanel(); }
 
       if(btn) btn.addEventListener('click', togglePanel);
       if(overlay) overlay.addEventListener('click', closePanel);
 
-      // Close by click on header (except click to avatar's button/menu)
+      // Close by click on header (except menu triggers)
       if(header){
         header.addEventListener('click', function(e){
           if(!panel.classList.contains('open')) return;
@@ -274,11 +279,13 @@
         });
       }
 
-      window.addEventListener('resize', function(){ if(panel.classList.contains('open')) setMetrics(); });
+      window.addEventListener('resize', function(){
+        if(panel.classList.contains('open')) setMetrics();
+      });
       setMetrics();
     })();
 
-    // Tabs (existing)
+    // Watch page tabs (legacy)
     (function(){
       var tabsRoot = document.getElementById('watch-tabs');
       if(!tabsRoot) return;
