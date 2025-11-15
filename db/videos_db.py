@@ -312,3 +312,12 @@ async def delete_video(
         owner_uid,
     )
     return res.endswith("1")
+
+async def get_video_min(
+    conn,
+    video_id: str,
+):
+    return await conn.fetchrow(
+        "SELECT video_id, title FROM videos WHERE video_id = $1",
+        video_id,
+    )
