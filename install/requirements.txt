@@ -13,6 +13,10 @@ httpx
 bson
 pydantic-settings>=2.0.0
 motor
-celery[redis]==5.4.0
-redis==5.0.1
-aioredis==2.0.1
+celery >= 5.4.0
+kombu >= 5.3.6
+billiard >= 4.2.1
+vine >= 5.1.0
+redis >= 5.0.1
+packaging >= 24.2
+setuptools >= 70.0.0

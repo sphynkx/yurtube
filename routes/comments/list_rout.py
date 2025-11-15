@@ -57,6 +57,10 @@ async def list_comments(
     payload = build_tree_payload(root, current_uid=uid, show_hidden=include_hidden)
     texts = await fetch_texts_for_comments(video_id, root, show_hidden=include_hidden)
 
+    # always rebuild children_map with sort by created_at (new in top)
+    payload["children_map"] = _build_children_map(payload["comments"])
+    payload["roots"] = _sort_ids_by_created(payload["roots"], payload["comments"])
+
     # Apply soft-ban with reparent
     if soft_banned:
         payload = _filter_and_reparent_by_authors(payload, soft_banned)
@@ -117,6 +121,10 @@ async def list_comments(
 
     is_moderator = bool(uid and video_author_uid and uid == video_author_uid)
 
+    # for roots and children - new in top
+    payload["roots"] = _sort_ids_by_created(payload["roots"], payload["comments"])
+    payload["children_map"] = _build_children_map(payload["comments"])
+
     return {
         "ok": True,
         "comments_enabled": True,
@@ -153,6 +161,23 @@ def _parse_ep(raw) -> Dict[str, Any]:
     return {}
 
 
+def _sort_ids_by_created(ids: List[str], comments: Dict[str, Dict[str, Any]]) -> List[str]:
+    return sorted(ids or [], key=lambda cid: int((comments.get(cid) or {}).get("created_at", 0)), reverse=True)
+
+
+def _build_children_map(comments: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
+    # Group children and sort every group by created_at (new in top)
+    mapping: Dict[str, List[str]] = {}
+    for cid, meta in (comments or {}).items():
+        pid = meta.get("parent_id")
+        if pid is None:
+            continue
+        mapping.setdefault(pid, []).append(cid)
+    for pid, arr in mapping.items():
+        mapping[pid] = _sort_ids_by_created(arr, comments)
+    return mapping
+
+
 def _filter_and_reparent_tombstones(payload: Dict[str, Any]) -> Dict[str, Any]:
     comments: Dict[str, Dict[str, Any]] = dict(payload.get("comments") or {})
     children: Dict[Optional[str], List[str]] = {}
@@ -170,7 +195,8 @@ def _filter_and_reparent_tombstones(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     to_remove = set([cid for cid, m in comments.items() if is_tomb(m)])
     if not to_remove:
-        return {**payload, "children_map": _build_children_map(comments)}
+        return {**payload, "children_map": _build_children_map(comments),
+                "roots": _sort_ids_by_created([cid for cid, m in comments.items() if m.get("parent_id") is None], comments)}
 
     for rid in to_remove:
         pid = comments.get(rid, {}).get("parent_id")
@@ -196,7 +222,12 @@ def _filter_and_reparent_tombstones(payload: Dict[str, Any]) -> Dict[str, Any]:
         comments.pop(rid, None)
 
     new_roots = [cid for cid, m in comments.items() if m.get("parent_id") is None]
-    return {**payload, "roots": new_roots, "comments": comments, "children_map": _build_children_map(comments)}
+    return {
+        **payload,
+        "roots": _sort_ids_by_created(new_roots, comments),
+        "comments": comments,
+        "children_map": _build_children_map(comments),
+    }
 
 
 def _filter_and_reparent_by_authors(payload: Dict[str, Any], banned_authors: Set[str]) -> Dict[str, Any]:
@@ -213,7 +244,8 @@ def _filter_and_reparent_by_authors(payload: Dict[str, Any], banned_authors: Set
             to_remove.add(cid)
 
     if not to_remove:
-        return {**payload, "children_map": _build_children_map(comments)}
+        return {**payload, "children_map": _build_children_map(comments),
+                "roots": _sort_ids_by_created([cid for cid, m in comments.items() if m.get("parent_id") is None], comments)}
 
     for rid in to_remove:
         pid = comments.get(rid, {}).get("parent_id")
@@ -238,14 +270,9 @@ def _filter_and_reparent_by_authors(payload: Dict[str, Any], banned_authors: Set
         comments.pop(rid, None)
 
     new_roots = [cid for cid, m in comments.items() if m.get("parent_id") is None]
-    return {**payload, "roots": new_roots, "comments": comments, "children_map": _build_children_map(comments)}
-
-
-def _build_children_map(comments: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
-    mapping: Dict[str, List[str]] = {}
-    for cid, meta in comments.items():
-        pid = meta.get("parent_id")
-        if pid is None:
-            continue
-        mapping.setdefault(pid, []).append(cid)
-    return mapping
+    return {
+        **payload,
+        "roots": _sort_ids_by_created(new_roots, comments),
+        "comments": comments,
+        "children_map": _build_children_map(comments),
+    }

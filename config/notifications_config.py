@@ -23,7 +23,7 @@ class NotificationsConfig:
             return self.RESULT_BACKEND
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
 
-    LIKES_BATCH_WINDOW_SEC: int = 300  # 5 minutes
+    LIKES_BATCH_WINDOW_SEC: int = 30  # was 300 = 5 minutes
     ALLOW_UNLISTED_SUBS_NOTIFICATIONS: bool = True  # global toggle
     MAX_PAYLOAD_PREVIEW_LEN: int = 160
 

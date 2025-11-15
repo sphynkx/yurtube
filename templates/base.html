@@ -7,6 +7,8 @@
   <link href="/static/css/main.css" rel="stylesheet">
   <link href="/static/css/brand.css" rel="stylesheet">
   <link href="/static/css/side-menu.css" rel="stylesheet">
+  <!-- notifications css -->
+  <link href="/static/css/notifications.css" rel="stylesheet">
 
   {% set _brand_logo = brand_logo_url if brand_logo_url else '/static/img/YT_long.png' %}
   {% if _brand_logo and (not _brand_logo.startswith('http') and not _brand_logo.startswith('/')) %}
@@ -142,9 +144,11 @@
           {% set display_name = sso_name %}
         {% endif %}
 
+        {% include "partials/notifications_bell.html" %}
+
         <details class="user-menu">
           <summary style="display:inline-flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;">
-            <img id="nav-avatar" src="{{ avatar_src }}" alt="me" class="avatar"
+            <img id="nav-avatar" src="{{ avatar_src }}\" alt="me" class="avatar"
                  onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';"
                  style="width:32px;height:32px;border-radius:50%;object-fit:cover;">
             <span title="{{ display_name }}"
@@ -201,6 +205,9 @@
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/brython@3.13.0/brython_stdlib.js"></script>
   <script type="text/python" src="/static/brython/init.bry"></script>
+
+  <script defer src="/static/js/notifications_bell.js"></script>
+
   <script>
     window.addEventListener("DOMContentLoaded", function () {
       try { if (window.brython) { brython({debug: 1}); } } catch (e) {}
@@ -262,6 +269,7 @@
           if(e.target.closest('#btn-toggle-topmenu')) return;
           if(e.target.closest('#top-menu-panel')) return;
           if(e.target.closest('.user-menu')) return;
+          if(e.target.closest('#notif-bell-wrap')) return;
           closePanel();
         });
       }
@@ -270,7 +278,7 @@
       setMetrics();
     })();
 
-    // Tabs
+    // Tabs (existing)
     (function(){
       var tabsRoot = document.getElementById('watch-tabs');
       if(!tabsRoot) return;

@@ -29,3 +29,5 @@ _XLAM/
 # Storage: keep only gitkeep
 storage/*
 !storage/.gitkeep
+
+celerybeat-schedule

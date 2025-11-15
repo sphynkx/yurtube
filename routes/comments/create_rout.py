@@ -8,6 +8,10 @@ from db.videos_db import get_video
 from db.users_db import get_user_by_uid
 from services.comments.comment_create_srv import create_comment
 
+# Notifications publish
+from services.notifications.events_pub import publish
+from db.comments.mongo_conn import root_coll
+
 router = APIRouter(prefix="/comments", tags=["comments"])
 
 
@@ -48,4 +52,28 @@ async def create_comment_api(request: Request, data: CreateCommentIn) -> Dict[st
     )
     if isinstance(res, dict) and "error" in res:
         raise HTTPException(status_code=400, detail=res)
+
+    try:
+        comment_id = res.get("comment_id")
+        parent_author_uid = None
+        if data.parent_id:
+            root = await root_coll().find_one({"video_id": data.video_id})
+            if root and isinstance(root.get("comments"), dict):
+                pmeta = root["comments"].get(data.parent_id)
+                if pmeta and isinstance(pmeta, dict):
+                    parent_author_uid = pmeta.get("author_uid")
+
+        publish(
+            "comment.created",
+            {
+                "video_id": data.video_id,
+                "comment_id": comment_id,
+                "actor_uid": current_uid,
+                "parent_comment_author_uid": parent_author_uid,
+                "text_preview": (data.text or "")[:160],
+            },
+        )
+    except Exception:
+        pass
+
     return res

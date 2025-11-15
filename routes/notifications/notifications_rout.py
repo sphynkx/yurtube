@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException, Query
 from pydantic import BaseModel
 from typing import Any, Dict, List
+import json
 
 from utils.security_ut import get_current_user
 from db import get_conn, release_conn
@@ -49,11 +50,17 @@ async def notifications_list(
         rows = await list_notifications(conn, user["user_uid"], limit, offset)
         items = []
         for r in rows:
+            payload = r["payload"]
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = {}
             items.append(
                 {
                     "notif_id": str(r["notif_id"]),
                     "type": r["type"],
-                    "payload": r["payload"],
+                    "payload": payload,
                     "created_at": r["created_at"].isoformat(),
                     "read_at": r["read_at"].isoformat() if r["read_at"] else None,
                 }
@@ -114,7 +121,6 @@ async def notifications_get_prefs(request: Request) -> Any:
     conn = await get_conn()
     try:
         prefs = await get_user_prefs(conn, user["user_uid"])
-        # Merge with defaults (fill missing)
         merged = {}
         for k in notifications_config.DEFAULT_INAPP.keys():
             existing = prefs.get(k)

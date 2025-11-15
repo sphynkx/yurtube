@@ -1,10 +1,12 @@
 import celery
+from celery.schedules import schedule
 from config.notifications_config import notifications_config
 
 celery_app = celery.Celery(
     "notifications",
     broker=notifications_config.broker(),
     backend=notifications_config.backend(),
+    include=["services.notifications.tasks"],
 )
 
 celery_app.conf.update(
@@ -16,13 +18,10 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1,
     task_acks_late=False,
     task_time_limit=60,
-    broker_transport_options={
-    },
     beat_schedule={
-        "flush-like-batches-every-5-min": {
+        "flush-like-batches-every-window": {
             "task": "notifications.flush_like_batches",
-            "schedule": notifications_config.LIKES_BATCH_WINDOW_SEC,
+            "schedule": schedule(notifications_config.LIKES_BATCH_WINDOW_SEC),
         }
     },
 )
-

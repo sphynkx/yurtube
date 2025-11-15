@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any
 import asyncpg
+import json
 from datetime import datetime
 
 # Insert notification; dedupe_key optional (for batch likes)
@@ -13,11 +14,11 @@ async def insert_notification(
 ) -> Optional[str]:
     sql = """
     INSERT INTO notifications (user_uid, type, payload, agg_key, dedupe_key)
-    VALUES ($1, $2, $3, $4, $5)
+    VALUES ($1, $2, $3::jsonb, $4, $5)
     ON CONFLICT (dedupe_key) DO NOTHING
     RETURNING notif_id
     """
-    row = await conn.fetchrow(sql, user_uid, notif_type, payload, agg_key, dedupe_key)
+    row = await conn.fetchrow(sql, user_uid, notif_type, json.dumps(payload), agg_key, dedupe_key)
     return row["notif_id"] if row else None
 
 async def list_notifications(
