@@ -9,7 +9,10 @@ const CommentsAPI = (() => {
   async function create({ video_id, text, parent_id=null, reply_to_user_uid=null }) {
     const r = await fetch('/comments/create', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
       credentials: 'same-origin',
       body: JSON.stringify({ video_id, text, parent_id, reply_to_user_uid })
     });
@@ -20,7 +23,10 @@ const CommentsAPI = (() => {
   async function vote({ video_id, comment_id, vote }) {
     const r = await fetch('/comments/vote', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
       credentials: 'same-origin',
       body: JSON.stringify({ video_id, comment_id, vote })
     });
@@ -31,7 +37,10 @@ const CommentsAPI = (() => {
   async function update({ video_id, comment_id, text }) {
     const r = await fetch('/comments/update', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
       credentials: 'same-origin',
       body: JSON.stringify({ video_id, comment_id, text })
     });
@@ -42,7 +51,10 @@ const CommentsAPI = (() => {
   async function remove({ video_id, comment_id }) {
     const r = await fetch('/comments/delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest'
+      },
       credentials: 'same-origin',
       body: JSON.stringify({ video_id, comment_id })
     });

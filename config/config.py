@@ -39,6 +39,10 @@ class Settings:
     API_DOCS_ENABLED = False
     API_404_REDIRECT_ENABLED: bool = _getenv_bool("API_404_REDIRECT_ENABLED", True)
 
+    CSRF_ENFORCE: bool = _getenv_bool("CSRF_ENFORCE", True)
+    CSRF_COOKIE_NAME: str = os.getenv("CSRF_COOKIE_NAME", "yt_csrf")
+    SESSION_COOKIE_NAME: str = os.getenv("SESSION_COOKIE_NAME", "ytsid")
+
     SECRET_KEY: str = _getenv_required("SECRET_KEY")
     SESSION_COOKIE_NAME: str = os.getenv("SESSION_COOKIE_NAME", "ytsid")
     SESSION_TTL_SECONDS: int = _getenv_int("SESSION_TTL_SECONDS", 1209600)

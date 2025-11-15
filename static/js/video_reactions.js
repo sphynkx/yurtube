@@ -34,14 +34,14 @@
     try{
       var r = await fetch('/videos/react', {
         method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        headers: {
+          'Content-Type':'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        },
         credentials:'same-origin',
         body: JSON.stringify({ video_id: videoId, reaction: reaction })
       });
-      if(r.status === 401){
-        // not logged in; optionally show prompt
-        return;
-      }
+      if(r.status === 401){ return; }
       if(!r.ok) return;
       var d = await r.json();
       if(!d || !d.ok) return;

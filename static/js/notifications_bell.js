@@ -86,7 +86,11 @@
   }
   async function markAll(){
     try{
-      var r = await fetch('/notifications/mark-all-read', {method:'POST', credentials:'same-origin'});
+      var r = await fetch('/notifications/mark-all-read', {
+        method:'POST',
+        credentials:'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+      });
       if(!r.ok) return;
       var d = await r.json();
       if(!d || !d.ok) return;
