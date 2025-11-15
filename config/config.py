@@ -35,6 +35,8 @@ class Settings:
     APP_PORT: int = _getenv_int("APP_PORT", 8077)
 
     DATABASE_URL: str = _getenv_required("DATABASE_URL")
+    ## Disable built-in "/docs", "/redoc", "openapi.json"
+    API_DOCS_ENABLED = False
 
     SECRET_KEY: str = _getenv_required("SECRET_KEY")
     SESSION_COOKIE_NAME: str = os.getenv("SESSION_COOKIE_NAME", "ytsid")
