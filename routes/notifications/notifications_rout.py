@@ -17,10 +17,8 @@ from config.notifications_config import notifications_config
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
-
 class MarkReadIn(BaseModel):
     ids: List[str]
-
 
 class PrefItem(BaseModel):
     type: str
@@ -28,10 +26,8 @@ class PrefItem(BaseModel):
     email: bool = False
     allow_unlisted: bool | None = None
 
-
 class SetPrefsIn(BaseModel):
     prefs: List[PrefItem]
-
 
 @router.get("/list")
 async def notifications_list(
@@ -42,7 +38,7 @@ async def notifications_list(
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="auth_required")
-    if not notifications_config.ENABLED:
+    if not getattr(notifications_config, "ENABLED", True):
         return {"ok": True, "notifications": [], "unread": 0}
 
     conn = await get_conn()
@@ -70,13 +66,12 @@ async def notifications_list(
     finally:
         await release_conn(conn)
 
-
 @router.get("/unread-count")
 async def notifications_unread_count(request: Request) -> Any:
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="auth_required")
-    if not notifications_config.ENABLED:
+    if not getattr(notifications_config, "ENABLED", True):
         return {"ok": True, "unread": 0}
     conn = await get_conn()
     try:
@@ -84,7 +79,6 @@ async def notifications_unread_count(request: Request) -> Any:
         return {"ok": True, "unread": uc}
     finally:
         await release_conn(conn)
-
 
 @router.post("/mark-read")
 async def notifications_mark_read(request: Request, data: MarkReadIn) -> Any:
@@ -99,7 +93,6 @@ async def notifications_mark_read(request: Request, data: MarkReadIn) -> Any:
     finally:
         await release_conn(conn)
 
-
 @router.post("/mark-all-read")
 async def notifications_mark_all_read(request: Request) -> Any:
     user = get_current_user(request)
@@ -108,45 +101,7 @@ async def notifications_mark_all_read(request: Request) -> Any:
     conn = await get_conn()
     try:
         cnt = await mark_all_read(conn, user["user_uid"])
-        return {"ok": True, "updated": cnt, "unread": 0}
-    finally:
-        await release_conn(conn)
-
-
-@router.get("/prefs")
-async def notifications_get_prefs(request: Request) -> Any:
-    user = get_current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="auth_required")
-    conn = await get_conn()
-    try:
-        prefs = await get_user_prefs(conn, user["user_uid"])
-        merged = {}
-        for k in notifications_config.DEFAULT_INAPP.keys():
-            existing = prefs.get(k)
-            if existing:
-                merged[k] = existing
-            else:
-                merged[k] = {
-                    "inapp": notifications_config.DEFAULT_INAPP.get(k, True),
-                    "email": notifications_config.DEFAULT_EMAIL.get(k, False),
-                    "allow_unlisted": None,
-                }
-        return {"ok": True, "prefs": merged}
-    finally:
-        await release_conn(conn)
-
-
-@router.post("/prefs")
-async def notifications_set_prefs(request: Request, data: SetPrefsIn) -> Any:
-    user = get_current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="auth_required")
-    conn = await get_conn()
-    try:
-        items = [p.dict() for p in data.prefs]
-        await set_user_prefs(conn, user["user_uid"], items)
-        prefs = await get_user_prefs(conn, user["user_uid"])
-        return {"ok": True, "prefs": prefs}
+        uc = await unread_count(conn, user["user_uid"])
+        return {"ok": True, "updated": cnt, "unread": uc}
     finally:
         await release_conn(conn)

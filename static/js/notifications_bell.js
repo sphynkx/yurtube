@@ -14,10 +14,8 @@
   var paused = false;
 
   function fmtTime(iso){
-    try{
-      var d = new Date(iso);
-      return d.toLocaleString(undefined,{hour12:false});
-    }catch(e){ return iso||''; }
+    try{ var d = new Date(iso); return d.toLocaleString(undefined,{hour12:false}); }
+    catch(e){ return iso||''; }
   }
   function escapeHtml(s){
     return String(s||'').replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]||c; });
@@ -50,6 +48,8 @@
         line = 'Your comment got ' + (p.like_count||0) + ' like(s) on ' + videoLink(p) + '.';
       } else if(t === 'video_published'){
         line = 'New video: ' + videoLink(p);
+      } else if(t === 'video_liked_batch'){
+        line = 'Your video received ' + (p.like_count||0) + ' new like(s): ' + videoLink(p);
       } else {
         line = escapeHtml(t);
       }
@@ -103,9 +103,7 @@
   function schedule(){
     if (timer) clearTimeout(timer);
     timer = window.setTimeout(async function(){
-      timer = 0;
-      await fetchUnread();
-      schedule();
+      timer = 0; await fetchUnread(); schedule();
     }, pollMs);
   }
   function toggle(){

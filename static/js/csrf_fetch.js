@@ -25,24 +25,21 @@
 
   // Patch XHR
   if (window.XMLHttpRequest){
-    var OrigXHR = window.XMLHttpRequest;
-    var p = OrigXHR && OrigXHR.prototype;
-    if (p){
-      var origOpen = p.open;
-      var origSend = p.send;
-      p.open = function(method, url){
-        this.__csrf_method = (method||'').toUpperCase();
-        this.__csrf_url = url || '';
-        return origOpen.apply(this, arguments);
-      };
-      p.send = function(body){
-        try{
-          this.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
-          var t = getCookie('yt_csrf');
-          if (t) this.setRequestHeader('X-CSRF-Token', t);
-        }catch(e){}
-        return origSend.apply(this, arguments);
-      };
-    }
+    var P = window.XMLHttpRequest.prototype;
+    var origOpen = P.open;
+    var origSend = P.send;
+    P.open = function(method, url){
+      this.__csrf_method = (method||'').toUpperCase();
+      this.__csrf_url = url || '';
+      return origOpen.apply(this, arguments);
+    };
+    P.send = function(body){
+      try{
+        this.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+        var t = getCookie('yt_csrf');
+        if (t) this.setRequestHeader('X-CSRF-Token', t);
+      }catch(e){}
+      return origSend.apply(this, arguments);
+    };
   }
 })();
