@@ -1,25 +1,38 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Select thumbnail</h1>
+<link rel="stylesheet" href="/static/css/manage/account_layout.css">
 
-<form action="/upload/select-thumbnail" method="post">
-  <input type="hidden" name="video_id" value="{{ video_id }}">
-  <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:12px;">
-    {% for c in candidates %}
-    <label style="display:block; border:1px solid #ddd; padding:8px; cursor:pointer;">
-      <div style="aspect-ratio:16/9; background:#000; overflow:hidden;">
-        <img src="{{ c['url'] }}" alt="thumb" style="width:100%; height:100%; object-fit:cover;">
+<div class="manage-comments-layout">
+  {% include "account/left.html" %}
+
+  <main class="mc-main">
+    <div class="mc-top-bar">
+      <h1 class="mc-page-title">Select thumbnail</h1>
+      <div class="mc-back-link">
+        <a href="/manage">Back to My Videos</a>
       </div>
-      <div style="margin-top:6px;">
-        <input type="radio" name="selected_rel" value="{{ c['rel'] }}" {{ 'checked' if c['sel']=='1' else '' }}>
-        Use this
+    </div>
+
+    <form action="/upload/select-thumbnail" method="post">
+      <input type="hidden" name="video_id" value="{{ video_id }}">
+      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:12px;">
+        {% for c in candidates %}
+        <label style="display:block; border:1px solid #ddd; padding:8px; cursor:pointer;">
+          <div style="aspect-ratio:16/9; background:#000; overflow:hidden;">
+            <img src="{{ c['url'] }}" alt="thumb" style="width:100%; height:100%; object-fit:cover;">
+          </div>
+          <div style="margin-top:6px;">
+            <input type="radio" name="selected_rel" value="{{ c['rel'] }}" {{ 'checked' if c['sel']=='1' else '' }}>
+            Use this
+          </div>
+        </label>
+        {% endfor %}
       </div>
-    </label>
-    {% endfor %}
-  </div>
-  <div style="margin-top:12px;">
-    <button type="submit">Save</button>
-    <a href="/manage" style="margin-left:8px;">Cancel</a>
-  </div>
-</form>
+      <div style="margin-top:12px;">
+        <button type="submit">Save</button>
+        <a href="/manage" style="margin-left:8px;">Cancel</a>
+      </div>
+    </form>
+  </main>
+</div>
 {% endblock %}

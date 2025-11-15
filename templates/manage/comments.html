@@ -1,24 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
+<link rel="stylesheet" href="/static/css/manage/account_layout.css">
 <link rel="stylesheet" href="/static/css/manage/comments_admin.css">
 
 <div class="manage-comments-layout">
-  <aside class="mc-nav">
-    <div class="mc-nav-title">Menu</div>
-    <nav class="mc-nav-links">
-      <a href="/account">Profile</a>
-      <a href="/manage">My videos</a>
-      <a href="/subscriptions">My subscriptions</a>
-      <a href="/history">My history</a>
-      <a href="/account/password">Change password</a>
-    </nav>
-    <hr class="mc-nav-sep">
-    <div class="mc-nav-title">Video</div>
-    <nav class="mc-nav-links">
-      <a href="/watch?v={{ video_id }}">Open video</a>
-      <a href="/manage/edit?v={{ video_id }}">Edit video</a>
-    </nav>
-  </aside>
+  {% include "account/left.html" %}
 
   <main class="mc-main">
     <div class="mc-top-bar">
