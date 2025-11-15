@@ -37,6 +37,7 @@ class Settings:
     DATABASE_URL: str = _getenv_required("DATABASE_URL")
     ## Disable built-in "/docs", "/redoc", "openapi.json"
     API_DOCS_ENABLED = False
+    API_404_REDIRECT_ENABLED: bool = _getenv_bool("API_404_REDIRECT_ENABLED", True)
 
     SECRET_KEY: str = _getenv_required("SECRET_KEY")
     SESSION_COOKIE_NAME: str = os.getenv("SESSION_COOKIE_NAME", "ytsid")

@@ -2,6 +2,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse, JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
@@ -30,6 +31,27 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
 
 # Minimal session middleware
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+
+# 404 handler via middleware:
+# - for HTML-requests - redirect to main;
+# - for API/XHR (Accept: application/json) - JSON 404;
+# - no static/services
+if settings.API_404_REDIRECT_ENABLED:
+    @app.middleware("http")
+    async def redirect_404_middleware(request, call_next):
+        resp = await call_next(request)
+        if resp.status_code != 404:
+            return resp
+
+        path = request.url.path or ""
+        if path.startswith("/static/") or path in ("/favicon.ico", "/robots.txt", "/sitemap.xml"):
+            return resp
+
+        accept = (request.headers.get("accept") or "").lower()
+        if "application/json" in accept and "text/html" not in accept:
+            return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+
+        return RedirectResponse("/", status_code=302)
 
 # Register routes
 register_routes(app)
