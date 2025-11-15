@@ -190,4 +190,29 @@ CREATE TABLE IF NOT EXISTS video_renditions (
 CREATE INDEX IF NOT EXISTS idx_video_renditions_video ON video_renditions(video_id);
 CREATE INDEX IF NOT EXISTS idx_video_renditions_status ON video_renditions(status);
 
+-- Notifications subsystem schema
+CREATE TABLE IF NOT EXISTS notifications (
+    notif_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_uid TEXT NOT NULL,
+    type TEXT NOT NULL,
+    payload JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    read_at TIMESTAMPTZ NULL,
+    agg_key TEXT NULL,
+    dedupe_key TEXT NULL UNIQUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_uid, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_uid) WHERE read_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type);
+
+CREATE TABLE IF NOT EXISTS user_notification_prefs (
+    user_uid TEXT NOT NULL,
+    type TEXT NOT NULL,
+    inapp BOOLEAN NOT NULL DEFAULT TRUE,
+    email BOOLEAN NOT NULL DEFAULT FALSE,
+    allow_unlisted BOOLEAN NULL,
+    PRIMARY KEY (user_uid, type)
+);
+
 COMMIT;

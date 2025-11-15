@@ -23,6 +23,8 @@ from routes.comments.update_rout import router as comments_update_router
 
 from .manage_comments import router as manage_comments_router
 
+from routes.notifications.notifications_rout import router as notifications_router
+
 def register_routes(app: FastAPI) -> None:
     app.include_router(root_router)
     app.include_router(auth_router, prefix="/auth")
@@ -46,3 +48,5 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(comments_update_router)
 
     app.include_router(manage_comments_router)
+
+    app.include_router(notifications_router)

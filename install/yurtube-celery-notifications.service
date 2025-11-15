@@ -1,0 +1,21 @@
+[Unit]
+Description=YurTube - Celery Notifications Worker
+Wants=network-online.target redis.service
+After=network-online.target redis.service
+
+[Service]
+Type=simple
+WorkingDirectory=/var/www/yurtube
+ExecStart=/var/www/yurtube/.venv/bin/celery -A services.notifications.celery_app worker -l info --concurrency=1 --hostname=notif@%H --prefetch-multiplier=1
+Environment=PYTHONUNBUFFERED=1
+# User=www-data
+# Group=www-data
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

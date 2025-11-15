@@ -1,4 +1,4 @@
-[YurTube](https://yurtube.sphynkx.org.ua/) is a self‑hosted video hosting engine written in Python and built on FastAPI, PostgreSQL, MongoDB, and ffmpeg. UX is inspired by [Youtube service](https://www.youtube.com/) and [ClipBucket engine](https://github.com/sphynkx/clipbucket-v5), with a modular design that runs cleanly on a single host or scales out by moving services to external nodes via configuration.
+[YurTube](https://yurtube.sphynkx.org.ua/) is a self‑hosted video hosting engine written in Python and built on FastAPI, PostgreSQL, MongoDB, Redis+Celery and ffmpeg. UX is inspired by [Youtube service](https://www.youtube.com/) and [ClipBucket engine](https://github.com/sphynkx/clipbucket-v5), with a modular design that runs cleanly on a single host or scales out by moving services to external nodes via configuration.
 
 Highlights
 * Accounts and authentication: local sign‑in and SSO (Google, X)
@@ -17,6 +17,7 @@ Application is WIP now. Available base functional:
 * Upload and edit videos, generation of animated previews.
 * Two Search engines (Manticore and Postgres FTS)
 * Comments
+* Notifications system
 
 Design notes
 * Modular by default: swap or externalize services through config without code changes
@@ -120,6 +121,23 @@ Edit `/etc/mongod.conf` again - enable "security" section, restart mongodb:
 ```bash
 service mongod restart
 ```
+
+## Notifications (Redis + Celery)
+```bash
+dnf install redis && systemctl enable --now redis
+cp install/yurtube-celery-notifications.service /etc/systemd/system
+cp install/yurtube-celery-notifications-beat.service /etc/systemd/system
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now yurtube-celery-notifications.service yurtube-celery-notifications-beat.service
+```
+Check:
+```bash
+redis-cli ping
+```
+Expect: `PONG`
+
+Also see `config/notifications_config.py` - it consists default params for localhost. You may redefin them in `.env`.
 
 
 ## Configure application .env
