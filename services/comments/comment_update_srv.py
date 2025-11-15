@@ -13,8 +13,11 @@ async def update_comment_text(video_id: str, comment_id: str, user_uid: str, new
     meta = comments.get(comment_id)
     if not meta:
         return {"error": "comment_not_found"}
+
+    # Edit for author only
     if meta.get("author_uid") != user_uid:
         return {"error": "forbidden"}
+
     if meta.get("tombstone"):
         return {"error": "cannot_edit_deleted"}
 
@@ -38,7 +41,13 @@ async def update_comment_text(video_id: str, comment_id: str, user_uid: str, new
     return {"ok": True, "comment_id": comment_id}
 
 
-async def soft_delete_comment(video_id: str, comment_id: str, user_uid: str) -> Dict[str, Any]:
+async def soft_delete_comment(video_id: str, comment_id: str, user_uid: str, is_moderator: bool = False) -> Dict[str, Any]:
+    """
+    Deleting a comment:
+    - The comment author can delete their own.
+    - The video author (moderator) can delete any comment.
+    Node with children -> tombstone; leaf -> delete completely.
+    """
     rc = root_coll()
     root = await rc.find_one({"video_id": video_id})
     if not root:
@@ -52,42 +61,46 @@ async def soft_delete_comment(video_id: str, comment_id: str, user_uid: str) -> 
     meta = comments.get(comment_id)
     if not meta:
         return {"error": "comment_not_found"}
-    if meta.get("author_uid") != user_uid:
+
+    is_author = (meta.get("author_uid") == user_uid)
+    if not (is_author or is_moderator):
         return {"error": "forbidden"}
 
     children = children_map.get(comment_id, [])
     has_children = bool(children)
 
-    # Knot with children -> tombstone (leave in struct)
     if has_children:
+        # Transform to tombstone
         if meta.get("tombstone"):
-            return {"ok": True, "comment_id": comment_id}
+            return {"ok": True, "comment_id": comment_id, "tombstone": True}
         meta["visible"] = False
         meta["tombstone"] = True
-        meta["hidden_reason"] = "deleted_with_children"
-        # Formally  set 0 for likes/dislikes
+        meta["hidden_reason"] = "deleted_with_children" if is_author else "moderator_removed_with_children"
         meta["likes"] = 0
         meta["dislikes"] = 0
         meta["votes"] = {}
+        if is_moderator and not is_author:
+            meta["moderator_action"] = True
         comments[comment_id] = meta
     else:
-        # leaf -> fully remove
+        # Leaf remove
         parent_id = meta.get("parent_id")
         if parent_id:
             lst = children_map.get(parent_id, [])
             children_map[parent_id] = [c for c in lst if c != comment_id]
         else:
-            # This root: remove from depth_index["0"]
             rlst = depth_index.get("0", [])
             depth_index["0"] = [c for c in rlst if c != comment_id]
-        # Remove comment also
         comments.pop(comment_id, None)
-        # Clean comment children_map key
         children_map.pop(comment_id, None)
 
     tree_aux["children_map"] = children_map
     tree_aux["depth_index"] = depth_index
 
-    await rc.update_one({"_id": root["_id"]},
-                        {"$set": {"comments": comments, "tree_aux": tree_aux}})
-    return {"ok": True, "comment_id": comment_id, "tombstone": has_children}
+    await rc.update_one({"_id": root["_id"]}, {"$set": {"comments": comments, "tree_aux": tree_aux}})
+    return {
+        "ok": True,
+        "comment_id": comment_id,
+        "tombstone": has_children,
+        "moderator_action": bool(is_moderator and not is_author)
+    }

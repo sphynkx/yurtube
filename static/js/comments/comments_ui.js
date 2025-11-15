@@ -112,20 +112,29 @@
     try{
       const data = await CommentsAPI.list(videoId, false);
 
-      // Save author IDfor hearts-addon and for debug
+      // video author uid + moderator flag
       const vAuthor = data.video_author_uid || data.author_uid || '';
       if (vAuthor){
         root.dataset.videoAuthorUid = vAuthor;
-        if (window.__COMMENTS_DEBUG_HEART) console.log('[comments-ui] videoAuthorUid from list:', vAuthor);
-      }else{
-        if (window.__COMMENTS_DEBUG_HEART) console.log('[comments-ui] videoAuthorUid missing in list');
+      }
+      // Flag from BE
+      let moderatorFlag = !!data.moderator;
+      // Fallback: if no data and curr user is author
+      if (!moderatorFlag && vAuthor && currentUid && vAuthor === currentUid){
+        moderatorFlag = true;
       }
 
-      // Render tree
+      // Send all fields and moderator also (need for Del button)
       CommentsTree.renderTree(
         listEl,
-        { roots: data.roots||[], children_map: data.children_map||{}, comments: data.comments||{} },
-        data.texts||{},
+        {
+          roots: data.roots || [],
+          children_map: data.children_map || {},
+          comments: data.comments || {},
+          moderator: moderatorFlag,
+          video_author_uid: vAuthor
+        },
+        data.texts || {},
         3,
         { currentUid, avatars: data.avatars || {} }
       );

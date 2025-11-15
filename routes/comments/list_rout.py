@@ -14,9 +14,11 @@ async def list_comments(
     include_hidden: bool = Query(False),
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
 ) -> Dict[str, Any]:
+    # Global toggle
     if not comments_settings.COMMENTS_ENABLED:
         return _empty(False)
 
+    # Per-video flags
     video_allow = True
     video_author_uid: Optional[str] = None
     hide_deleted: str = "all"
@@ -55,32 +57,51 @@ async def list_comments(
     payload = build_tree_payload(root, current_uid=uid, show_hidden=include_hidden)
     texts = await fetch_texts_for_comments(video_id, root, show_hidden=include_hidden)
 
-    # Apply soft-ban filter
+    # Apply soft-ban with reparent
     if soft_banned:
         payload = _filter_and_reparent_by_authors(payload, soft_banned)
 
-    # Apply hide_deleted
+    # Apply hide_deleted with reparent
     if hide_deleted in ("none", "owner"):
         viewer_is_owner = (uid is not None and video_author_uid is not None and uid == video_author_uid)
         must_hide = (hide_deleted == "none") or (hide_deleted == "owner" and not viewer_is_owner)
         if must_hide:
             payload = _filter_and_reparent_tombstones(payload)
 
-    # Mark liked_by_author and collect authors
+    # Mark liked_by_author and my_vote; collect avatars
     author_uids = set()
     for cid, meta in payload["comments"].items():
+        # liked_by_author
+        liked = False
         if video_author_uid:
             votes = (meta.get("votes") or {})
+            v = votes.get(video_author_uid)
             try:
-                meta["liked_by_author"] = int(votes.get(video_author_uid, 0)) == 1
+                liked = (int(v) == 1)
             except Exception:
-                meta["liked_by_author"] = False
-            payload["comments"][cid] = meta
+                liked = (str(v) == "1")
+        meta["liked_by_author"] = bool(liked)
+
+        # my_vote (robust)
+        if uid:
+            votes = (meta.get("votes") or {})
+            mv = 0
+            if uid in votes:
+                try:
+                    mv = int(votes[uid])
+                except Exception:
+                    try:
+                        mv = int(str(votes[uid]))
+                    except Exception:
+                        mv = 0
+            meta["my_vote"] = mv
+
+        payload["comments"][cid] = meta
         au = meta.get("author_uid")
         if au:
             author_uids.add(au)
 
-    # Avatars
+    # Avatars map
     author_avatars: Dict[str, str] = {}
     if author_uids:
         from db import get_conn, release_conn
@@ -94,9 +115,13 @@ async def list_comments(
         finally:
             await release_conn(conn)
 
+    is_moderator = bool(uid and video_author_uid and uid == video_author_uid)
+
     return {
         "ok": True,
         "comments_enabled": True,
+        "moderator": is_moderator,             # curr user is author of video (moderator)
+        "video_author_uid": video_author_uid,
         "roots": payload["roots"],
         "children_map": payload["children_map"],
         "comments": payload["comments"],

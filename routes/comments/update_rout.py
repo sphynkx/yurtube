@@ -4,6 +4,8 @@ from typing import Dict, Any
 
 from utils.security_ut import get_current_user
 from services.comments.comment_update_srv import update_comment_text, soft_delete_comment
+from db import get_conn, release_conn
+from db.videos_db import get_video
 
 router = APIRouter(prefix="/comments", tags=["comments"])
 
@@ -31,7 +33,23 @@ async def delete_comment_api(request: Request, data: DeleteCommentIn) -> Dict[st
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="auth_required")
-    res = await soft_delete_comment(data.video_id, data.comment_id, user["user_uid"])
+
+    # Define moderator (author of video)
+    is_moderator = False
+    conn = await get_conn()
+    try:
+        v = await get_video(conn, data.video_id)
+        if v and v.get("author_uid") == user["user_uid"]:
+            is_moderator = True
+    finally:
+        await release_conn(conn)
+
+    res = await soft_delete_comment(
+        data.video_id,
+        data.comment_id,
+        user["user_uid"],
+        is_moderator=is_moderator
+    )
     if "error" in res:
         raise HTTPException(status_code=400, detail=res)
     return res

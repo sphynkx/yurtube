@@ -18,6 +18,7 @@ const CommentsTree = (() => {
     texts: {},
     avatars: {},
     currentUid: '',
+    isModerator: false,   // get from /comments/list
     inlineLimit: 3,
     MAX_DEPTH: 5
   };
@@ -246,11 +247,16 @@ const CommentsTree = (() => {
       like.className = 'btn-like';
       like.dataset.cid = cid;
       like.dataset.vote = '1';
-      // Embed heart (hidden by default)!!
+      // Heart + count
       like.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18">
           <path d="M9 21h9a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-5.31l.95-4.57.02-.23a1 1 0 0 0-.3-.7L12.17 3 6.59 8.59A2 2 0 0 0 6 10v9a2 2 0 0 0 2 2h1z"/>
         </svg><span class="count">${meta.likes||0}</span><span class="author-heart" data-cid="${cid}" style="display:none">❤</span>`;
       if ((meta.my_vote||0) === 1) like.classList.add('active');
+      // Show heart if has flag
+      const heartSpan = like.querySelector('.author-heart');
+      if (heartSpan && meta.liked_by_author === true) {
+        heartSpan.style.display = 'inline';
+      }
       actions.appendChild(like);
 
       const dislike = document.createElement('button');
@@ -271,6 +277,7 @@ const CommentsTree = (() => {
         </svg>`;
       actions.appendChild(replyBtn);
 
+      // Edit - for video's aithor only
       if (state.currentUid && meta.author_uid === state.currentUid){
         const editBtn = document.createElement('button');
         editBtn.className = 'btn-edit';
@@ -279,7 +286,10 @@ const CommentsTree = (() => {
             <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM21.41 6.34a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
           </svg>`;
         actions.appendChild(editBtn);
+      }
 
+      // Delete - for comment author and moderator (author of video)
+      if ( (state.currentUid && meta.author_uid === state.currentUid) || state.isModerator ){
         const delBtn = document.createElement('button');
         delBtn.className = 'btn-delete';
         delBtn.dataset.cid = cid;
@@ -324,6 +334,7 @@ const CommentsTree = (() => {
     state.currentUid = (opts && opts.currentUid) || '';
     state.avatars = (opts && opts.avatars) || {};
     state.inlineLimit = inlineLimit || 3;
+    state.isModerator = !!payload.moderator;   // read moderator flag from API
 
     container.innerHTML = '';
     const roots = payload.roots || [];
