@@ -40,7 +40,7 @@
     content:""; display:block; width:20px; height:20px;
     background-repeat:no-repeat; background-position:center;
     background-size:20px 20px;
-    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12C1 12 5 5 12 5s11 7 11 7-4 7-11 7S1 12 1 12z'></path><circle cx='12' cy='12' r='3'></circle></svg>");
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='ro[...]");
   }
 
   .text-input {
@@ -73,15 +73,15 @@
   .sso-icon-twitter { background-image:url("/static/img/twitter_icon.svg"); }
 
   @media (max-width: 420px) {
-    .text-input, .pw-input, .submit-row button, .sso-btn {
-      width: 24ch; min-width: 0; max-width: 100%;
-    }
+    .text-input, .pw-input, .submit-row button, .sso-btn
+      { width: 24ch; min-width: 0; max-width: 100%; }
     .pw-field { width:auto; }
   }
 </style>
 
 <div class="auth-grid">
-  <form class="auth-form" action="/auth/login" method="post" novalidate>
+  <form class="auth-form" action="/auth/login?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
     <div class="auth-row">
       <label class="auth-label" for="login-username">Username</label>
       <input id="login-username" class="text-input" type="text" name="username" required autocomplete="username">

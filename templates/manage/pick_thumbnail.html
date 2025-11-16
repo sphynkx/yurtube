@@ -15,9 +15,9 @@
 
     <p>Video: {{ video['title'] }} ({{ video['video_id'] }})</p>
 
-    <form action="/upload/select-thumbnail?csrf_token={{ csrf_token }}" method="post">
+    <form action="/upload/select-thumbnail?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
       <input type="hidden" name="video_id" value="{{ video['video_id'] }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:12px;">
         {% for c in candidates %}
         <label style="display:block; border:1px solid #ddd; padding:8px; cursor:pointer;">

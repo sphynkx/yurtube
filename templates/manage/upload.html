@@ -17,9 +17,8 @@
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
 
-    <form id="upload-form" action="/upload?csrf_token={{ csrf_token }}" method="post" enctype="multipart/form-data" novalidate>
-      <!-- CSRF token: inserted server-side in GET /upload -->
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <form id="upload-form" action="/upload?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" enctype="multipart/form-data" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
       <div>
         <label>File</label>
         <input type="file" name="file" required>

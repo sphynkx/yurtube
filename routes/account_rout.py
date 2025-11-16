@@ -95,6 +95,10 @@ async def account_home(request: Request) -> Any:
             "google_picture": None,
             "nav_avatar_url": nav_avatar_url,
             "nav_display_name": nav_display_name,
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
         },
     )
 

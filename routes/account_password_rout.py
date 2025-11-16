@@ -1,5 +1,6 @@
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Optional
 import os
+import secrets
 
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -8,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from db import get_conn, release_conn
 from db.users_auth_db import get_user_auth_by_uid, update_user_password_hash
 from utils.security_ut import get_current_user, verify_password, hash_password
+from config.config import settings
 
 try:
     from zxcvbn import zxcvbn  # type: ignore
@@ -26,6 +28,28 @@ PASSWORD_MIN_SCORE = max(0, min(PASSWORD_MIN_SCORE, 4))  # clamp
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+
+# --- CSRF helpers ---
+
+def _gen_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+def _get_csrf_cookie(request: Request) -> str:
+    name = getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf")
+    return (request.cookies.get(name) or "").strip()
+
+def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
+    cookie_tok = _get_csrf_cookie(request)
+    header_tok = (request.headers.get("X-CSRF-Token") or request.headers.get("x-csrf-token") or "").strip()
+    qs_tok = (request.query_params.get("csrf_token") or "").strip()
+    form_tok = (form_token or "").strip() or header_tok or qs_tok
+    if cookie_tok and form_tok:
+        try:
+            import secrets as _sec
+            return _sec.compare_digest(cookie_tok, form_tok)
+        except Exception:
+            return False
+    return False
 
 
 def _evaluate_password(pw: str) -> Tuple[List[str], List[str]]:
@@ -101,7 +125,10 @@ async def password_form(request: Request) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
-    return templates.TemplateResponse(
+
+    csrf_token = _get_csrf_cookie(request) or _gen_csrf_token()
+
+    resp = templates.TemplateResponse(
         "account/account_password.html",
         {
             "request": request,
@@ -111,9 +138,14 @@ async def password_form(request: Request) -> Any:
             "saved": False,
             "min_score": PASSWORD_MIN_SCORE,
             "zxcvbn": ZXCVBN_AVAILABLE,
+            "csrf_token": csrf_token,
         },
         headers={"Cache-Control": "no-store"},
     )
+    if not _get_csrf_cookie(request):
+        resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"),
+                        csrf_token, httponly=False, secure=True, samesite="lax", path="/")
+    return resp
 
 
 @router.post("/account/password", response_class=HTMLResponse)
@@ -122,7 +154,12 @@ async def password_change(
     current_password: str = Form(...),
     new_password: str = Form(...),
     confirm_password: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
 ) -> Any:
+
+    if not _validate_csrf(request, csrf_token):
+        return HTMLResponse("<h1>CSRF failed</h1>", status_code=403)
+
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
@@ -143,7 +180,8 @@ async def password_change(
         suggestions.extend(pw_suggestions)
 
     if errors:
-        return templates.TemplateResponse(
+        csrf_out = _get_csrf_cookie(request) or _gen_csrf_token()
+        resp = templates.TemplateResponse(
             "account/account_password.html",
             {
                 "request": request,
@@ -153,9 +191,14 @@ async def password_change(
                 "saved": False,
                 "min_score": PASSWORD_MIN_SCORE,
                 "zxcvbn": ZXCVBN_AVAILABLE,
+                "csrf_token": csrf_out,
             },
             headers={"Cache-Control": "no-store"},
         )
+        if not _get_csrf_cookie(request):
+            resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"),
+                            csrf_out, httponly=False, secure=True, samesite="lax", path="/")
+        return resp
 
     conn = await get_conn()
     try:
@@ -172,7 +215,8 @@ async def password_change(
                 errors.append("Current password is incorrect.")
 
         if errors:
-            return templates.TemplateResponse(
+            csrf_out = _get_csrf_cookie(request) or _gen_csrf_token()
+            resp = templates.TemplateResponse(
                 "account/account_password.html",
                 {
                     "request": request,
@@ -182,9 +226,14 @@ async def password_change(
                     "saved": False,
                     "min_score": PASSWORD_MIN_SCORE,
                     "zxcvbn": ZXCVBN_AVAILABLE,
+                    "csrf_token": csrf_out,
                 },
                 headers={"Cache-Control": "no-store"},
             )
+            if not _get_csrf_cookie(request):
+                resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"),
+                                csrf_out, httponly=False, secure=True, samesite="lax", path="/")
+            return resp
 
         new_hash = hash_password(new)
         await update_user_password_hash(conn, user["user_uid"], new_hash)
@@ -192,7 +241,8 @@ async def password_change(
     finally:
         await release_conn(conn)
 
-    return templates.TemplateResponse(
+    csrf_out = _get_csrf_cookie(request) or _gen_csrf_token()
+    resp = templates.TemplateResponse(
         "account/account_password.html",
         {
             "request": request,
@@ -202,6 +252,11 @@ async def password_change(
             "saved": True,
             "min_score": PASSWORD_MIN_SCORE,
             "zxcvbn": ZXCVBN_AVAILABLE,
+            "csrf_token": csrf_out,
         },
         headers={"Cache-Control": "no-store"},
     )
+    if not _get_csrf_cookie(request):
+        resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"),
+                        csrf_out, httponly=False, secure=True, samesite="lax", path="/")
+    return resp

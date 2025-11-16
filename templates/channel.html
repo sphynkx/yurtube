@@ -4,18 +4,26 @@
 
 <div class="channel-header" style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
   <div class="channel-id">
+    {% if owner['username'] %}@{{ owner['username']{% extends "base.html" %}
+{% block content %}
+<h1>Channel</h1>
+
+<div class="channel-header" style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+  <div class="channel-id">
     {% if owner['username'] %}@{{ owner['username'] }}{% else %}{{ owner['channel_id'] }}{% endif %}
   </div>
   <div class="subs-count">{{ subscribers }} subscribers</div>
   <div>
     {% if current_user and current_user['user_uid'] != owner['user_uid'] %}
       {% if subscribed %}
-      <form action="/channel/unsubscribe" method="post" style="display:inline;">
+      <form action="/channel/unsubscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
         <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
         <button type="submit">Unsubscribe</button>
       </form>
       {% else %}
-      <form action="/channel/subscribe" method="post" style="display:inline;">
+      <form action="/channel/subscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
         <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
         <button type="submit">Subscribe</button>
       </form>

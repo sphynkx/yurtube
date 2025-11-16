@@ -170,7 +170,8 @@
             <li><a href="/upload">Upload</a></li>
             <li class="menu-sep"><hr></li>
             <li>
-              <form action="/auth/logout" method="post" style="display:inline">
+              <form action="/auth/logout?csrf_token={{ csrf_token or request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token or request.cookies.get('yt_csrf') or '' }}">
                 <button type="submit">Logout</button>
               </form>
             </li>

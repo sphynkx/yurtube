@@ -1,23 +1,11 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Account</h1>
+<link rel="stylesheet" href="/static/css/manage/account_layout.css">
 
-{% set msg = request.query_params.get('msg') %}
-{% if msg %}
-  <div class="alert">
-    {% if msg == 'google_unlinked' %}Google account unlinked successfully.
-    {% elif msg == 'no_google' %}No Google account linked.
-    {% elif msg == 'need_password_before_unlink' %}Set a local password before unlinking Google.
-    {% elif msg == 'unlinked' %}Google unlinked and you were logged out.
-    {% else %}{{ msg }}
-    {% endif %}
-  </div>
-{% endif %}
-
-<div style="display:flex; flex-wrap:wrap; gap:32px; align-items:flex-start;">
+<div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
   <div style="flex:0 0 260px;">
     <h2>Avatar</h2>
-    <div style="margin:10px 0;">
+    <div style="margin-bottom:12px;">
       {% if avatar_url %}
         <img src="{{ avatar_url }}" alt="avatar" style="width:128px;height:128px;object-fit:cover;border-radius:8px;"
              onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
@@ -25,14 +13,16 @@
         <img src="/static/img/avatar_default.svg" alt="avatar" style="width:128px;height:128px;">
       {% endif %}
     </div>
-    <form action="/account/profile" method="post" enctype="multipart/form-data" style="margin-bottom:12px;">
+    <form action="/account/profile?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" enctype="multipart/form-data" style="margin-bottom:12px;">
+      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
       <input type="file" name="avatar" accept="image/*" required>
       <div style="margin-top:8px;">
         <button type="submit">Upload avatar</button>
       </div>
     </form>
     {% if avatar_url %}
-    <form action="/account/avatar/delete" method="post" onsubmit="return confirm('Delete avatar?');">
+    <form action="/account/avatar/delete?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" onsubmit="return confirm('Delete avatar?');">
+      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
       <button type="submit">Delete avatar</button>
     </form>
     {% endif %}
@@ -89,24 +79,16 @@
       {% set current_authp = request.cookies.get('yt_authp') %}
 
       {% if has_google and current_authp == 'google' %}
-      <form action="/account/sso/google/unlink" method="post" style="margin-top:12px;"
+      <form action="/account/sso/google/unlink?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="margin-top:12px;"
             onsubmit="return confirm('Unlink Google account?');">
+        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
         <button type="submit">Unlink Google</button>
       </form>
       {% endif %}
     {% else %}
       {# Even if list empty, still detect current auth provider from cookie #}
       {% set has_twitter = false %}
-      {% set has_google = false %}
-      {% set current_authp = request.cookies.get('yt_authp') %}
     {% endif %}
-
-    <div style="margin-top:16px;">
-      {# Hide Link Twitter if twitter identity already exists OR current login is via twitter (cookie) #}
-      {% if not has_twitter and current_authp != 'twitter' %}
-        <a class="button" href="/auth/twitter/start?link=1">Link Twitter</a>
-      {% endif %}
-    </div>
   </div>
 </div>
 {% endblock %}

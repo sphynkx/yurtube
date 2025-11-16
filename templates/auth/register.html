@@ -40,7 +40,7 @@
     content:""; display:block; width:20px; height:20px;
     background-repeat:no-repeat; background-position:center;
     background-size:20px 20px;
-    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M1 12C1 12 5 5 12 5s11 7 11 7-4 7-11 7S1 12 1 12z'></path><circle cx='12' cy='12' r='3'></circle></svg>");
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2' stroke-linecap='ro[...]");
   }
 
   .reg-submit {
@@ -73,7 +73,10 @@
 </style>
 
 <div class="auth-grid">
-  <form class="reg-form" action="/auth/register" method="post" novalidate>
+  <form class="reg-form"
+        action="/auth/register?csrf_token={{ csrf_token or request.cookies.get('yt_csrf') or '' }}"
+        method="post" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token or request.cookies.get('yt_csrf') or '' }}">
     <div class="reg-row">
       <label for="reg-username">Username</label>
       <input id="reg-username" class="reg-input" type="text" name="username" required autocomplete="username"
