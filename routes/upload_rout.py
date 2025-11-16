@@ -1,5 +1,4 @@
 import os
-import secrets
 import time
 import shutil
 import subprocess
@@ -35,50 +34,19 @@ from utils.idgen_ut import gen_id
 from utils.path_ut import build_video_storage_dir
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
-from db.comments.root_db import delete_all_comments_for_video  # 
+from db.comments.root_db import delete_all_comments_for_video
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
-# ---------------- CSRF helpers ----------------
 
-def _gen_csrf_token() -> str:
-    return secrets.token_urlsafe(32)
+def _csrf_cookie_name() -> str:
+    return getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf")
 
-def _get_csrf_cookie(request: Request) -> str:
-    name = getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf")
-    return (request.cookies.get(name) or "").strip()
+def _csrf_from_cookie(request: Request) -> str:
+    return (request.cookies.get(_csrf_cookie_name()) or "").strip()
 
-def _same_origin(request: Request, origin: str) -> bool:
-    try:
-        req_host = request.headers.get("host", "")
-        u = urlparse(origin)
-        return bool(u.netloc) and (u.netloc == req_host)
-    except Exception:
-        return False
 
-def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
-    """
-    Validate CSRF using double-submit cookie pattern.
-    Accept token either from hidden form field (form_token) or from header X-CSRF-Token (AJAX),
-    and also support ?csrf_token=... in action for plain HTML forms.
-    Allows same-origin fallback when cookie missing (dev).
-    """
-    cookie_tok = _get_csrf_cookie(request)
-    header_tok = (request.headers.get("X-CSRF-Token") or request.headers.get("x-csrf-token") or "").strip()
-    qs_tok = (request.query_params.get("csrf_token") or "").strip()
-    form_tok = (form_token or "").strip() or header_tok or qs_tok
-
-    if cookie_tok and form_tok:
-        try:
-            return secrets.compare_digest(cookie_tok, form_tok)
-        except Exception:
-            return False
-
-    if not cookie_tok and form_tok and _same_origin(request, request.headers.get("origin") or request.headers.get("referer") or ""):
-        return True
-
-    return False
 
 def _fallback_title(file: UploadFile) -> str:
     base = (file.filename or "").strip()
@@ -87,49 +55,6 @@ def _fallback_title(file: UploadFile) -> str:
         if name.strip():
             return name.strip()[:200]
     return "Video " + datetime.utcnow().strftime("%Y-%m-%d %H:%M")
-
-# ---------------- Manage ----------------
-
-@router.get("/manage", response_class=HTMLResponse)
-async def manage_home(request: Request) -> Any:
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/auth/login", status_code=302)
-
-    conn = await get_conn()
-    try:
-        rows = await list_my_videos(conn, user["user_uid"])
-        subs_count = await count_subscribers(conn, user["user_uid"])
-    finally:
-        await release_conn(conn)
-
-    videos: List[Dict[str, Any]] = []
-    for r in rows:
-        d = dict(r)
-        tap = d.get("thumb_asset_path")
-        d["thumb_url"] = build_storage_url(tap) if tap else None
-        videos.append(d)
-
-    csrf_token = _gen_csrf_token()
-    resp = templates.TemplateResponse(
-        "manage/my_videos.html",
-        {
-            "brand_logo_url": settings.BRAND_LOGO_URL,
-            "brand_tagline": settings.BRAND_TAGLINE,
-            "favicon_url": settings.FAVICON_URL,
-            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-            "request": request,
-            "current_user": user,
-            "videos": videos,
-            "subscribers_count": subs_count,
-            "csrf_token": csrf_token,
-        },
-        headers={"Cache-Control": "no-store"},
-    )
-    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
-    return resp
-
-# --------- Fon helpers ---------
 
 def _bg_rm_rf(path: str) -> None:
     try:
@@ -145,9 +70,6 @@ def _bg_delete_index(video_id: str) -> None:
         pass
 
 def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
-    """
-    Delete comment tree (Mongo/GRID) with a timeout to avoid freezing.
-    """
     try:
         async def _runner():
             await asyncio.wait_for(delete_all_comments_for_video(video_id), timeout=timeout_sec)
@@ -156,13 +78,6 @@ def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
         pass
 
 def _bg_cleanup_after_delete_sync(storage_root: str, storage_rel: str, video_id: str) -> None:
-    """
-    Synchronous function for BackgroundTasks:
-    - rename directory -> *.deleting.<ts> (fast),
-    - rm -rf in a separate process,
-    - remove from search (best-effort),
-    - delete comment tree (best-effort, with an explicit short timeout).
-    """
     try:
         storage_abs = os.path.join(storage_root, storage_rel)
         deleting_path = storage_abs
@@ -188,6 +103,46 @@ def _bg_cleanup_after_delete_sync(storage_root: str, storage_rel: str, video_id:
     except Exception:
         pass
 
+# ---------------- Manage ----------------
+
+@router.get("/manage", response_class=HTMLResponse)
+async def manage_home(request: Request) -> Any:
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/auth/login", status_code=302)
+
+    conn = await get_conn()
+    try:
+        rows = await list_my_videos(conn, user["user_uid"])
+        subs_count = await count_subscribers(conn, user["user_uid"])
+    finally:
+        await release_conn(conn)
+
+    videos: List[Dict[str, Any]] = []
+    for r in rows:
+        d = dict(r)
+        tap = d.get("thumb_asset_path")
+        d["thumb_url"] = build_storage_url(tap) if tap else None
+        videos.append(d)
+
+    csrf_token = _csrf_from_cookie(request)
+
+    return templates.TemplateResponse(
+        "manage/my_videos.html",
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request,
+            "current_user": user,
+            "videos": videos,
+            "subscribers_count": subs_count,
+            "csrf_token": csrf_token,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
+
 @router.post("/manage/delete")
 async def manage_delete(
     request: Request,
@@ -199,9 +154,6 @@ async def manage_delete(
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
-    if not _validate_csrf(request, csrf_token):
-        raise HTTPException(status_code=403, detail="csrf_required")
-
     conn = await get_conn()
     try:
         owned = await get_owned_video(conn, video_id, user["user_uid"])
@@ -211,10 +163,7 @@ async def manage_delete(
         rel_storage = owned["storage_path"]
 
         res = await conn.execute(
-            """
-            DELETE FROM videos
-            WHERE video_id = $1 AND author_uid = $2
-            """,
+            "DELETE FROM videos WHERE video_id = $1 AND author_uid = $2",
             video_id,
             user["user_uid"],
         )
@@ -247,22 +196,22 @@ async def upload_page(request: Request) -> Any:
     finally:
         await release_conn(conn)
 
-    csrf_token = _gen_csrf_token()
-    context = {
-        "request": request,
-        "brand_logo_url": settings.BRAND_LOGO_URL,
-        "brand_tagline": settings.BRAND_TAGLINE,
-        "favicon_url": settings.FAVICON_URL,
-        "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-        "request": request,
-        "current_user": user,
-        "categories": cats,
-        "csrf_token": csrf_token,
-    }
+    csrf_token = _csrf_from_cookie(request)
 
-    resp = templates.TemplateResponse("manage/upload.html", context)
-    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
-    return resp
+    return templates.TemplateResponse(
+        "manage/upload.html",
+        {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request,
+            "current_user": user,
+            "categories": cats,
+            "csrf_token": csrf_token,
+        },
+        headers={"Cache-Control": "no-store"},
+    )
 
 @router.post("/upload", response_class=HTMLResponse)
 async def upload_video(
@@ -279,9 +228,6 @@ async def upload_video(
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
-
-    if not _validate_csrf(request, csrf_token):
-        return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
 
     if status not in ("public", "private", "unlisted"):
         raise HTTPException(status_code=400, detail="Invalid status")
@@ -301,7 +247,7 @@ async def upload_video(
                 "is_age_restricted": is_age_restricted,
                 "is_made_for_kids": is_made_for_kids,
             }
-            resp = templates.TemplateResponse(
+            return templates.TemplateResponse(
                 "manage/upload.html",
                 {
                     "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -313,12 +259,11 @@ async def upload_video(
                     "categories": cats,
                     "error": "Selected category does not exist.",
                     "form": form_data,
-                    "csrf_token": _get_csrf_cookie(request) or _gen_csrf_token(),
+                    "csrf_token": _csrf_from_cookie(request),
                 },
                 status_code=400,
+                headers={"Cache-Control": "no-store"},
             )
-            resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), (resp.context or {}).get("csrf_token"), httponly=False, samesite="none", secure=True, path="/")
-            return resp
 
         video_id = gen_id(12)
         storage_dir = build_video_storage_dir(settings.STORAGE_ROOT, video_id)
@@ -392,8 +337,7 @@ async def upload_video(
     except Exception:
         pass
 
-    csrf_token_new = _get_csrf_cookie(request) or _gen_csrf_token()
-    resp = templates.TemplateResponse(
+    return templates.TemplateResponse(
         "manage/select_thumbnail.html",
         {
             "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -404,11 +348,10 @@ async def upload_video(
             "current_user": user,
             "video_id": video_id,
             "candidates": candidates,
-            "csrf_token": csrf_token_new,
+            "csrf_token": _csrf_from_cookie(request),
         },
+        headers={"Cache-Control": "no-store"},
     )
-    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token_new, httponly=False, samesite="none", secure=True, path="/")
-    return resp
 
 @router.post("/upload/select-thumbnail")
 @router.post("/upload/select-thumbnail/")
@@ -423,9 +366,6 @@ async def select_thumbnail(
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
-
-    if not _validate_csrf(request, csrf_token):
-        raise HTTPException(status_code=403, detail="csrf_required")
 
     sel = (selected_rel or "").strip()
     if sel.startswith("http://") or sel.startswith("https://"):

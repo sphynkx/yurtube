@@ -8,6 +8,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from config.config import settings
 from routes import register_routes
 from middlewares import install_middlewares
+from middlewares.csrf_mw import CSRFMiddleware
 
 # Toggle built-in API docs
 docs_url    = "/docs" if settings.API_DOCS_ENABLED else None
@@ -21,6 +22,8 @@ app = FastAPI(
     redoc_url=redoc_url,
     openapi_url=openapi_url,
 )
+
+app.add_middleware(CSRFMiddleware, cookie_name=getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"))
 
 # Static and storage mounts
 app.mount("/static", StaticFiles(directory="static"), name="static")
