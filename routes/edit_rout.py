@@ -3,6 +3,8 @@ import os
 import re
 import json
 import asyncio
+import secrets
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -26,7 +28,6 @@ from services.ffmpeg_srv import (
 from services.search.indexer_srch import fire_and_forget_reindex, reindex_video
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
-
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -59,6 +60,44 @@ async def _list_renditions(conn, video_id: str) -> List[Dict[str, Any]]:
     NOTE: DB access is delegated to db.video_renditions_db.list_video_renditions.
     """
     return await db_list_renditions(conn, video_id)
+
+
+# CSRF helpers (local copy)
+def _gen_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def _get_csrf_cookie(request: Request) -> str:
+    name = getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf")
+    return (request.cookies.get(name) or "").strip()
+
+
+def _same_origin(request: Request, origin: str) -> bool:
+    try:
+        req_host = request.headers.get("host", "")
+        u = urlparse(origin)
+        return bool(u.netloc) and (u.netloc == req_host)
+    except Exception:
+        return False
+
+
+def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
+    cookie_tok = _get_csrf_cookie(request)
+    header_tok = (request.headers.get("X-CSRF-Token") or request.headers.get("x-csrf-token") or "").strip()
+    qs_tok = (request.query_params.get("csrf_token") or "").strip()
+    form_tok = (form_token or "").strip() or header_tok or qs_tok
+
+    if cookie_tok and form_tok:
+        try:
+            return secrets.compare_digest(cookie_tok, form_tok)
+        except Exception:
+            return False
+
+    # dev fallback
+    if not cookie_tok and form_tok and _same_origin(request, request.headers.get("origin") or request.headers.get("referer") or ""):
+        return True
+
+    return False
 
 
 @router.get("/edit/{video_id}", response_class=HTMLResponse)
@@ -121,7 +160,9 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
     finally:
         await release_conn(conn)
 
-    return templates.TemplateResponse(
+    # create csrf token for edit page/forms
+    csrf_token = _gen_csrf_token()
+    resp = templates.TemplateResponse(
         "manage/edit_video.html",
         {
             "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -134,9 +175,12 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
             "categories": categories,
             "presets": presets,
             "renditions": renditions,
+            "csrf_token": csrf_token,
         },
         headers={"Cache-Control": "no-store"},
     )
+    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
+    return resp
 
 
 @router.post("/manage/edit/meta")
@@ -152,10 +196,15 @@ async def edit_meta(
     is_made_for_kids: Optional[str] = Form(None),
     allow_comments: Optional[str] = Form(None),
     license: str = Form("standard"),
+    csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    # CSRF protection
+    if not _validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="csrf_required")
 
     if status not in ("public", "private", "unlisted"):
         raise HTTPException(status_code=400, detail="Invalid status")
@@ -200,10 +249,15 @@ async def regen_thumbs(
     video_id: str = Form(...),
     offset_sec: int = Form(0),
     animate: Optional[str] = Form(None),
+    csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    # CSRF protection
+    if not _validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="csrf_required")
 
     conn = await get_conn()
     try:
@@ -257,10 +311,15 @@ async def upload_thumbs(
     video_id: str = Form(...),
     thumb_static: Optional[UploadFile] = File(None),
     thumb_anim: Optional[UploadFile] = File(None),
+    csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    # CSRF protection
+    if not _validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="csrf_required")
 
     if not thumb_static and not thumb_anim:
         return RedirectResponse(f"/manage/edit?v={video_id}", status_code=302)
@@ -327,19 +386,24 @@ async def pick_thumb_page(request: Request, v: str = Query(..., min_length=12, m
     finally:
         await release_conn(conn)
 
-    return templates.TemplateResponse(
+    # include csrf token in pick page
+    csrf_token = _gen_csrf_token()
+    resp = templates.TemplateResponse(
         "manage/pick_thumbnail.html",
         {
             "brand_logo_url": settings.BRAND_LOGO_URL,
             "brand_tagline": settings.BRAND_TAGLINE,
             "favicon_url": settings.FAVICON_URL,
             "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-            "request": request, 
-            "current_user": user, 
-            "video": video, 
-            "candidates": items
+            "request": request,
+            "current_user": user,
+            "video": video,
+            "candidates": items,
+            "csrf_token": csrf_token,
         },
     )
+    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
+    return resp
 
 
 @router.post("/manage/edit/renditions")
@@ -348,10 +412,14 @@ async def set_renditions(
     video_id: str = Form(...),
     presets: Optional[str] = Form(""),
     codec: Optional[str] = Form("vp9"),
+    csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    if not _validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="csrf_required")
 
     plist = [p.strip() for p in (presets or "").split(",") if p.strip()]
     if not plist:
@@ -378,10 +446,14 @@ async def set_embed(
     mute: Optional[str] = Form(None),
     loop: Optional[str] = Form(None),
     start_default: Optional[int] = Form(0),
+    csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    if not _validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="csrf_required")
 
     allow = _bool_from_form(allow_embed)
     params: Dict[str, Any] = {

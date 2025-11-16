@@ -78,6 +78,7 @@ CREATE TABLE IF NOT EXISTS videos (
     thumb_pref_offset    INTEGER NOT NULL DEFAULT 0 CHECK (thumb_pref_offset >= 0),
     comments_enabled     BOOLEAN NOT NULL DEFAULT TRUE,
     comments_root_doc_id TEXT NULL,
+    thumbnails_ready    BOOLEAN NOT NULL DEFAULT FALSE,
 
     CONSTRAINT videos_video_id_len CHECK (char_length(video_id) = 12)
 );

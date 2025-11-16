@@ -53,8 +53,14 @@ class CSRFMiddleware(BaseHTTPMiddleware):
             token_cookie = request.cookies.get(cookie_name) or ""
             token_hdr = request.headers.get("x-csrf-token") or ""
             xrw = (request.headers.get("x-requested-with") or "").lower() == "xmlhttprequest"
+            # also accept token from query param (?csrf_token=...) for plain HTML forms
+            token_qs = request.query_params.get("csrf_token") or ""
 
-            ok = (token_cookie and token_hdr and secrets.compare_digest(token_cookie, token_hdr)) or xrw
+            ok = (
+                (token_cookie and token_hdr and secrets.compare_digest(token_cookie, token_hdr))  # AJAX/fetch
+                or xrw  # XHR hint
+                or (token_cookie and token_qs and secrets.compare_digest(token_cookie, token_qs))  # HTML form with ?csrf_token
+            )
             if not ok:
                 resp = JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
                 if not token_cookie:

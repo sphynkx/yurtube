@@ -47,8 +47,9 @@
           <td style="padding:8px;">{{ v['processing_status'] }}</td>
           <td style="padding:8px;">
             <div style="display:flex; gap:8px;">
-              <form action="/manage/delete" method="post" onsubmit="return confirm('Delete this video?');">
+              <form action="/manage/delete?csrf_token={{ csrf_token }}" method="post" onsubmit="return confirm('Delete this video?');">
                 <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+				<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button type="submit">Delete</button>
               </form>
               <a href="/manage/edit?v={{ v['video_id'] }}">Edit</a>

@@ -1,9 +1,11 @@
 import os
+import secrets
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from config.config import settings
@@ -32,6 +34,49 @@ from services.search.indexer_srch import fire_and_forget_reindex
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+
+# CSRF helpers (double-submit)
+def _gen_csrf_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def _get_csrf_cookie(request: Request) -> str:
+    # use configured cookie name
+    name = getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf")
+    return (request.cookies.get(name) or "").strip()
+
+
+def _same_origin(request: Request, origin: str) -> bool:
+    try:
+        req_host = request.headers.get("host", "")
+        u = urlparse(origin)
+        return bool(u.netloc) and (u.netloc == req_host)
+    except Exception:
+        return False
+
+
+def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
+    """
+    Validate CSRF using double-submit cookie pattern.
+    Accept token either from hidden form field (form_token) or from header X-CSRF-Token (AJAX).
+    Allows same-origin fallback when cookie missing (dev).
+    """
+    cookie_tok = _get_csrf_cookie(request)
+    header_tok = (request.headers.get("X-CSRF-Token") or request.headers.get("x-csrf-token") or "").strip()
+    qs_tok = (request.query_params.get("csrf_token") or "").strip()
+    form_tok = (form_token or "").strip() or header_tok or qs_tok
+
+    if cookie_tok and form_tok:
+        try:
+            return secrets.compare_digest(cookie_tok, form_tok)
+        except Exception:
+            return False
+
+    # dev fallback: no cookie but same-origin and form token present
+    if not cookie_tok and form_tok and _same_origin(request, request.headers.get("origin") or request.headers.get("referer") or ""):
+        return True
+
+    return False
 
 
 def _fallback_title(file: UploadFile) -> str:
@@ -63,27 +108,37 @@ async def manage_home(request: Request) -> Any:
         d["thumb_url"] = build_storage_url(tap) if tap else None
         videos.append(d)
 
-    return templates.TemplateResponse(
+    # ensure csrf on manage page (many forms live here)
+    csrf_token = _gen_csrf_token()
+    resp = templates.TemplateResponse(
         "manage/my_videos.html",
         {
             "brand_logo_url": settings.BRAND_LOGO_URL,
             "brand_tagline": settings.BRAND_TAGLINE,
             "favicon_url": settings.FAVICON_URL,
             "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-            "request": request, 
-            "current_user": user, 
-            "videos": videos, 
-            "subscribers_count": subs_count
+            "request": request,
+            "current_user": user,
+            "videos": videos,
+            "subscribers_count": subs_count,
+            "csrf_token": csrf_token,
         },
         headers={"Cache-Control": "no-store"},
     )
+    # set cookie for CSRF (not HttpOnly so client JS can read it)
+    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
+    return resp
 
 
 @router.post("/manage/delete")
-async def manage_delete(request: Request, video_id: str = Form(...)) -> Any:
+async def manage_delete(request: Request, video_id: str = Form(...), csrf_token: Optional[str] = Form(None)) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    # CSRF protection
+    if not _validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="csrf_required")
 
     conn = await get_conn()
     try:
@@ -116,18 +171,23 @@ async def upload_page(request: Request) -> Any:
     finally:
         await release_conn(conn)
 
-    return templates.TemplateResponse(
-        "manage/upload.html",
-        {
-            "brand_logo_url": settings.BRAND_LOGO_URL,
-            "brand_tagline": settings.BRAND_TAGLINE,
-            "favicon_url": settings.FAVICON_URL,
-            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-            "request": request, 
-            "current_user": user, 
-            "categories": cats
-        },
-    )
+    csrf_token = _gen_csrf_token()
+    context = {
+        "request": request,
+        "brand_logo_url": settings.BRAND_LOGO_URL,
+        "brand_tagline": settings.BRAND_TAGLINE,
+        "favicon_url": settings.FAVICON_URL,
+        "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+        "request": request,
+        "current_user": user,
+        "categories": cats,
+        "csrf_token": csrf_token,
+    }
+
+    resp = templates.TemplateResponse("manage/upload.html", context)
+    # For dev use samesite=None so cross cases do not drop cookie; in prod set secure=True + samesite appropriate
+    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
+    return resp
 
 
 @router.post("/upload", response_class=HTMLResponse)
@@ -140,10 +200,15 @@ async def upload_video(
     category_id: Optional[str] = Form(None),
     is_age_restricted: bool = Form(False),
     is_made_for_kids: bool = Form(False),
+    csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    # CSRF validation
+    if not _validate_csrf(request, csrf_token):
+        return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
 
     if status not in ("public", "private", "unlisted"):
         raise HTTPException(status_code=400, detail="Invalid status")
@@ -163,7 +228,8 @@ async def upload_video(
                 "is_age_restricted": is_age_restricted,
                 "is_made_for_kids": is_made_for_kids,
             }
-            return templates.TemplateResponse(
+            # keep csrf cookie on error page
+            resp = templates.TemplateResponse(
                 "manage/upload.html",
                 {
                     "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -175,9 +241,12 @@ async def upload_video(
                     "categories": cats,
                     "error": "Selected category does not exist.",
                     "form": form_data,
+                    "csrf_token": _get_csrf_cookie(request) or _gen_csrf_token(),
                 },
                 status_code=400,
             )
+            resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), (resp.context or {}).get("csrf_token"), httponly=False, samesite="none", secure=True, path="/")
+            return resp
 
         video_id = gen_id(12)
         storage_dir = build_video_storage_dir(settings.STORAGE_ROOT, video_id)
@@ -253,7 +322,9 @@ async def upload_video(
         # Do not break the upload flow if scheduling fails
         pass
 
-    return templates.TemplateResponse(
+    # include csrf_token so select-thumbnail form will have it
+    csrf_token_new = _get_csrf_cookie(request) or _gen_csrf_token()
+    resp = templates.TemplateResponse(
         "manage/select_thumbnail.html",
         {
             "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -264,8 +335,11 @@ async def upload_video(
             "current_user": user,
             "video_id": video_id,
             "candidates": candidates,
+            "csrf_token": csrf_token_new,
         },
     )
+    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token_new, httponly=False, samesite="none", secure=True, path="/")
+    return resp
 
 
 @router.post("/upload/select-thumbnail")
@@ -276,10 +350,15 @@ async def select_thumbnail(
     request: Request,
     video_id: str = Form(...),
     selected_rel: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    # CSRF protection
+    if not _validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="csrf_required")
 
     sel = (selected_rel or "").strip()
     if sel.startswith("http://") or sel.startswith("https://"):
