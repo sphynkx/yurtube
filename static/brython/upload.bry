@@ -1,5 +1,8 @@
 from browser import document, window, html
 
+if not hasattr(window, "__yt_upload_guard"):
+    window.__yt_upload_guard = {"bound": False, "submitting": False}
+
 def _get_cookie(name):
     try:
         parts = document.cookie.split(";")
@@ -32,14 +35,20 @@ def on_submit(ev):
     except Exception:
         pass
 
+    if window.__yt_upload_guard["submitting"]:
+        return
+    window.__yt_upload_guard["submitting"] = True
+
     form = document.getElementById("upload-form")
     if form is None:
+        window.__yt_upload_guard["submitting"] = False
         return
 
     try:
         fd = window.FormData.new(form)
     except Exception:
         _text("upload-status", "Cannot build FormData")
+        window.__yt_upload_guard["submitting"] = False
         return
 
     csrf = _get_cookie("yt_csrf")
@@ -71,8 +80,9 @@ def on_submit(ev):
         ).catch(
             lambda err: _on_error(err)
         )
-    except Exception as e:
+    except Exception:
         _text("upload-status", "Fetch error")
+        window.__yt_upload_guard["submitting"] = False
         _disable_submit(False)
 
 def _handle_response(resp, body):
@@ -90,6 +100,7 @@ def _handle_response(resp, body):
                     _text("upload-status", "Unexpected JSON")
             except Exception:
                 _text("upload-status", f"HTTP {resp.status}")
+            window.__yt_upload_guard["submitting"] = False
             _disable_submit(False)
             return
         if resp.status >= 200 and resp.status < 400:
@@ -98,20 +109,27 @@ def _handle_response(resp, body):
             document.close()
         else:
             _text("upload-status", f"HTTP {resp.status}")
+            window.__yt_upload_guard["submitting"] = False
             _disable_submit(False)
     except Exception:
         _text("upload-status", "Response error")
+        window.__yt_upload_guard["submitting"] = False
         _disable_submit(False)
 
 def _on_error(err):
     _text("upload-status", "Network error")
+    window.__yt_upload_guard["submitting"] = False
     _disable_submit(False)
 
 def _bind():
+    if window.__yt_upload_guard["bound"]:
+        return
+    window.__yt_upload_guard["bound"] = True
+
     try:
         form = document.getElementById("upload-form")
         if form is not None:
-            form.addEventListener("submit", on_submit)
+            form.addEventListener("submit", on_submit, {"once": True})
     except Exception:
         pass
 
