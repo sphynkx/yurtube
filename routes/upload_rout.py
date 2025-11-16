@@ -1,10 +1,14 @@
 import os
 import secrets
+import time
+import shutil
+import subprocess
+import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
@@ -26,25 +30,24 @@ from services.ffmpeg_srv import (
     async_probe_duration_seconds,
     async_generate_animated_preview,
 )
+from services.search.indexer_srch import fire_and_forget_reindex, delete_from_index
 from utils.idgen_ut import gen_id
-from utils.path_ut import build_video_storage_dir, safe_remove_storage_relpath
+from utils.path_ut import build_video_storage_dir
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
-from services.search.indexer_srch import fire_and_forget_reindex
+from db.comments.root_db import delete_all_comments_for_video  # 
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
-# CSRF helpers (double-submit)
+# ---------------- CSRF helpers ----------------
+
 def _gen_csrf_token() -> str:
     return secrets.token_urlsafe(32)
 
-
 def _get_csrf_cookie(request: Request) -> str:
-    # use configured cookie name
     name = getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf")
     return (request.cookies.get(name) or "").strip()
-
 
 def _same_origin(request: Request, origin: str) -> bool:
     try:
@@ -54,11 +57,11 @@ def _same_origin(request: Request, origin: str) -> bool:
     except Exception:
         return False
 
-
 def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
     """
     Validate CSRF using double-submit cookie pattern.
-    Accept token either from hidden form field (form_token) or from header X-CSRF-Token (AJAX).
+    Accept token either from hidden form field (form_token) or from header X-CSRF-Token (AJAX),
+    and also support ?csrf_token=... in action for plain HTML forms.
     Allows same-origin fallback when cookie missing (dev).
     """
     cookie_tok = _get_csrf_cookie(request)
@@ -72,12 +75,10 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
         except Exception:
             return False
 
-    # dev fallback: no cookie but same-origin and form token present
     if not cookie_tok and form_tok and _same_origin(request, request.headers.get("origin") or request.headers.get("referer") or ""):
         return True
 
     return False
-
 
 def _fallback_title(file: UploadFile) -> str:
     base = (file.filename or "").strip()
@@ -87,6 +88,7 @@ def _fallback_title(file: UploadFile) -> str:
             return name.strip()[:200]
     return "Video " + datetime.utcnow().strftime("%Y-%m-%d %H:%M")
 
+# ---------------- Manage ----------------
 
 @router.get("/manage", response_class=HTMLResponse)
 async def manage_home(request: Request) -> Any:
@@ -108,7 +110,6 @@ async def manage_home(request: Request) -> Any:
         d["thumb_url"] = build_storage_url(tap) if tap else None
         videos.append(d)
 
-    # ensure csrf on manage page (many forms live here)
     csrf_token = _gen_csrf_token()
     resp = templates.TemplateResponse(
         "manage/my_videos.html",
@@ -125,18 +126,79 @@ async def manage_home(request: Request) -> Any:
         },
         headers={"Cache-Control": "no-store"},
     )
-    # set cookie for CSRF (not HttpOnly so client JS can read it)
     resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
     return resp
 
+# --------- Fon helpers ---------
+
+def _bg_rm_rf(path: str) -> None:
+    try:
+        cmd = f'nohup rm -rf -- "{path}" >/dev/null 2>&1 &'
+        subprocess.Popen(["/bin/sh", "-c", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    except Exception:
+        pass
+
+def _bg_delete_index(video_id: str) -> None:
+    try:
+        asyncio.run(delete_from_index(video_id))
+    except Exception:
+        pass
+
+def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
+    """
+    Delete comment tree (Mongo/GRID) with a timeout to avoid freezing.
+    """
+    try:
+        async def _runner():
+            await asyncio.wait_for(delete_all_comments_for_video(video_id), timeout=timeout_sec)
+        asyncio.run(_runner())
+    except Exception:
+        pass
+
+def _bg_cleanup_after_delete_sync(storage_root: str, storage_rel: str, video_id: str) -> None:
+    """
+    Synchronous function for BackgroundTasks:
+    - rename directory -> *.deleting.<ts> (fast),
+    - rm -rf in a separate process,
+    - remove from search (best-effort),
+    - delete comment tree (best-effort, with an explicit short timeout).
+    """
+    try:
+        storage_abs = os.path.join(storage_root, storage_rel)
+        deleting_path = storage_abs
+        if os.path.exists(storage_abs):
+            ts = int(time.time())
+            cand = storage_abs + f".deleting.{ts}"
+            try:
+                os.rename(storage_abs, cand)
+                deleting_path = cand
+            except Exception:
+                deleting_path = storage_abs
+            _bg_rm_rf(deleting_path)
+    except Exception:
+        pass
+
+    try:
+        _bg_delete_index(video_id)
+    except Exception:
+        pass
+
+    try:
+        _bg_delete_comments(video_id, timeout_sec=5.0)
+    except Exception:
+        pass
 
 @router.post("/manage/delete")
-async def manage_delete(request: Request, video_id: str = Form(...), csrf_token: Optional[str] = Form(None)) -> Any:
+async def manage_delete(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    video_id: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
-    # CSRF protection
     if not _validate_csrf(request, csrf_token):
         raise HTTPException(status_code=403, detail="csrf_required")
 
@@ -148,16 +210,30 @@ async def manage_delete(request: Request, video_id: str = Form(...), csrf_token:
 
         rel_storage = owned["storage_path"]
 
-        deleted = await delete_video(conn, video_id, user["user_uid"])
-        if not deleted:
+        res = await conn.execute(
+            """
+            DELETE FROM videos
+            WHERE video_id = $1 AND author_uid = $2
+            """,
+            video_id,
+            user["user_uid"],
+        )
+        ok = res.endswith("1")
+        if not ok:
             raise HTTPException(status_code=404, detail="Video not found")
     finally:
         await release_conn(conn)
 
-    safe_remove_storage_relpath(settings.STORAGE_ROOT, rel_storage)
+    background_tasks.add_task(
+        _bg_cleanup_after_delete_sync,
+        getattr(settings, "STORAGE_ROOT", "/var/www/storage"),
+        rel_storage,
+        video_id,
+    )
 
     return RedirectResponse("/manage", status_code=302)
 
+# ---------------- Upload + thumbnails flow ----------------
 
 @router.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request) -> Any:
@@ -185,10 +261,8 @@ async def upload_page(request: Request) -> Any:
     }
 
     resp = templates.TemplateResponse("manage/upload.html", context)
-    # For dev use samesite=None so cross cases do not drop cookie; in prod set secure=True + samesite appropriate
     resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
     return resp
-
 
 @router.post("/upload", response_class=HTMLResponse)
 async def upload_video(
@@ -206,7 +280,6 @@ async def upload_video(
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
-    # CSRF validation
     if not _validate_csrf(request, csrf_token):
         return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
 
@@ -228,7 +301,6 @@ async def upload_video(
                 "is_age_restricted": is_age_restricted,
                 "is_made_for_kids": is_made_for_kids,
             }
-            # keep csrf cookie on error page
             resp = templates.TemplateResponse(
                 "manage/upload.html",
                 {
@@ -315,14 +387,11 @@ async def upload_video(
     finally:
         await release_conn(conn)
 
-    # Schedule indexing right after DB changes are committed
     try:
         fire_and_forget_reindex(video_id)
     except Exception:
-        # Do not break the upload flow if scheduling fails
         pass
 
-    # include csrf_token so select-thumbnail form will have it
     csrf_token_new = _get_csrf_cookie(request) or _gen_csrf_token()
     resp = templates.TemplateResponse(
         "manage/select_thumbnail.html",
@@ -341,7 +410,6 @@ async def upload_video(
     resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token_new, httponly=False, samesite="none", secure=True, path="/")
     return resp
 
-
 @router.post("/upload/select-thumbnail")
 @router.post("/upload/select-thumbnail/")
 @router.post("/upload/select_thumbnail")
@@ -356,7 +424,6 @@ async def select_thumbnail(
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
-    # CSRF protection
     if not _validate_csrf(request, csrf_token):
         raise HTTPException(status_code=403, detail="csrf_required")
 

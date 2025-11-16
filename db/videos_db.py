@@ -2,8 +2,6 @@ from typing import List, Optional
 
 import asyncpg
 
-from db.comments.root_db import delete_all_comments_for_video
-
 
 async def create_video(
     conn: asyncpg.Connection,
@@ -290,18 +288,12 @@ async def delete_video(
 ) -> bool:
     """
     Delete a video row (owned by owner_uid).
-    Also delete the associated comments tree (Mongo root + chunks) for this video.
-    Reuses a single shared helper (delete_all_comments_for_video) to avoid duplication.
+    NOTE: best-effort cleanup of external resources (comments, files, search index)
+    MUST be done by the caller in background to avoid blocking this call.
     """
     owned = await get_owned_video(conn, video_id, owner_uid)
     if not owned:
         return False
-
-    # Best-effort cleanup of comments tree; do not block SQL deletion
-    try:
-        await delete_all_comments_for_video(video_id)
-    except Exception:
-        pass
 
     res = await conn.execute(
         """
@@ -312,6 +304,7 @@ async def delete_video(
         owner_uid,
     )
     return res.endswith("1")
+
 
 async def get_video_min(
     conn,
