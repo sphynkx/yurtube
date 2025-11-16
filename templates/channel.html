@@ -1,63 +1,65 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Channel</h1>
+<link rel="stylesheet" href="/static/css/manage/account_layout.css">
 
-<div class="channel-header" style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
-  <div class="channel-id">
-    {% if owner['username'] %}@{{ owner['username']{% extends "base.html" %}
-{% block content %}
-<h1>Channel</h1>
+<div class="manage-comments-layout">
+  {% include "account/left.html" %}
 
-<div class="channel-header" style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
-  <div class="channel-id">
-    {% if owner['username'] %}@{{ owner['username'] }}{% else %}{{ owner['channel_id'] }}{% endif %}
-  </div>
-  <div class="subs-count">{{ subscribers }} subscribers</div>
-  <div>
-    {% if current_user and current_user['user_uid'] != owner['user_uid'] %}
-      {% if subscribed %}
-      <form action="/channel/unsubscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline;">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
-        <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
-        <button type="submit">Unsubscribe</button>
-      </form>
-      {% else %}
-      <form action="/channel/subscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline;">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
-        <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
-        <button type="submit">Subscribe</button>
-      </form>
-      {% endif %}
-    {% endif %}
-  </div>
-</div>
+  <main class="mc-main">
+    <h1>Channel</h1>
 
-<h2>Videos</h2>
-<div class="video-grid">
-  {% for v in videos %}
-  <div class="video-card">
-    <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
-      <img class="thumb-img thumb-still" src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
-      {% if v['thumb_anim_url'] %}
-      <img class="thumb-img thumb-anim" src="{{ v['thumb_anim_url'] }}" alt="{{ v['title'] }}">
-      {% endif %}
-    </a>
-    <div class="meta">
-      <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
-      <div class="author author-line">
-        <img class="mini-avatar" src="{{ v['author_avatar_url_small'] }}" alt="avatar"
-             onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
-        {% if v['username'] %}
-          <span><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></span>
-        {% else %}
-          <span><a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a></span>
+    <div class="channel-header" style="display:flex; align-items:center; gap:12px; margin-bottom:12px;">
+      <div class="channel-id">
+        {% if owner['username'] %}@{{ owner['username'] }}{% else %}{{ owner['channel_id'] }}{% endif %}
+      </div>
+      <div class="subs-count">{{ subscribers }} subscribers</div>
+      <div>
+        {% if current_user and current_user['user_uid'] != owner['user_uid'] %}
+          {% if subscribed %}
+          <form action="/channel/unsubscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+            <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
+            <button type="submit">Unsubscribe</button>
+          </form>
+          {% else %}
+          <form action="/channel/subscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+            <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
+            <button type="submit">Subscribe</button>
+          </form>
+          {% endif %}
         {% endif %}
       </div>
     </div>
-  </div>
-  {% endfor %}
-  {% if videos|length == 0 %}
-  <p>No videos yet.</p>
-  {% endif %}
+
+    <h2>Videos</h2>
+    <div class="video-grid">
+      {% for v in videos %}
+      <div class="video-card">
+        <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
+          <img class="thumb-img thumb-still" src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+          {% if v['thumb_anim_url'] %}
+          <img class="thumb-img thumb-anim" src="{{ v['thumb_anim_url'] }}" alt="{{ v['title'] }}">
+          {% endif %}
+        </a>
+        <div class="meta">
+          <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
+          <div class="author author-line">
+            <img class="mini-avatar" src="{{ v['author_avatar_url_small'] }}" alt="avatar"
+                 onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
+            {% if v['username'] %}
+              <span><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></span>
+            {% else %}
+              <span><a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a></span>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+      {% if videos|length == 0 %}
+      <p>No videos yet.</p>
+      {% endif %}
+    </div>
+  </main>
 </div>
 {% endblock %}

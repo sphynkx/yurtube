@@ -1,5 +1,10 @@
 {% extends "base.html" %}
 {% block content %}
+<link rel="stylesheet" href="/static/css/manage/account_layout.css">
+
+<div class="manage-comments-layout">
+  {% include "account/left.html" %}
+  <main class="mc-main">
 <h1>Subscriptions</h1>
 {% if need_login %}
 <p>Please <a href="/auth/login">log in</a> to see your subscriptions.</p>
@@ -29,4 +34,6 @@
   </ul>
   {% endif %}
 {% endif %}
+  </main>
+</div>
 {% endblock %}

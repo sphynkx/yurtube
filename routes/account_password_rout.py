@@ -139,6 +139,10 @@ async def password_form(request: Request) -> Any:
             "min_score": PASSWORD_MIN_SCORE,
             "zxcvbn": ZXCVBN_AVAILABLE,
             "csrf_token": csrf_token,
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -192,6 +196,10 @@ async def password_change(
                 "min_score": PASSWORD_MIN_SCORE,
                 "zxcvbn": ZXCVBN_AVAILABLE,
                 "csrf_token": csrf_out,
+                "brand_logo_url": settings.BRAND_LOGO_URL,
+                "brand_tagline": settings.BRAND_TAGLINE,
+                "favicon_url": settings.FAVICON_URL,
+                "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             },
             headers={"Cache-Control": "no-store"},
         )
@@ -227,6 +235,10 @@ async def password_change(
                     "min_score": PASSWORD_MIN_SCORE,
                     "zxcvbn": ZXCVBN_AVAILABLE,
                     "csrf_token": csrf_out,
+                    "brand_logo_url": settings.BRAND_LOGO_URL,
+                    "brand_tagline": settings.BRAND_TAGLINE,
+                    "favicon_url": settings.FAVICON_URL,
+                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
                 },
                 headers={"Cache-Control": "no-store"},
             )
@@ -253,6 +265,10 @@ async def password_change(
             "min_score": PASSWORD_MIN_SCORE,
             "zxcvbn": ZXCVBN_AVAILABLE,
             "csrf_token": csrf_out,
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
         },
         headers={"Cache-Control": "no-store"},
     )

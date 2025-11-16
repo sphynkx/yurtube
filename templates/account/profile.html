@@ -2,6 +2,10 @@
 {% block content %}
 <link rel="stylesheet" href="/static/css/manage/account_layout.css">
 
+<div class="manage-comments-layout">
+  {% include "account/left.html" %}
+
+  <main class="mc-main">
 <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
   <div style="flex:0 0 260px;">
     <h2>Avatar</h2>
@@ -90,5 +94,8 @@
       {% set has_twitter = false %}
     {% endif %}
   </div>
+</div>
+
+  </main>
 </div>
 {% endblock %}
