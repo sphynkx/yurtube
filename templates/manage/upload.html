@@ -17,7 +17,7 @@
     <div class="alert alert-error">{{ error }}</div>
     {% endif %}
 
-    <form id="upload-form" action="/upload?csrf_token={{ csrf_token }}" method="post" enctype="multipart/form-data" novalidate>
+    <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data" novalidate>
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <div>
         <label>File</label>

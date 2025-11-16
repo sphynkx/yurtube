@@ -1,50 +1,121 @@
-# Prevent double submission, ASCII only.
-from browser import document, console, window
+from browser import document, window, html
 
-console.log("[brython] upload.bry loaded")
+def _get_cookie(name):
+    try:
+        parts = document.cookie.split(";")
+        for p in parts:
+            s = p.strip()
+            if not s:
+                continue
+            if s.startswith(name + "="):
+                return s[len(name)+1:]
+    except Exception:
+        pass
+    return ""
 
-# Bind only once across duplicate script executions
-if not hasattr(window, "yt_upload_bound"):
-    window.yt_upload_bound = False
+def _text(el_id, msg):
+    el = document.getElementById(el_id)
+    if el is not None:
+        el.textContent = msg
 
+def _disable_submit(disabled: bool):
+    btn = document.getElementById("upload-submit")
+    if btn is not None:
+        try:
+            btn.disabled = bool(disabled)
+        except Exception:
+            pass
 
 def on_submit(ev):
-    form = document.getElementById("upload-form")
-    btn = document.getElementById("upload-submit")
-    status = document.getElementById("upload-status")
+    try:
+        ev.preventDefault()
+    except Exception:
+        pass
 
+    form = document.getElementById("upload-form")
     if form is None:
-        console.log("[brython] upload: form not found")
         return
 
-    # If already submitted, do nothing but DO NOT preventDefault
-    if form.attrs.get("data-submitted") == "1":
-        console.log("[brython] upload: repeated submit observed, ignoring")
+    try:
+        fd = window.FormData.new(form)
+    except Exception:
+        _text("upload-status", "Cannot build FormData")
         return
 
-    form.attrs["data-submitted"] = "1"
+    csrf = _get_cookie("yt_csrf")
+    if not csrf:
+        try:
+            h = form.querySelector('input[name="csrf_token"]')
+            if h and h.value:
+                csrf = h.value
+        except Exception:
+            pass
 
-    if btn is not None:
-        btn.disabled = True
-        btn.textContent = "Uploading..."
+    _disable_submit(True)
+    _text("upload-status", "Uploading...")
 
-    if status is not None:
-        status.textContent = "Please wait, uploading and processing..."
+    try:
+        js_headers = window.Object.new()
+        if csrf:
+            js_headers["X-CSRF-Token"] = csrf
 
-    console.log("[brython] upload: submit handler ran")
+        window.fetch(
+            "/upload",
+            {
+                "method": "POST",
+                "headers": js_headers,
+                "body": fd,
+            }
+        ).then(
+            lambda resp: resp.text().then(lambda body: _handle_response(resp, body))
+        ).catch(
+            lambda err: _on_error(err)
+        )
+    except Exception as e:
+        _text("upload-status", "Fetch error")
+        _disable_submit(False)
 
+def _handle_response(resp, body):
+    try:
+        if resp.status == 302 or resp.redirected:
+            window.location.href = resp.url
+            return
+        ct = resp.headers.get("Content-Type") or resp.headers.get("content-type") or ""
+        if "application/json" in ct:
+            try:
+                data = window.JSON.parse(body)
+                if data and data.get("error"):
+                    _text("upload-status", f"Error: {data.get('error')}")
+                else:
+                    _text("upload-status", "Unexpected JSON")
+            except Exception:
+                _text("upload-status", f"HTTP {resp.status}")
+            _disable_submit(False)
+            return
+        if resp.status >= 200 and resp.status < 400:
+            document.open()
+            document.write(body)
+            document.close()
+        else:
+            _text("upload-status", f"HTTP {resp.status}")
+            _disable_submit(False)
+    except Exception:
+        _text("upload-status", "Response error")
+        _disable_submit(False)
 
-def bind_once():
-    if window.yt_upload_bound:
-        console.log("[brython] upload: already bound, skip")
-        return
-    form = document.getElementById("upload-form")
-    if form is not None:
-        form.bind("submit", on_submit)
-        window.yt_upload_bound = True
-        console.log("[brython] upload: bound submit")
-    else:
-        console.log("[brython] upload: no form, nothing to bind")
+def _on_error(err):
+    _text("upload-status", "Network error")
+    _disable_submit(False)
 
+def _bind():
+    try:
+        form = document.getElementById("upload-form")
+        if form is not None:
+            form.addEventListener("submit", on_submit)
+    except Exception:
+        pass
 
-bind_once()
+try:
+    _bind()
+except Exception:
+    pass

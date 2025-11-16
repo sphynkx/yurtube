@@ -7,8 +7,8 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from config.config import settings
 from routes import register_routes
-from middlewares import install_middlewares
-from middlewares.csrf_mw import CSRFMiddleware
+##from middlewares import install_middlewares ## DEPRECATED temp. leave while we move to new middleware
+from middlewares.csrf_mw import NewCSRFMiddleware
 
 # Toggle built-in API docs
 docs_url    = "/docs" if settings.API_DOCS_ENABLED else None
@@ -23,7 +23,7 @@ app = FastAPI(
     openapi_url=openapi_url,
 )
 
-app.add_middleware(CSRFMiddleware, cookie_name=getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"))
+app.add_middleware(NewCSRFMiddleware, cookie_name=getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"))
 
 # Static and storage mounts
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -37,7 +37,8 @@ app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
 # Optional middlewares (CSRF, 404 redirect) installed by flags in settings
-install_middlewares(app, settings)
+## DEPRECATED - old, for GET 
+#install_middlewares(app, settings)
 
 # Register routes
 register_routes(app)

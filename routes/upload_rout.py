@@ -5,7 +5,6 @@ import subprocess
 import asyncio
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -34,19 +33,47 @@ from utils.idgen_ut import gen_id
 from utils.path_ut import build_video_storage_dir
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
-from db.comments.root_db import delete_all_comments_for_video
+from db.comments.root_db import delete_all_comments_for_video  # best-effort
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
+# ---------- CSRF (multipart route-level) ----------
 
-def _csrf_cookie_name() -> str:
+def _cookie_name() -> str:
     return getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf")
 
-def _csrf_from_cookie(request: Request) -> str:
-    return (request.cookies.get(_csrf_cookie_name()) or "").strip()
+def _csrf_cookie(request: Request) -> str:
+    return (request.cookies.get(_cookie_name()) or "").strip()
 
+def _same_origin(request: Request) -> bool:
+    origin = (request.headers.get("origin") or request.headers.get("referer") or "").strip()
+    if not origin:
+        return False
+    try:
+        from urllib.parse import urlparse
+        o = urlparse(origin)
+        host_hdr = request.headers.get("host") or ""
+        scheme = request.url.scheme
+        return f"{scheme}://{host_hdr}".lower() == f"{o.scheme}://{o.netloc}".lower()
+    except Exception:
+        return False
 
+def _validate_csrf_multipart(request: Request, supplied_token: str) -> bool:
+    cookie_tok = _csrf_cookie(request)
+    header_tok = (request.headers.get("X-CSRF-Token") or request.headers.get("x-csrf-token") or "").strip()
+    qs_tok = (request.query_params.get("csrf_token") or "").strip()
+    form_tok = (supplied_token or "").strip()
+    token = form_tok or header_tok or qs_tok
+    if not cookie_tok or not token:
+        return False
+    try:
+        import secrets as _sec
+        return _sec.compare_digest(cookie_tok, token)
+    except Exception:
+        return False
+
+# ---------- Helpers ----------
 
 def _fallback_title(file: UploadFile) -> str:
     base = (file.filename or "").strip()
@@ -59,7 +86,10 @@ def _fallback_title(file: UploadFile) -> str:
 def _bg_rm_rf(path: str) -> None:
     try:
         cmd = f'nohup rm -rf -- "{path}" >/dev/null 2>&1 &'
-        subprocess.Popen(["/bin/sh", "-c", cmd], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+        subprocess.Popen(["/bin/sh", "-c", cmd],
+                         stdout=subprocess.DEVNULL,
+                         stderr=subprocess.DEVNULL,
+                         close_fds=True)
     except Exception:
         pass
 
@@ -92,18 +122,10 @@ def _bg_cleanup_after_delete_sync(storage_root: str, storage_rel: str, video_id:
             _bg_rm_rf(deleting_path)
     except Exception:
         pass
+    _bg_delete_index(video_id)
+    _bg_delete_comments(video_id, timeout_sec=5.0)
 
-    try:
-        _bg_delete_index(video_id)
-    except Exception:
-        pass
-
-    try:
-        _bg_delete_comments(video_id, timeout_sec=5.0)
-    except Exception:
-        pass
-
-# ---------------- Manage ----------------
+# ---------- Manage ----------
 
 @router.get("/manage", response_class=HTMLResponse)
 async def manage_home(request: Request) -> Any:
@@ -125,7 +147,7 @@ async def manage_home(request: Request) -> Any:
         d["thumb_url"] = build_storage_url(tap) if tap else None
         videos.append(d)
 
-    csrf_token = _csrf_from_cookie(request)
+    csrf_token = _csrf_cookie(request)
 
     return templates.TemplateResponse(
         "manage/my_videos.html",
@@ -153,6 +175,9 @@ async def manage_delete(
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
+
+    if not _validate_csrf_multipart(request, csrf_token):
+        return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
 
     conn = await get_conn()
     try:
@@ -182,7 +207,7 @@ async def manage_delete(
 
     return RedirectResponse("/manage", status_code=302)
 
-# ---------------- Upload + thumbnails flow ----------------
+# ---------- Upload ----------
 
 @router.get("/upload", response_class=HTMLResponse)
 async def upload_page(request: Request) -> Any:
@@ -196,7 +221,7 @@ async def upload_page(request: Request) -> Any:
     finally:
         await release_conn(conn)
 
-    csrf_token = _csrf_from_cookie(request)
+    csrf_token = _csrf_cookie(request)
 
     return templates.TemplateResponse(
         "manage/upload.html",
@@ -229,6 +254,9 @@ async def upload_video(
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
+    if not _validate_csrf_multipart(request, csrf_token):
+        return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
+
     if status not in ("public", "private", "unlisted"):
         raise HTTPException(status_code=400, detail="Invalid status")
 
@@ -259,7 +287,7 @@ async def upload_video(
                     "categories": cats,
                     "error": "Selected category does not exist.",
                     "form": form_data,
-                    "csrf_token": _csrf_from_cookie(request),
+                    "csrf_token": _csrf_cookie(request),
                 },
                 status_code=400,
                 headers={"Cache-Control": "no-store"},
@@ -311,7 +339,6 @@ async def upload_video(
         if selected_rel:
             await upsert_video_asset(conn, video_id, "thumbnail_default", selected_rel)
 
-        # Animated preview: 3 seconds
         anim_abs = os.path.join(thumbs_dir, "thumb_anim.webp")
         start_sec = offsets[0] if offsets else 1
         ok_anim = await async_generate_animated_preview(
@@ -337,7 +364,9 @@ async def upload_video(
     except Exception:
         pass
 
-    return templates.TemplateResponse(
+    cookie_tok = _csrf_cookie(request)
+    context_token = cookie_tok
+    resp = templates.TemplateResponse(
         "manage/select_thumbnail.html",
         {
             "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -348,26 +377,81 @@ async def upload_video(
             "current_user": user,
             "video_id": video_id,
             "candidates": candidates,
-            "csrf_token": _csrf_from_cookie(request),
+            "csrf_token": context_token,
+            # mark tonen for debug (2DEL):
+            "_csrf_debug": f"<!-- CSRF cookie={cookie_tok} form={context_token} -->",
         },
         headers={"Cache-Control": "no-store"},
     )
+    return resp
 
 @router.post("/upload/select-thumbnail")
 @router.post("/upload/select-thumbnail/")
 @router.post("/upload/select_thumbnail")
 @router.post("/upload/select_thumbnail/")
-async def select_thumbnail(
-    request: Request,
-    video_id: str = Form(...),
-    selected_rel: str = Form(...),
-    csrf_token: Optional[str] = Form(None),
-) -> Any:
+async def select_thumbnail(request: Request) -> Any:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
-    sel = (selected_rel or "").strip()
+    ctype = (request.headers.get("content-type") or "").lower()
+    form_csrf = ""
+    form_video_id: Optional[str] = None
+    form_selected_rel: Optional[str] = None
+
+    raw_len = 0
+    try:
+        raw = await request.body()
+        raw_len = len(raw or b"")
+    except Exception:
+        raw = b""
+
+    if "application/x-www-form-urlencoded" in ctype:
+        # w/o starlette
+        try:
+            from urllib.parse import parse_qs
+            parsed = parse_qs(raw.decode("utf-8", "ignore"), keep_blank_values=True)
+            form_csrf = (parsed.get("csrf_token", [""])[0] or "").strip()
+            form_video_id = (parsed.get("video_id", [""])[0] or "").strip() or None
+            form_selected_rel = (parsed.get("selected_rel", [""])[0] or "").strip() or None
+        except Exception:
+            form_csrf = ""
+            form_video_id = None
+            form_selected_rel = None
+    elif "multipart/form-data" in ctype:
+        try:
+            data = await request.form()
+            form_csrf = (data.get("csrf_token") or "").strip()
+            form_video_id = (data.get("video_id") or "").strip() or None
+            form_selected_rel = (data.get("selected_rel") or "").strip() or None
+        except Exception:
+            pass
+
+    # Fallback from query (temp)
+    qp = request.query_params
+    if not form_video_id:
+        qv = qp.get("video_id")
+        if qv:
+            form_video_id = qv.strip() or None
+    if not form_selected_rel:
+        qsr = qp.get("selected_rel")
+        if qsr:
+            form_selected_rel = qsr.strip() or None
+    if not form_csrf:
+        qct = qp.get("csrf_token")
+        if qct:
+            form_csrf = qct.strip()
+
+    # DEBUG
+    print(f"[THUMB POST] ctype={ctype} raw_len={raw_len} cookie={_csrf_cookie(request)!r} form_csrf={form_csrf!r} video_id={form_video_id!r} selected_rel={form_selected_rel!r}")
+
+    if not _validate_csrf_multipart(request, form_csrf):
+        return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
+
+    if not form_video_id or not form_selected_rel:
+        return JSONResponse({"ok": False, "error": "missing_fields"}, status_code=400)
+
+    sel = form_selected_rel
     if sel.startswith("http://") or sel.startswith("https://"):
         idx = sel.find("/storage/")
         if idx >= 0:
@@ -376,7 +460,7 @@ async def select_thumbnail(
 
     conn = await get_conn()
     try:
-        owned = await get_owned_video(conn, video_id, user["user_uid"])
+        owned = await get_owned_video(conn, form_video_id, user["user_uid"])
         if not owned:
             raise HTTPException(status_code=404, detail="Video not found")
 
@@ -390,7 +474,7 @@ async def select_thumbnail(
         if not os.path.isfile(abs_path):
             raise HTTPException(status_code=400, detail="Thumbnail not found on disk")
 
-        await upsert_video_asset(conn, video_id, "thumbnail_default", sel)
+        await upsert_video_asset(conn, form_video_id, "thumbnail_default", sel)
     finally:
         await release_conn(conn)
 
