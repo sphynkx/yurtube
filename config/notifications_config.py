@@ -16,8 +16,8 @@ class NotificationsConfig:
     RESULT_BACKEND: str = os.getenv("CELERY_RESULT_BACKEND", "")
 
     # Aggregation windows
-    LIKES_BATCH_WINDOW_SEC: int = int(os.getenv("LIKES_BATCH_WINDOW_SEC", "30"))  # было 300
-    VIDEO_LIKES_BATCH_WINDOW_SEC: int = 0  # выставим ниже в __post_init__
+    LIKES_BATCH_WINDOW_SEC: int = int(os.getenv("LIKES_BATCH_WINDOW_SEC", "30"))  # was 300
+    VIDEO_LIKES_BATCH_WINDOW_SEC: int = 0
 
     ALLOW_UNLISTED_SUBS_NOTIFICATIONS: bool = True
     MAX_PAYLOAD_PREVIEW_LEN: int = 160
