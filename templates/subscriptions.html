@@ -24,8 +24,8 @@
           <a href="/c/{{ c['channel_id'] }}">{{ c['channel_id'] }}</a>
         {% endif %}
       </div>
-      <form action="/channel/unsubscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="margin:0;">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+      <form action="/channel/unsubscribe" method="post" style="margin:0;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="channel_uid" value="{{ c['user_uid'] }}">
         <button type="submit">Unsubscribe</button>
       </form>

@@ -16,14 +16,14 @@
       <div>
         {% if current_user and current_user['user_uid'] != owner['user_uid'] %}
           {% if subscribed %}
-          <form action="/channel/unsubscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline;">
-            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+          <form action="/channel/unsubscribe" method="post" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
             <button type="submit">Unsubscribe</button>
           </form>
           {% else %}
-          <form action="/channel/subscribe?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="display:inline;">
-            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+          <form action="/channel/subscribe" method="post" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <input type="hidden" name="channel_uid" value="{{ owner['user_uid'] }}">
             <button type="submit">Subscribe</button>
           </form>

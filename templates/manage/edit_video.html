@@ -36,8 +36,8 @@
 
     <section style="margin-bottom:16px;">
       <h2>Meta</h2>
-      <form action="/manage/edit/meta?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+      <form action="/manage/edit/meta" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
         <div><label>Title<br><input type="text" name="title" value="{{ v.get('title','') }}" style="width:100%;"></label></div>
         <div><label>Description<br><textarea name="description" rows="5" style="width:100%;">{{ v.get('description','') }}</textarea></label></div>
@@ -85,8 +85,8 @@
         </div>
       {% endif %}
 
-      <form id="form_regen" action="/manage/edit/thumb/regen?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="margin-bottom:8px;">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+      <form id="form_regen" action="/manage/edit/thumb/regen" method="post" style="margin-bottom:8px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
         <label>Offset, sec
           <input type="number" id="offset_sec" name="offset_sec" value="{{ v.get('thumb_pref_offset', 0) }}" min="0" step="1" style="width:100px;">
@@ -96,8 +96,8 @@
         <button type="submit" id="btn_regen" style="margin-left:12px;">Re-generate</button>
       </form>
 
-      <form action="/manage/edit/thumb/upload?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" enctype="multipart/form-data">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+      <form action="/manage/edit/thumb/upload" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
         <div>
           <label>Upload static JPG <input type="file" name="thumb_static" accept=".jpg,.jpeg,image/jpeg"></label>
@@ -113,8 +113,8 @@
 
     <section style="margin-bottom:16px;">
       <h2>Renditions</h2>
-      <form action="/manage/edit/renditions?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+      <form action="/manage/edit/renditions" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
         <input type="hidden" name="presets" id="presets-input" value="">
         <label>Codec
@@ -156,8 +156,8 @@
 
     <section style="margin-bottom:16px;">
       <h2>Embed</h2>
-      <form action="/manage/edit/embed?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+      <form action="/manage/edit/embed" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
         <label><input type="checkbox" name="allow_embed" {{ 'checked' if v.get('allow_embed', True) else '' }}> Allow embed</label>
         <div style="margin-top:6px;">

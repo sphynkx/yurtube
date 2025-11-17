@@ -9,8 +9,8 @@
 {% if need_login %}
 <p>Please <a href="/auth/login">log in</a> to see your history.</p>
 {% else %}
-  <form action="/history/clear?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="margin:8px 0;">
-    <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+  <form action="/history/clear" method="post" style="margin:8px 0;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <button type="submit">Clear all</button>
   </form>
   {% if videos|length == 0 %}
@@ -42,8 +42,8 @@
           {% endif %}
         </div>
       </div>
-      <form action="/history/remove?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="margin:0;">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+      <form action="/history/remove" method="post" style="margin:0;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
         <button type="submit">Remove</button>
       </form>
