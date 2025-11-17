@@ -1,4 +1,4 @@
-[YurTube](https://yurtube.sphynkx.org.ua/) is a self‑hosted video hosting engine written in Python and built on FastAPI, PostgreSQL, MongoDB, Redis+Celery and ffmpeg. UX is inspired by [Youtube service](https://www.youtube.com/) and [ClipBucket engine](https://github.com/sphynkx/clipbucket-v5), with a modular design that runs cleanly on a single host or scales out by moving services to external nodes via configuration.
+[YurTube](https://yurtube.sphynkx.org.ua/) is a self‑hosted video hosting engine written in Python and built on FastAPI, PostgreSQL, MongoDB, Redis+Celery, Manticore, ffmpeg etc. UX is inspired by [Youtube service](https://www.youtube.com/) and [ClipBucket engine](https://github.com/sphynkx/clipbucket-v5), with a modular design that runs cleanly on a single host or scales out by moving services to external nodes via configuration.
 
 Highlights
 * Accounts and authentication: local sign‑in and SSO (Google, X)
