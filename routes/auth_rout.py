@@ -67,7 +67,8 @@ async def login_page(request: Request) -> Any:
         "favicon_url": settings.FAVICON_URL,
         "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
         "request": request,
-        "current_user": None
+        "current_user": None,
+        "csrf_token": csrf_token,
     })
     if not _get_csrf_cookie(request):
         resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, secure=True, samesite="lax", path="/")
@@ -100,6 +101,7 @@ async def login(
                 "request": request,
                 "current_user": None,
                 "error": "Invalid username or password",
+                "csrf_token": csrf_token,
             },
             status_code=status.HTTP_400_BAD_REQUEST,
         )
@@ -131,7 +133,8 @@ async def register_page(request: Request) -> Any:
         "favicon_url": settings.FAVICON_URL,
         "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
         "request": request,
-        "current_user": None
+        "current_user": None,
+        "csrf_token": csrf_token,
     })
     if not _get_csrf_cookie(request):
         resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, secure=True, samesite="lax", path="/")
@@ -163,6 +166,7 @@ async def register(
                     "current_user": None,
                     "error": "Username already taken",
                     "form": {"username": username, "email": email},
+                    "csrf_token": csrf_token,
                 },
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
@@ -180,6 +184,7 @@ async def register(
                     "current_user": None,
                     "error": "Email is already registered",
                     "form": {"username": username, "email": email},
+                    "csrf_token": csrf_token,
                 },
                 status_code=status.HTTP_400_BAD_REQUEST,
             )
@@ -207,6 +212,7 @@ async def register(
                     "current_user": None,
                     "error": "Username or email is already registered",
                     "form": {"username": username, "email": email},
+                    "csrf_token": csrf_token,
                 },
                 status_code=status.HTTP_400_BAD_REQUEST,
             )

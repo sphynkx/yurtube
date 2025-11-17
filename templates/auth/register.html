@@ -74,9 +74,9 @@
 
 <div class="auth-grid">
   <form class="reg-form"
-        action="/auth/register?csrf_token={{ csrf_token or request.cookies.get('yt_csrf') or '' }}"
+        action="/auth/register"
         method="post" novalidate>
-    <input type="hidden" name="csrf_token" value="{{ csrf_token or request.cookies.get('yt_csrf') or '' }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="reg-row">
       <label for="reg-username">Username</label>
       <input id="reg-username" class="reg-input" type="text" name="username" required autocomplete="username"

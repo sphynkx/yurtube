@@ -80,8 +80,8 @@
 </style>
 
 <div class="auth-grid">
-  <form class="auth-form" action="/auth/login?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" novalidate>
-    <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+  <form class="auth-form" action="/auth/login" method="post" novalidate>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <div class="auth-row">
       <label class="auth-label" for="login-username">Username</label>
       <input id="login-username" class="text-input" type="text" name="username" required autocomplete="username">

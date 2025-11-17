@@ -17,16 +17,16 @@
         <img src="/static/img/avatar_default.svg" alt="avatar" style="width:128px;height:128px;">
       {% endif %}
     </div>
-    <form action="/account/profile?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" enctype="multipart/form-data" style="margin-bottom:12px;">
-      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+    <form action="/account/profile" method="post" enctype="multipart/form-data" style="margin-bottom:12px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="file" name="avatar" accept="image/*" required>
       <div style="margin-top:8px;">
         <button type="submit">Upload avatar</button>
       </div>
     </form>
     {% if avatar_url %}
-    <form action="/account/avatar/delete?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" onsubmit="return confirm('Delete avatar?');">
-      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+    <form action="/account/avatar/delete" method="post" onsubmit="return confirm('Delete avatar?');">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <button type="submit">Delete avatar</button>
     </form>
     {% endif %}
@@ -83,9 +83,9 @@
       {% set current_authp = request.cookies.get('yt_authp') %}
 
       {% if has_google and current_authp == 'google' %}
-      <form action="/account/sso/google/unlink?csrf_token={{ request.cookies.get('yt_csrf') or '' }}" method="post" style="margin-top:12px;"
+      <form action="/account/sso/google/unlink" method="post" style="margin-top:12px;"
             onsubmit="return confirm('Unlink Google account?');">
-        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('yt_csrf') or '' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button type="submit">Unlink Google</button>
       </form>
       {% endif %}
