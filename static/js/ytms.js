@@ -22,18 +22,13 @@
     .then(data => {
       console.log("[YTMS CLIENT] process response:", data);
       const jobId = data.job_id || data.job || data.id;
-      const hasSuccessFlag = data.ok === true;
-      const looksLikeSuccess = hasSuccessFlag || !!jobId;
+      const looksLikeSuccess = data.ok === true || !!jobId;
 
       if(!looksLikeSuccess){
         setText(statusEl, "Error: " + (data.error || "unknown"));
         return;
       }
-      if(!jobId){
-        setText(statusEl, "Started (job id not provided)");
-      } else {
-        setText(statusEl, "Job started: " + jobId);
-      }
+      setText(statusEl, "Job started...");
       pollLocalStatus(videoId);
     })
     .catch(err => {
@@ -51,7 +46,7 @@
         console.log("[YTMS CLIENT] status:", j);
         if(j.ok && j.ready){
           setText(statusEl, "Ready. VTT: " + (j.vtt_path || ""));
-          setTimeout(()=> location.reload(), 800);
+          setTimeout(()=> location.reload(), 600);
           return;
         }
         setText(statusEl, "Status: waiting...");
@@ -64,5 +59,4 @@
     }
     tick();
   }
-
 })();

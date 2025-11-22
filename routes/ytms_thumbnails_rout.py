@@ -19,6 +19,8 @@ from config.ytms_config import (
 from config.config import settings
 from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset
+from db.assets_db import get_video_sprite_assets
+from db.assets_db import get_thumbs_vtt_asset  # NEW
 from db.ytms_db import (
     fetch_video_storage_path,
     mark_thumbnails_ready,
@@ -34,15 +36,19 @@ from utils.url_ut import build_storage_url
 router = APIRouter(tags=["ytms"])
 templates = Jinja2Templates(directory="templates")
 
+
 def _csrf_cookie_name() -> str:
     return getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf")
+
 
 def _get_csrf_cookie(request: Request) -> str:
     return (request.cookies.get(_csrf_cookie_name()) or "").strip()
 
+
 def _gen_csrf_token() -> str:
     import secrets
     return secrets.token_urlsafe(32)
+
 
 def _ensure_csrf_cookie(request: Request, response) -> None:
     if not _get_csrf_cookie(request):
@@ -51,6 +57,7 @@ def _ensure_csrf_cookie(request: Request, response) -> None:
             _csrf_cookie_name(), tok,
             httponly=False, secure=True, samesite="lax", path="/"
         )
+
 
 def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
     cookie_tok = _get_csrf_cookie(request)
@@ -63,8 +70,10 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
     except Exception:
         return False
 
+
 def _hmac_sha256_hex(secret: str, body: bytes) -> str:
     return hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
+
 
 def _fs_to_web_path(abs_path: str) -> str:
     root_norm = STORAGE_FS_ROOT.rstrip("/")
@@ -74,6 +83,7 @@ def _fs_to_web_path(abs_path: str) -> str:
             rel = "/" + rel
         return STORAGE_WEB_PREFIX.rstrip("/") + rel
     return abs_path
+
 
 @router.get("/manage/video/{video_id}/media", response_class=HTMLResponse)
 async def video_media_page(request: Request, video_id: str) -> Any:
@@ -88,11 +98,19 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             raise HTTPException(status_code=404, detail="Video not found")
         thumb_rel = owned.get("thumb_asset_path")
         thumb_url = build_storage_url(thumb_rel) if thumb_rel else None
+
+        sprite_paths_rel = await get_video_sprite_assets(conn, video_id)
+        sprite_urls = [build_storage_url(p) for p in sprite_paths_rel]
+
+        vtt_rel = await get_thumbs_vtt_asset(conn, video_id)
+        thumbs_vtt_url = build_storage_url(vtt_rel) if vtt_rel else None
+
         assets = {
             "thumb_asset_path": thumb_rel,
             "thumb_url": thumb_url,
             "captions_vtt": owned.get("captions_vtt"),
-            "thumbs_vtt": owned.get("thumbs_vtt"),
+            "thumbs_vtt": thumbs_vtt_url,
+            "sprites": sprite_urls,
         }
     finally:
         await release_conn(conn)
@@ -152,10 +170,8 @@ async def start_media_process(
     finally:
         await release_conn(conn)
 
-    # 2DEL - debug ytms
     print("[YTMS PROCESS RESPONSE]", job)
 
-    # Normalize response - if ok isnt present but present  job_id/job/id assume as success
     if "ok" not in job:
         if any(k in job for k in ("job_id", "job", "id")):
             job["ok"] = True
@@ -167,7 +183,6 @@ async def start_media_process(
 
 @router.get("/manage/ytms/status/{job_id}")
 async def media_job_status(job_id: str) -> Any:
-    # todo
     base_url = YTMS_BASE_URL.rstrip("/")
     if not base_url:
         return JSONResponse({"ok": False, "error": "ytms_not_configured"}, status_code=500)
@@ -181,6 +196,7 @@ async def media_job_status(job_id: str) -> Any:
         except Exception as e:
             return JSONResponse({"ok": False, "error": "ytms_unreachable", "detail": str(e)}, status_code=502)
 
+
 @router.post("/manage/ytms/fetch_result")
 async def media_fetch_result(
     request: Request,
@@ -188,8 +204,8 @@ async def media_fetch_result(
     video_id: str = Form(...),
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
-    # todo
     return JSONResponse({"ok": False, "error": "not_implemented"}, status_code=501)
+
 
 @router.post("/internal/ytms/thumbnails/callback")
 async def ytms_thumbnails_callback(request: Request):
@@ -216,25 +232,44 @@ async def ytms_thumbnails_callback(request: Request):
     if not vtt_rel_path:
         raise HTTPException(status_code=400, detail="missing_vtt_path")
 
+    sprites_payload = payload.get("sprites") or []
+
     conn = await get_conn()
     try:
         storage_base = await fetch_video_storage_path(conn, video_id)
         if not storage_base:
             raise HTTPException(status_code=404, detail="storage_path_not_found")
 
-        abs_root = getattr(settings, "STORAGE_ROOT", STORAGE_FS_ROOT)
-        vtt_abs = os.path.normpath(os.path.join(abs_root, storage_base, vtt_rel_path))
-        vtt_web = _fs_to_web_path(vtt_abs)
-        await upsert_video_asset(conn, video_id, "thumbs_vtt", vtt_web)
+        rel_vtt = os.path.join(storage_base, vtt_rel_path)
+        vtt_url = build_storage_url(rel_vtt)
+        await upsert_video_asset(conn, video_id, "thumbs_vtt", rel_vtt)
+
+        saved_sprites: List[str] = []
+        for sp in sprites_payload:
+            rel = sp.get("path")
+            idx = sp.get("index")
+            if rel is None or idx is None:
+                continue
+            rel_sprite = os.path.join(storage_base, rel)
+            sprite_url = build_storage_url(rel_sprite)
+            await upsert_video_asset(conn, video_id, f"sprite:{idx}", rel_sprite)
+            saved_sprites.append(sprite_url)
 
         try:
             await mark_thumbnails_ready(conn, video_id)
         except Exception:
             pass
 
-        return {"ok": True, "status": status, "asset_type": "thumbs_vtt", "path": vtt_web}
+        return {
+            "ok": True,
+            "status": status,
+            "asset_type": "thumbs_vtt",
+            "path": vtt_url,
+            "sprites": saved_sprites,
+        }
     finally:
         await release_conn(conn)
+
 
 @router.post("/internal/ytms/thumbnails/retry")
 async def ytms_thumbnails_retry(video_id: str):
@@ -259,20 +294,33 @@ async def ytms_thumbnails_retry(video_id: str):
     )
     return {"ok": True, "job": job}
 
+
 @router.get("/internal/ytms/thumbnails/status")
 async def ytms_thumbnails_status(video_id: str):
     conn = await get_conn()
     try:
         asset_path = await get_thumbnails_asset_path(conn, video_id)
         ready_flag = await get_thumbnails_flag(conn, video_id)
+        vtt_url = None
+        if asset_path:
+            if asset_path.startswith("/var/www/"):
+                root_norm = getattr(settings, "STORAGE_ROOT", STORAGE_FS_ROOT).rstrip("/") + "/"
+                if asset_path.startswith(root_norm):
+                    rel_part = asset_path[len(root_norm):]
+                    vtt_url = build_storage_url(rel_part)
+                else:
+                    vtt_url = asset_path
+            else:
+                vtt_url = build_storage_url(asset_path)
         return {
             "ok": True,
             "video_id": video_id,
             "ready": bool(ready_flag),
-            "vtt_path": asset_path,
+            "vtt_path": vtt_url,
         }
     finally:
         await release_conn(conn)
+
 
 @router.post("/internal/ytms/thumbnails/backfill")
 async def ytms_thumbnails_backfill(limit: int = 50):
