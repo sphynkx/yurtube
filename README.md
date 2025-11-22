@@ -3,7 +3,7 @@
 Highlights
 * Accounts and authentication: local sign‑in and SSO (Google, X)
 * Two video players: a custom YouTube‑style player and a simple HTML5 player
-* Uploading and editing videos with automatic thumbnails and animated previews
+* Uploading and editing videos with automatic thumbnails, animated previews and sprites generation
 * Watch and embed videos
 * Search powered by [Manticore](https://manticoresearch.com/) and PostgreSQL FTS
 * Comments with like/dislike and persistent user votes
@@ -14,7 +14,7 @@ Application is WIP now. Available base functional:
 * Register and authentification - local and SSO (Gmail, X)
 * Two video players - custom (fully inspired by Youtube's one) and simple standard.
 * View and embed videos
-* Upload and edit videos, generation of animated previews.
+* Upload and edit videos, generation of animated previews and sprites.
 * Two Search engines (Manticore and Postgres FTS)
 * Comments
 * Notifications system
