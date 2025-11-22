@@ -272,7 +272,17 @@ async def ytms_thumbnails_callback(request: Request):
 
 
 @router.post("/internal/ytms/thumbnails/retry")
-async def ytms_thumbnails_retry(video_id: str):
+async def ytms_thumbnails_retry(
+    request: Request,
+    video_id: str = Form(...),
+    csrf_token: Optional[str] = Form(None)
+):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login_required")
+    if not _validate_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="csrf_required")
+
     conn = await get_conn()
     try:
         storage_base = await fetch_video_storage_path(conn, video_id, ensure_ready=True)

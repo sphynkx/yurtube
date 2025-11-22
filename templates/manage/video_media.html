@@ -45,11 +45,25 @@
             action="/manage/video/{{ video_id }}/media/process"
             method="post"
             data-video-id="{{ video_id }}"
-            novalidate>
+            novalidate
+            style="margin-bottom:12px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <button id="ytms-start" type="submit">Generate sprites & subtitles</button>
         <span id="ytms-status" style="margin-left:12px; font-size:13px;"></span>
       </form>
+
+      {% if assets.thumbs_vtt %}
+      <form id="ytms-retry-form"
+            action="/internal/ytms/thumbnails/retry"
+            method="post"
+            data-video-id="{{ video_id }}"
+            style="margin-bottom:4px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="video_id" value="{{ video_id }}">
+        <button id="ytms-retry" type="submit">Regenerate thumbnails</button>
+        <span id="ytms-retry-status" style="margin-left:12px; font-size:13px;"></span>
+      </form>
+      {% endif %}
       <div id="ytms-result" style="margin-top:16px; font-size:13px;"></div>
     </section>
 
