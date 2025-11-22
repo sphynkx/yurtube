@@ -59,7 +59,7 @@
   function canLS(){ try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); return true; } catch(e){ return false; } }
   function load(key, def){ if (!canLS()) return def; try{ var s=localStorage.getItem(STORE+key); return s? JSON.parse(s): def; }catch(_){ return def; } }
   function save(key, val){ if (!canLS()) return; try{ localStorage.setItem(STORE+key, JSON.stringify(val)); }catch(_){} }
-  function throttle(fn, ms){ var t=0, pend=false, lastArgs=null; return function(){ lastArgs=arguments; var now=Date.now(); if(!t || now-t>=ms){ t=now; fn.apply(null,lastArgs); } else if(!pend){ pend=true; setTimeout(function(){ pend=false; t=Date.now(); fn.apply(null,lastArgs); }, ms-(now-t)); } }; }
+  function throttle(fn, ms){ var t=0, pend=false, lastArgs=null; return function(){ lastArgs=arguments; var now=Date.now(); if(!t || now-t>=ms){ t=now; fn.apply(null,lastArgs); } else if(!pend){ pend=true; setTimeout(function(){ pend=false; fn.apply(null,lastArgs); }, ms-(now-t)); } } }
 
   // ---------- fallback guards ----------
   var FALLBACK_SRC = "/static/img/fallback_video_notfound.webm";
@@ -108,6 +108,7 @@
     var vid = host.getAttribute("data-video-id") || "";
     var subs = parseJSONAttr(host, "data-subtitles", []);
     var opts = parseJSONAttr(host, "data-options", {});
+    var spritesVtt = host.getAttribute("data-sprites-vtt") || "";
 
     var DEBUG = /\byrpdebug=1\b/i.test(location.search) || !!(opts && opts.debug);
     function d(){ if(!DEBUG) return; try { console.debug.apply(console, ["[YRP]"].concat([].slice.call(arguments))); } catch(_){} }
@@ -118,6 +119,7 @@
     if (opts && opts.muted) video.setAttribute("muted", "");
     if (opts && opts.loop) video.setAttribute("loop", "");
     if (vid) root.setAttribute("data-video-id", vid);
+    if (spritesVtt) root.setAttribute("data-sprites-vtt", spritesVtt);
 
     video.setAttribute("playsinline", "");
 
@@ -206,6 +208,129 @@
     var pipUserState = null; // true playing, false paused, null no explicit user change
 
     var autoplayOn = !!load("autoplay", false);
+
+    // ---------- sprites preview (VTT) ----------
+    var spritesVttUrl = root.getAttribute("data-sprites-vtt") || "";
+    var spriteCues = [];
+    var spriteDurationApprox = 0;
+    var spritePop = null;
+    var spritesLoaded = false;
+    var spritesLoadError = false;
+
+    function parseTimestamp(ts){
+      var m = String(ts||"").match(/^(\d{2}):(\d{2}):(\d{2}\.\d{3})$/);
+      if(!m) return 0;
+      var h = parseInt(m[1],10);
+      var mm = parseInt(m[2],10);
+      var ss = parseFloat(m[3]);
+      return h*3600 + mm*60 + ss;
+    }
+    function buildAbsoluteSpriteUrl(rel){
+      if(!rel) return "";
+      if(/^https?:\/\//i.test(rel) || rel.startsWith("/")) return rel;
+      try {
+        var u = new URL(spritesVttUrl, window.location.origin);
+        var baseDir = u.pathname.replace(/\/sprites\.vtt$/, "");
+        return baseDir + "/" + rel.replace(/^\/+/,"");
+      } catch(e){
+        return rel;
+      }
+    }
+    function ensureSpritePop(){
+      if (spritePop) return spritePop;
+      if (!progress) return null;
+      spritePop = document.createElement("div");
+      spritePop.className = "yrp-sprite-pop";
+      spritePop.style.position = "absolute";
+      spritePop.style.display = "none";
+      spritePop.style.bottom = "calc(100% + 6px)";
+      spritePop.style.left = "0";
+      spritePop.style.width = "160px";
+      spritePop.style.height = "90px";
+      spritePop.style.border = "1px solid #333";
+      spritePop.style.background = "#000";
+      spritePop.style.overflow = "hidden";
+      spritePop.style.zIndex = "5";
+      if (getComputedStyle(progress).position === "static") {
+        progress.style.position = "relative";
+      }
+      progress.appendChild(spritePop);
+      return spritePop;
+    }
+    function loadSpritesVTT(){
+      if (!spritesVttUrl || spritesLoaded || spritesLoadError) return;
+      fetch(spritesVttUrl, { credentials: "same-origin" })
+        .then(function(r){ return r.text(); })
+        .then(function(text){
+          var lines = text.split(/\r?\n/);
+            for (var i=0;i<lines.length;i++){
+              var line = lines[i].trim();
+              if(!line) continue;
+              if(line.indexOf("-->") >= 0){
+                var parts = line.split("-->").map(function(s){ return s.trim(); });
+                if (parts.length < 2) continue;
+                var start = parseTimestamp(parts[0]);
+                var end = parseTimestamp(parts[1]);
+                var ref = (lines[i+1]||"").trim();
+                var spriteRel = "";
+                var x=0,y=0,w=0,h=0;
+                var hashIdx = ref.indexOf("#xywh=");
+                if (hashIdx > 0) {
+                  spriteRel = ref.substring(0, hashIdx);
+                  var xywh = ref.substring(hashIdx+6).split(",");
+                  if (xywh.length === 4) {
+                    x = parseInt(xywh[0],10);
+                    y = parseInt(xywh[1],10);
+                    w = parseInt(xywh[2],10);
+                    h = parseInt(xywh[3],10);
+                  }
+                }
+                var absUrl = buildAbsoluteSpriteUrl(spriteRel);
+                spriteCues.push({start:start,end:end,spriteUrl:absUrl,x:x,y:y,w:w,h:h});
+                if (end > spriteDurationApprox) spriteDurationApprox = end;
+                i++; // skip ref line
+              }
+            }
+          spritesLoaded = true;
+          d("sprites VTT loaded", {cues: spriteCues.length, durationApprox: spriteDurationApprox});
+        })
+        .catch(function(err){
+          spritesLoadError = true;
+          d("sprites VTT load failed", err);
+        });
+    }
+    function showSpritePreviewAtClientX(clientX){
+      if (!spritesVttUrl || !spriteCues.length || !rail) return;
+      var rect = rail.getBoundingClientRect();
+      var x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+      var frac = rect.width > 0 ? x / rect.width : 0;
+      var t = (duration || spriteDurationApprox || 0) * frac;
+      var cue = null;
+      for (var i=0;i<spriteCues.length;i++){
+        var c = spriteCues[i];
+        if (t >= c.start && t < c.end) { cue = c; break; }
+      }
+      var pop = ensureSpritePop();
+      if (!pop) return;
+      if (!cue || !cue.spriteUrl || cue.w <= 0 || cue.h <= 0) {
+        pop.style.display = "none";
+        return;
+      }
+      while (pop.firstChild) pop.removeChild(pop.firstChild);
+      var img = document.createElement("img");
+      img.src = cue.spriteUrl;
+      img.style.position = "absolute";
+      img.style.left = (-cue.x) + "px";
+      img.style.top = (-cue.y) + "px";
+      pop.appendChild(img);
+
+      pop.style.display = "block";
+      var leftPx = Math.max(0, Math.min(rect.width - cue.w, x - cue.w/2));
+      pop.style.left = leftPx + "px";
+      pop.style.width = cue.w + "px";
+      pop.style.height = cue.h + "px";
+    }
+
     function refreshAutoplayBtn(){
       if (!btnAutoplay) return;
       btnAutoplay.setAttribute("aria-pressed", autoplayOn ? "true" : "false");
@@ -218,7 +343,6 @@
       } catch(_){}
     }
 
-    // unified auto-hide scheduler
     function scheduleAutoHide(delayMs) {
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(function(){ root.classList.add("autohide"); }, Math.max(0, delayMs || 1200));
@@ -400,7 +524,7 @@
       video.addEventListener(ev, function(){ d("event:", ev, {rs: video.readyState, paused: video.paused, muted: video.muted}); });
     });
 
-    // Autoplay (opt.autoplay===true has priority, else saved)
+    // Autoplay
     (function(){
       var host = root.closest(".player-host") || root;
       var opt = parseJSONAttr(host, "data-options", null);
@@ -411,7 +535,6 @@
       var WANT = wantAutoplay();
       d("autoplay check", {WANT:WANT, opt:opt, saved:load("autoplay", false)});
       if (!WANT) {
-        // If autoplay is off, schedule initial auto-hide so the bar does not stick forever.
         setTimeout(function(){ scheduleAutoHide(1000); }, 0);
         return;
       }
@@ -458,7 +581,7 @@
       }, 1200);
     })();
 
-    // Initial layout and state updates
+    // Initial layout
     video.addEventListener("loadedmetadata", function () {
       if (startAt && startAt > 0) {
         try { video.currentTime = Math.min(startAt, Math.floor(video.duration || startAt)); } catch (e) {}
@@ -468,8 +591,8 @@
       updateProgress();
       refreshVolIcon();
       refreshAutoplayBtn();
-      // Ensure auto-hide will happen even if user does nothing (autoplay off case)
       scheduleAutoHide(1200);
+      loadSpritesVTT();
     });
     window.addEventListener("resize", function(){ adjustWidthByAspect(); });
 
@@ -509,8 +632,6 @@
         }
       } catch (ex) {}
     }
-
-    // PiP state listeners: resume and proper toggle
     video.addEventListener("enterpictureinpicture", function () {
       pipInSystem = true;
       pipWasPlayingOrig = !video.paused;
@@ -587,8 +708,18 @@
       });
       window.addEventListener("mousemove", function (e) { if (seeking) seekByClientX(e.clientX); });
       window.addEventListener("mouseup", function () { seeking = false; });
-      progress.addEventListener("mousemove", function (e) { updateTooltip(e.clientX); });
-      progress.addEventListener("mouseleave", function () { if (tooltip) tooltip.hidden = true; });
+      progress.addEventListener("mousemove", function (e) {
+        updateTooltip(e.clientX);
+        if (spritesVttUrl && spritesLoaded && !spritesLoadError) {
+          showSpritePreviewAtClientX(e.clientX);
+        } else if (spritesVttUrl && !spritesLoaded && !spritesLoadError) {
+          loadSpritesVTT();
+        }
+      });
+      progress.addEventListener("mouseleave", function () {
+        if (tooltip) tooltip.hidden = true;
+        if (spritePop) spritePop.style.display = "none";
+      });
     }
 
     if (btnSettings && menu) {
@@ -684,8 +815,8 @@
         ctx.hidden = true;
       };
       document.addEventListener("click", function (e2) {
-        var ctx = root.querySelector(".yrp-context");
-        if (ctx && !ctx.hidden && !ctx.contains(e2.target)) ctx.hidden = true;
+        var ctx2 = root.querySelector(".yrp-context");
+        if (ctx2 && !ctx2.hidden && !ctx2.contains(e2.target)) ctx2.hidden = true;
       }, { once: true });
       document.addEventListener("keydown", function escClose(ev){
         if (ev.code === "Escape" || (ev.key||"").toLowerCase() === "escape") {
@@ -696,14 +827,12 @@
       });
     });
 
-    // Hover triggers (show on hovering any layer)
     ["mousemove","pointermove","mouseenter","touchstart"].forEach(function(evName){
       root.addEventListener(evName, function(){ try{ root.focus(); }catch(_){ } showControls(); }, { passive: true });
       if (video) video.addEventListener(evName, function(){ showControls(); }, { passive: true });
       if (centerPlay) centerPlay.addEventListener(evName, function(){ showControls(); }, { passive: true });
     });
 
-    // Fullscreen hover support: also watch global mouse moves while in fullscreen
     function onDocMove(e){
       var r = root.getBoundingClientRect();
       var x = e.clientX, y = e.clientY;
@@ -721,10 +850,8 @@
       } catch(_) {}
     }
     document.addEventListener("fullscreenchange", updateFsHoverBinding);
-    // In case already fullscreen (rare), ensure binding
     updateFsHoverBinding();
 
-    // Hotkeys (include proper PiP toggle on I)
     function handleHotkey(e) {
       var t = e.target;
       var tag = t && t.tagName ? t.tagName.toUpperCase() : "";

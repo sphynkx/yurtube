@@ -1,9 +1,11 @@
-{% macro render_player(player_name="standard", video_src="", poster_url=None, video_id=None, subtitles=[], options={}) -%}
+{% macro render_player(player_name="standard", video_src="", poster_url=None, video_id=None, subtitles=[], options={}, sprites_vtt_url=None) -%}
+  {# Preserve existing local vars #}
   {% set _video_src = video_src or "" %}
   {% set _poster = poster_url or "" %}
   {% set _vid = video_id or "" %}
   {% set _subs = subtitles or [] %}
   {% set _opts = options or {} %}
+  {% set _sprites_vtt = sprites_vtt_url or "" %}
 
   <link rel="stylesheet" href="/static/players/{{ player_name }}/css/player.css">
   <div class="player-host"
@@ -12,7 +14,8 @@
        data-poster-url="{{ _poster }}"
        data-video-id="{{ _vid }}"
        data-subtitles='{{ _subs|tojson }}'
-       data-options='{{ _opts|tojson }}'>
+       data-options='{{ _opts|tojson }}'
+       {%- if _sprites_vtt %} data-sprites-vtt="{{ _sprites_vtt }}" {%- endif %}>
   </div>
   <script type="module" src="/static/players/{{ player_name }}/js/player.js"></script>
 {%- endmacro %}

@@ -244,14 +244,15 @@ body[data-debug="1"] .watch-layout * { outline:1px dashed rgba(0, 100, 255, .15)
                style="display:block;width:100%;height:auto;background:#000;">
         </div>
       {% else %}
-        {{ pm.render_player(
-             player_name=player_name,
-             video_src=video_src,
-             poster_url=poster_url,
-             video_id=video['video_id'] if video else None,
-             subtitles=subtitles,
-             options=player_options
-           ) }}
+		{{ pm.render_player(
+			 player_name=player_name,
+			 video_src=video_src,
+			 poster_url=poster_url,
+			 video_id=video['video_id'] if video else None,
+			 subtitles=subtitles,
+			 options=player_options,
+			 sprites_vtt_url=sprites_vtt_url
+		   ) }}
       {% endif %}
     </div>
 

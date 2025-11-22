@@ -18,6 +18,8 @@ from utils.format_ut import fmt_dt
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 
+from db.assets_db import get_thumbs_vtt_asset
+
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
@@ -146,6 +148,8 @@ async def watch_page(request: Request, v: str) -> Any:
                     "player_options": player_options,
                     "not_found": True,
                     "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
+                    # NEW: no sprites for not_found
+                    "sprites_vtt_url": None,
                 },
                 headers={"Cache-Control": "no-store"},
             )
@@ -177,6 +181,10 @@ async def watch_page(request: Request, v: str) -> Any:
         allow_embed = bool(video.get("allow_embed"))
         embed_url = f"{_base_url(request)}/embed?v={video['video_id']}"
 
+        # sprites VTT (relative path from assets -> web URL)
+        sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
+        sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
+
         # Right-bar recommendations: fetch after video is known
         recommended_videos: List[Dict[str, Any]] = []
         try:
@@ -207,6 +215,7 @@ async def watch_page(request: Request, v: str) -> Any:
                 "subtitles": subtitles,
                 "player_options": player_options,
                 "recommended_videos": recommended_videos,
+                "sprites_vtt_url": sprites_vtt_url,
             },
             headers={"Cache-Control": "no-store"},
         )
@@ -249,6 +258,7 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
                     "player_options": player_options,
                     "not_found": True,
                     "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
+                    # keep sprites_vtt_url absent in embed for now
                 },
                 headers={"Cache-Control": "no-store"},
             )
