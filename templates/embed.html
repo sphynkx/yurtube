@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- Expects:
-     player_name, video_src, poster_url, video_id, subtitles, player_options
+     player_name, video_src, poster_url, video_id, subtitles, player_options, sprites_vtt_url
 -->
 <html lang="en">
 <head>
@@ -31,7 +31,8 @@
              {% if poster_url %} data-poster-url="{{ poster_url }}" {% endif %}
              data-video-id="{{ video_id }}"
              data-subtitles='{{ subtitles|tojson }}'
-             data-options='{{ player_options|tojson }}'>
+             data-options='{{ player_options|tojson }}'
+             {% if sprites_vtt_url %} data-sprites-vtt="{{ sprites_vtt_url }}" {% endif %}>
         </div>
       </div>
     </div>

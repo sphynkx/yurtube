@@ -23,7 +23,6 @@ from db.assets_db import get_thumbs_vtt_asset
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
-# Brand globals for base.html (logo and icons)
 templates.env.globals["brand_logo_url"] = settings.BRAND_LOGO_URL
 templates.env.globals["favicon_url"] = settings.FAVICON_URL
 templates.env.globals["apple_touch_icon_url"] = settings.APPLE_TOUCH_ICON_URL
@@ -118,14 +117,8 @@ async def watch_page(request: Request, v: str) -> Any:
             avatar_url = None
             allow_embed = False
             subtitles: List[Dict[str, Any]] = []
-            player_options: Dict[str, Any] = {
-                "autoplay": False,
-                "muted": False,
-                "loop": False,
-                "start": 0,
-            }
+            player_options: Dict[str, Any] = {"autoplay": False, "muted": False, "loop": False, "start": 0}
             embed_url = f"{_base_url(request)}/embed?v={v}"
-
             return templates.TemplateResponse(
                 "watch.html",
                 {
@@ -148,14 +141,12 @@ async def watch_page(request: Request, v: str) -> Any:
                     "player_options": player_options,
                     "not_found": True,
                     "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
-                    # NEW: no sprites for not_found
                     "sprites_vtt_url": None,
                 },
                 headers={"Cache-Control": "no-store"},
             )
 
         video: Dict[str, Any] = dict(row)
-
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
@@ -171,28 +162,18 @@ async def watch_page(request: Request, v: str) -> Any:
         video["avatar_url"] = avatar_url
 
         subtitles: List[Dict[str, Any]] = []
-        player_options: Dict[str, Any] = {
-            "autoplay": False,
-            "muted": False,
-            "loop": False,
-            "start": 0,
-        }
-
+        player_options: Dict[str, Any] = {"autoplay": False, "muted": False, "loop": False, "start": 0}
         allow_embed = bool(video.get("allow_embed"))
         embed_url = f"{_base_url(request)}/embed?v={video['video_id']}"
-
-        # sprites VTT (relative path from assets -> web URL)
         sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
         sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
 
-        # Right-bar recommendations: fetch after video is known
         recommended_videos: List[Dict[str, Any]] = []
         try:
             if getattr(settings, "RIGHTBAR_ENABLED", True):
                 limit = int(getattr(settings, "RIGHTBAR_LIMIT", 12) or 12)
                 recommended_videos = await fetch_rightbar_for_video(video["video_id"], user_uid, limit=limit)
         except Exception:
-            # Do not break the watch page if recommend service fails
             recommended_videos = []
 
         return templates.TemplateResponse(
@@ -224,7 +205,14 @@ async def watch_page(request: Request, v: str) -> Any:
 
 
 @router.get("/embed", response_class=HTMLResponse)
-async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, muted: int = 0, loop: int = 0) -> Any:
+async def embed_page(
+    request: Request,
+    v: str,
+    t: int = 0,
+    autoplay: int = 0,
+    muted: int = 0,
+    loop: int = 0
+) -> Any:
     user = get_current_user(request)
     conn = await get_conn()
     try:
@@ -240,7 +228,6 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
                 "loop": bool(loop),
                 "start": max(0, int(t or 0)),
             }
-
             return templates.TemplateResponse(
                 "embed.html",
                 {
@@ -258,7 +245,7 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
                     "player_options": player_options,
                     "not_found": True,
                     "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
-                    # keep sprites_vtt_url absent in embed for now
+                    "sprites_vtt_url": None,  # NEW
                 },
                 headers={"Cache-Control": "no-store"},
             )
@@ -279,6 +266,10 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
             "start": max(0, int(t or 0)),
         }
 
+        # sprites vtt for embed
+        sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
+        sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
+
         return templates.TemplateResponse(
             "embed.html",
             {
@@ -294,6 +285,7 @@ async def embed_page(request: Request, v: str, t: int = 0, autoplay: int = 0, mu
                 "video_id": video["video_id"],
                 "subtitles": subtitles,
                 "player_options": player_options,
+                "sprites_vtt_url": sprites_vtt_url,  # NEW
             },
             headers={"Cache-Control": "no-store"},
         )

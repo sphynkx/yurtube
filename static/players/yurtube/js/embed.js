@@ -1,5 +1,4 @@
 (function () {
-  // ---- utils ----
   function fmtTime(sec) {
     if (!isFinite(sec) || sec < 0) sec = 0;
     sec = Math.floor(sec);
@@ -13,14 +12,6 @@
     var s = el.getAttribute(name);
     if (!s) return fallback;
     try { return JSON.parse(s); } catch (e) { return fallback; }
-  }
-  function elClosest(node, selector, stopAt) {
-    var n = node;
-    while (n && n !== stopAt) {
-      if (n.nodeType === 1 && typeof n.matches === "function" && n.matches(selector)) return n;
-      n = n.parentElement || n.parentNode;
-    }
-    return null;
   }
   function detectPlayerName() {
     try {
@@ -65,7 +56,6 @@
     }
   }
 
-  // ---- fallback guards ----
   var FALLBACK_SRC = "/static/img/fallback_video_notfound.gif";
   function installFallbackGuards(video, sourceEl, onDebug) {
     var applied = false;
@@ -99,10 +89,8 @@
     }, 0);
   }
 
-  // ---- mount ----
   function mountOne(host, tpl, PLAYER_BASE) {
     host.innerHTML = tpl;
-
     var root = host.querySelector(".yrp-container");
     var wrap = root.querySelector(".yrp-video-wrap");
     var video = root.querySelector(".yrp-video");
@@ -121,6 +109,7 @@
     var poster = host.getAttribute("data-poster-url") || "";
     var vid = host.getAttribute("data-video-id") || "";
     var subs = parseJSONAttr(host, "data-subtitles", []);
+    var spritesVtt = host.getAttribute("data-sprites-vtt") || "";
 
     if (source) source.setAttribute("src", videoSrc);
     if (poster) video.setAttribute("poster", poster);
@@ -128,6 +117,7 @@
     if (opts && opts.muted) video.setAttribute("muted", "");
     if (opts && opts.loop) video.setAttribute("loop", "");
     if (vid) root.setAttribute("data-video-id", vid);
+    if (spritesVtt) root.setAttribute("data-sprites-vtt", spritesVtt);
 
     video.setAttribute("playsinline", "");
 
@@ -145,11 +135,8 @@
     }
 
     try { video.load(); d("video.load() called", { src: videoSrc }); } catch (e) { d("video.load() error", e); }
-
-    // fallback
     installFallbackGuards(video, source, d);
 
-    // icons
     var iconBase = PLAYER_BASE + "/img/buttons";
     root.style.setProperty("--icon-play", 'url("' + iconBase + '/play.svg")');
     root.style.setProperty("--icon-pause", 'url("' + iconBase + '/pause.svg")');
@@ -164,15 +151,13 @@
     root.style.setProperty("--icon-full", 'url("' + iconBase + '/full.svg")');
     root.classList.add("yrp-icons-ready");
 
-    // center logo
     var centerLogo = root.querySelector(".yrp-center-logo");
     if (centerLogo) centerLogo.setAttribute("src", PLAYER_BASE + "/img/logo.png");
 
-    wireEmbed(root, wrap, video, controls, DEBUG);
+    wireEmbed(root, wrap, video, controls, spritesVtt, DEBUG);
   }
 
-  // ---- wire controls (embed) ----
-  function wireEmbed(root, wrap, video, controls, DEBUG) {
+  function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG) {
     function d() { if (!DEBUG) return; try { console.debug.apply(console, ["[YRP-EMBED]"].concat([].slice.call(arguments))); } catch (_) {} }
 
     var centerPlay = root.querySelector(".yrp-center-play");
@@ -198,6 +183,122 @@
     var hideTimer = null;
     var userTouchedVolume = false;
     var autoMuteApplied = false;
+
+    // SPRITES PREVIEW STATE
+    var spriteCues = [];
+    var spritesLoaded = false;
+    var spritesLoadError = false;
+    var spritePop = null;
+    var spriteDurationApprox = 0;
+
+    function parseTimestamp(ts){
+      var m = String(ts||"").match(/^(\d{2}):(\d{2}):(\d{2}\.\d{3})$/);
+      if(!m) return 0;
+      var h = parseInt(m[1],10), mm = parseInt(m[2],10), ss = parseFloat(m[3]);
+      return h*3600 + mm*60 + ss;
+    }
+    function buildAbsoluteSpriteUrl(rel){
+      if(!rel) return "";
+      if(/^https?:\/\//i.test(rel) || rel.startsWith("/")) return rel;
+      try {
+        var u = new URL(spritesVttUrl, window.location.origin);
+        var baseDir = u.pathname.replace(/\/sprites\.vtt$/, "");
+        return baseDir + "/" + rel.replace(/^\/+/,"");
+      } catch(e){
+        return rel;
+      }
+    }
+    function ensureSpritePop(){
+      if (spritePop) return spritePop;
+      if (!progress) return null;
+      spritePop = document.createElement("div");
+      spritePop.className = "yrp-sprite-pop";
+      spritePop.style.position = "absolute";
+      spritePop.style.bottom = "calc(100% + 6px)";
+      spritePop.style.left = "0";
+      spritePop.style.display = "none";
+      spritePop.style.width = "160px";
+      spritePop.style.height = "90px";
+      spritePop.style.border = "1px solid #333";
+      spritePop.style.background = "#000";
+      spritePop.style.overflow = "hidden";
+      spritePop.style.zIndex = "5";
+      if (getComputedStyle(progress).position === "static") progress.style.position = "relative";
+      progress.appendChild(spritePop);
+      return spritePop;
+    }
+    function loadSpritesVTT(){
+      if (!spritesVttUrl || spritesLoaded || spritesLoadError) return;
+      fetch(spritesVttUrl, { credentials: "same-origin" })
+        .then(function(r){ return r.text(); })
+        .then(function(text){
+          var lines = text.split(/\r?\n/);
+          for (var i=0;i<lines.length;i++){
+            var line = lines[i].trim();
+            if(!line) continue;
+            if(line.indexOf("-->") >= 0){
+              var parts = line.split("-->").map(function(s){ return s.trim(); });
+              if (parts.length < 2) continue;
+              var start = parseTimestamp(parts[0]);
+              var end = parseTimestamp(parts[1]);
+              var ref = (lines[i+1]||"").trim();
+              var spriteRel = "", x=0,y=0,w=0,h=0;
+              var hashIdx = ref.indexOf("#xywh=");
+              if (hashIdx > 0) {
+                spriteRel = ref.substring(0, hashIdx);
+                var xywh = ref.substring(hashIdx+6).split(",");
+                if (xywh.length === 4) {
+                  x = parseInt(xywh[0],10);
+                  y = parseInt(xywh[1],10);
+                  w = parseInt(xywh[2],10);
+                  h = parseInt(xywh[3],10);
+                }
+              }
+              var absUrl = buildAbsoluteSpriteUrl(spriteRel);
+              spriteCues.push({start:start,end:end,spriteUrl:absUrl,x:x,y:y,w:w,h:h});
+              if(end > spriteDurationApprox) spriteDurationApprox = end;
+              i++;
+            }
+          }
+          spritesLoaded = true;
+          d("embed sprites VTT loaded", {cues: spriteCues.length, durationApprox: spriteDurationApprox});
+        })
+        .catch(function(err){
+          spritesLoadError = true;
+          d("embed sprites VTT load failed", err);
+        });
+    }
+    function showSpritePreview(clientX){
+      if (!spritesVttUrl || !spriteCues.length || !rail) return;
+      var rect = rail.getBoundingClientRect();
+      var x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+      var frac = rect.width > 0 ? x / rect.width : 0;
+      var t = (duration || spriteDurationApprox || 0) * frac;
+      var cue = null;
+      for (var i=0;i<spriteCues.length;i++){
+        var c = spriteCues[i];
+        if (t >= c.start && t < c.end) { cue = c; break; }
+      }
+      var pop = ensureSpritePop();
+      if (!pop) return;
+      if (!cue || !cue.spriteUrl || cue.w <= 0 || cue.h <= 0) {
+        pop.style.display = "none";
+        return;
+      }
+      while (pop.firstChild) pop.removeChild(pop.firstChild);
+      var img = document.createElement("img");
+      img.src = cue.spriteUrl;
+      img.style.position = "absolute";
+      img.style.left = (-cue.x) + "px";
+      img.style.top = (-cue.y) + "px";
+      pop.appendChild(img);
+
+      pop.style.display = "block";
+      var leftPx = Math.max(0, Math.min(rect.width - cue.w, x - cue.w/2));
+      pop.style.left = leftPx + "px";
+      pop.style.width = cue.w + "px";
+      pop.style.height = cue.h + "px";
+    }
 
     function showControls() {
       root.classList.remove("autohide");
@@ -340,7 +441,6 @@
       video.addEventListener("ended", function(){ var m = loadMap(); delete m[vid]; saveMap(m); });
     })();
 
-    // debug
     ["loadedmetadata","loadeddata","canplay","canplaythrough","play","playing","pause","stalled","suspend","waiting","error","abort","emptied"].forEach(function(ev){
       video.addEventListener(ev, function(){ d("event:", ev, { rs: video.readyState, paused: video.paused, muted: video.muted }); });
     });
@@ -385,10 +485,8 @@
       setTimeout(function(){ if (video.paused) tryPlaySequence("watchdog"); }, 1200);
     })();
 
-    // basic controls
     if (centerPlay) centerPlay.addEventListener("click", function(){ playToggle(); });
     if (btnPlay) btnPlay.addEventListener("click", function(){ playToggle(); });
-
     video.addEventListener("click", function(){ playToggle(); });
 
     if (btnVol) btnVol.addEventListener("click", function(e){
@@ -403,7 +501,7 @@
     if (controls) {
       controls.addEventListener("click", function(e){
         var t = e.target; if (t && t.nodeType === 3 && t.parentNode) t = t.parentNode;
-        if (elClosest(t, ".yrp-vol-btn", controls)) {
+        if (t && t.classList && t.classList.contains("yrp-vol-btn")) {
           e.preventDefault(); e.stopPropagation();
           userTouchedVolume = true;
           setMutedToggle();
@@ -439,11 +537,20 @@
       progress.addEventListener("mousedown", function (e) { seeking = true; seekByClientX(e.clientX); showControls(); });
       window.addEventListener("mousemove", function (e) { if (seeking) seekByClientX(e.clientX); });
       window.addEventListener("mouseup", function () { seeking = false; });
-      progress.addEventListener("mousemove", function (e) { updateTooltip(e.clientX); });
-      progress.addEventListener("mouseleave", function () { if (tooltip) tooltip.hidden = true; });
+      progress.addEventListener("mousemove", function (e) {
+        updateTooltip(e.clientX);
+        if (spritesVttUrl && spritesLoaded && !spritesLoadError) {
+          showSpritePreview(e.clientX);
+        } else if (spritesVttUrl && !spritesLoaded && !spritesLoadError) {
+          loadSpritesVTT();
+        }
+      });
+      progress.addEventListener("mouseleave", function () {
+        if (tooltip) tooltip.hidden = true;
+        if (spritePop) spritePop.style.display = "none";
+      });
     }
 
-    // Settings menu: hidden attribute like main player
     if (btnSettings && menu) {
       btnSettings.addEventListener("click", function (e) {
         e.preventDefault(); e.stopPropagation();
@@ -510,7 +617,6 @@
       });
     }
 
-    // Context menu with robust copy
     root.addEventListener("contextmenu", function (e) {
       e.preventDefault();
       hideMenus();
@@ -523,9 +629,7 @@
     });
     if (ctx) {
       ctx.addEventListener("click", function (ev) {
-        var btn = elClosest(ev.target, ".yrp-ctx-item", ctx);
-        if (!btn) return;
-        var act = btn.getAttribute("data-action");
+        var act = ev.target && ev.target.getAttribute("data-action");
         var at = Math.floor(video.currentTime || 0);
         var vid = root.getAttribute("data-video-id") || "";
         if (act === "pip") {
@@ -555,13 +659,11 @@
       });
     }
 
-    // Hotkeys incl. PiP (I)
     function handleHotkey(e) {
       var t = e.target; var tag = t && t.tagName ? t.tagName.toUpperCase() : "";
       if (t && (t.isContentEditable || tag === "INPUT" || tag === "TEXTAREA")) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       var code = e.code, key = (e.key || "").toLowerCase();
-
       if (code === "Space" || code === "Enter" || code === "NumpadEnter" || code === "MediaPlayPause" || code === "KeyK" || key === "k") {
         e.preventDefault(); video.paused ? video.play().catch(function(){}) : video.pause(); return;
       }
@@ -574,10 +676,7 @@
       if (code === "KeyM" || key === "m") { e.preventDefault(); setMutedToggle(); return; }
       if (code === "KeyF" || key === "f") { e.preventDefault(); if (btnFull) btnFull.click(); return; }
       if (code === "KeyI" || key === "i") { e.preventDefault(); if (btnPip) btnPip.click(); return; }
-      if (code === "Escape" || key === "escape") {
-        hideMenus();
-        return;
-      }
+      if (code === "Escape" || key === "escape") { hideMenus(); return; }
     }
     document.addEventListener("keydown", handleHotkey);
 
@@ -587,6 +686,16 @@
     root.addEventListener("mouseleave", function(){ setTimeout(function(){ root.classList.add("autohide"); }, 600); });
 
     function relayout(){ layoutFillViewport(); }
+    function layoutFillViewport(){
+      try {
+        var H = window.innerHeight || document.documentElement.clientHeight || root.clientHeight || 0;
+        if (H <= 0) return;
+        wrap.style.height = H + "px";
+        video.style.height = "100%";
+        video.style.width = "100%";
+        video.style.objectFit = "contain";
+      } catch(_) {}
+    }
     window.addEventListener("resize", relayout);
     setTimeout(relayout, 0);
     setTimeout(relayout, 100);
@@ -595,12 +704,12 @@
       updateTimes();
       updateProgress();
       relayout();
+      loadSpritesVTT();
     });
     video.addEventListener("timeupdate", function(){ updateTimes(); updateProgress(); });
     video.addEventListener("progress", function(){ updateProgress(); });
   }
 
-  // ---- init all hosts ----
   function initAll() {
     var PLAYER_NAME = detectPlayerName();
     var PLAYER_BASE = "/static/players/" + PLAYER_NAME;
