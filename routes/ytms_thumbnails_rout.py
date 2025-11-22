@@ -19,14 +19,14 @@ from config.ytms_config import (
 from config.config import settings
 from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset
-from db.assets_db import get_video_sprite_assets
-from db.assets_db import get_thumbs_vtt_asset  # NEW
+from db.assets_db import get_video_sprite_assets, get_thumbs_vtt_asset
 from db.ytms_db import (
     fetch_video_storage_path,
     mark_thumbnails_ready,
     get_thumbnails_asset_path,
     get_thumbnails_flag,
     list_videos_needing_thumbnails,
+    reset_thumbnails_state,
 )
 from db.videos_db import get_owned_video
 from services.ytms_client_srv import create_thumbnails_job
@@ -224,6 +224,8 @@ async def ytms_thumbnails_callback(request: Request):
     if not video_id:
         raise HTTPException(status_code=400, detail="missing_video_id")
 
+    print("[YTMS CALLBACK RAW]", payload)
+
     if status != "succeeded":
         return {"ok": True, "status": status}
 
@@ -240,7 +242,13 @@ async def ytms_thumbnails_callback(request: Request):
         if not storage_base:
             raise HTTPException(status_code=404, detail="storage_path_not_found")
 
+        abs_root = getattr(settings, "STORAGE_ROOT", STORAGE_FS_ROOT)
+
         rel_vtt = os.path.join(storage_base, vtt_rel_path)
+        vtt_abs = os.path.join(abs_root, rel_vtt)
+        if not os.path.exists(vtt_abs):
+            print("[YTMS CALLBACK WARN] VTT file not found on disk:", vtt_abs)
+
         vtt_url = build_storage_url(rel_vtt)
         await upsert_video_asset(conn, video_id, "thumbs_vtt", rel_vtt)
 
@@ -251,15 +259,19 @@ async def ytms_thumbnails_callback(request: Request):
             if rel is None or idx is None:
                 continue
             rel_sprite = os.path.join(storage_base, rel)
+            sprite_abs = os.path.join(abs_root, rel_sprite)
+            if not os.path.exists(sprite_abs):
+                print("[YTMS CALLBACK WARN] Sprite missing on disk:", sprite_abs)
             sprite_url = build_storage_url(rel_sprite)
             await upsert_video_asset(conn, video_id, f"sprite:{idx}", rel_sprite)
             saved_sprites.append(sprite_url)
 
         try:
             await mark_thumbnails_ready(conn, video_id)
-        except Exception:
-            pass
+        except Exception as e:
+            print("[YTMS CALLBACK WARN] mark_thumbnails_ready failed:", e)
 
+        print("[YTMS CALLBACK DONE] video_id=", video_id, "sprites=", len(saved_sprites), "vtt=", vtt_url)
         return {
             "ok": True,
             "status": status,
@@ -275,7 +287,7 @@ async def ytms_thumbnails_callback(request: Request):
 async def ytms_thumbnails_retry(
     request: Request,
     video_id: str = Form(...),
-    csrf_token: Optional[str] = Form(None)
+    csrf_token: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
     if not user:
@@ -288,6 +300,8 @@ async def ytms_thumbnails_retry(
         storage_base = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
         if not storage_base:
             raise HTTPException(status_code=404, detail="video_not_ready")
+
+        await reset_thumbnails_state(conn, video_id)
     finally:
         await release_conn(conn)
 
@@ -296,13 +310,31 @@ async def ytms_thumbnails_retry(
     if not os.path.exists(original_path):
         raise HTTPException(status_code=404, detail="original_missing")
 
+    sprites_dir = os.path.join(abs_root, storage_base, "sprites")
+    vtt_file = os.path.join(abs_root, storage_base, "sprites.vtt")
+    if os.path.isdir(sprites_dir):
+        for name in os.listdir(sprites_dir):
+            try:
+                os.remove(os.path.join(sprites_dir, name))
+            except Exception:
+                pass
+        try:
+            os.rmdir(sprites_dir)
+        except Exception:
+            pass
+    if os.path.exists(vtt_file):
+        try:
+            os.remove(vtt_file)
+        except Exception:
+            pass
+
     job = await create_thumbnails_job(
         video_id=video_id,
         src_path=original_path,
         out_base_path=os.path.join(abs_root, storage_base),
         extra=None,
     )
-    return {"ok": True, "job": job}
+    return {"ok": True, "job": job, "reset": True}
 
 
 @router.get("/internal/ytms/thumbnails/status")
@@ -313,15 +345,7 @@ async def ytms_thumbnails_status(video_id: str):
         ready_flag = await get_thumbnails_flag(conn, video_id)
         vtt_url = None
         if asset_path:
-            if asset_path.startswith("/var/www/"):
-                root_norm = getattr(settings, "STORAGE_ROOT", STORAGE_FS_ROOT).rstrip("/") + "/"
-                if asset_path.startswith(root_norm):
-                    rel_part = asset_path[len(root_norm):]
-                    vtt_url = build_storage_url(rel_part)
-                else:
-                    vtt_url = asset_path
-            else:
-                vtt_url = build_storage_url(asset_path)
+            vtt_url = build_storage_url(asset_path)
         return {
             "ok": True,
             "video_id": video_id,

@@ -20,28 +20,15 @@
     return h*3600 + mm*60 + ss;
   }
 
-  function buildAbsoluteSpriteUrl(spriteUrl){
-    if(!spriteUrl) return "";
-    if(/^https?:\/\//i.test(spriteUrl) || spriteUrl.startsWith("/storage/")){
-      return spriteUrl;
-    }
-    // VTT path: /storage/<2>/<video_id>/thumbnails/thumbs.vtt
+  function buildAbsolute(rel){
+    if(!rel) return "";
+    if(rel.startsWith("/") || /^https?:\/\//i.test(rel)) return rel;
     try {
       const u = new URL(vttUrl, window.location.origin);
-      let baseDir = u.pathname;
-      if(baseDir.endsWith("/thumbs.vtt")){
-        baseDir = baseDir.substring(0, baseDir.length - "/thumbs.vtt".length);
-      }
-      if(spriteUrl.startsWith("thumbnails/")){
-        spriteUrl = spriteUrl.substring("thumbnails/".length);
-      }
-      if(!spriteUrl.startsWith("sprites/")){
-        spriteUrl = "sprites/" + spriteUrl;
-      }
-      const finalPath = baseDir.replace(/\/+$/,"") + "/" + spriteUrl.replace(/^\/+/,"");
-      return finalPath;
+      const baseDir = u.pathname.replace(/\/sprites\.vtt$/, "");
+      return baseDir + "/" + rel.replace(/^\/+/,"");
     } catch(e){
-      return spriteUrl;
+      return rel;
     }
   }
 
@@ -52,33 +39,33 @@
         const lines = text.split(/\r?\n/);
         for(let i=0;i<lines.length;i++){
           const line = lines[i].trim();
-            if(!line) continue;
-            if(line.includes("-->")){
-              const parts = line.split("-->").map(s=>s.trim());
-              if(parts.length < 2) continue;
-              const start = parseTimestamp(parts[0]);
-              const end = parseTimestamp(parts[1]);
-              const ref = (lines[i+1]||"").trim();
-              let spriteUrl = "";
-              let x=0,y=0,w=0,h=0;
-              const hashIdx = ref.indexOf("#xywh=");
-              if(hashIdx > 0){
-                spriteUrl = ref.substring(0, hashIdx);
-                const xywh = ref.substring(hashIdx+6).split(",");
-                if(xywh.length === 4){
-                  x = parseInt(xywh[0],10);
-                  y = parseInt(xywh[1],10);
-                  w = parseInt(xywh[2],10);
-                  h = parseInt(xywh[3],10);
-                }
+          if(!line) continue;
+          if(line.includes("-->")){
+            const parts = line.split("-->").map(s=>s.trim());
+            if(parts.length < 2) continue;
+            const start = parseTimestamp(parts[0]);
+            const end = parseTimestamp(parts[1]);
+            const ref = (lines[i+1]||"").trim();
+            let spriteRel = "";
+            let x=0,y=0,w=0,h=0;
+            const hashIdx = ref.indexOf("#xywh=");
+            if(hashIdx > 0){
+              spriteRel = ref.substring(0, hashIdx);
+              const xywh = ref.substring(hashIdx+6).split(",");
+              if(xywh.length === 4){
+                x = parseInt(xywh[0],10);
+                y = parseInt(xywh[1],10);
+                w = parseInt(xywh[2],10);
+                h = parseInt(xywh[3],10);
               }
-              const absUrl = buildAbsoluteSpriteUrl(spriteUrl);
-              cues.push({start,end,spriteUrl: absUrl,x,y,w,h});
-              if(end > durationApprox) durationApprox = end;
-              i++;
             }
+            const absUrl = buildAbsolute(spriteRel);
+            cues.push({start,end,spriteUrl: absUrl,x,y,w,h});
+            if(end > durationApprox) durationApprox = end;
+            i++;
+          }
         }
-        console.log("[sprite_preview] cues loaded:", cues.length, "durationApprox:", durationApprox);
+        console.log("[sprite_preview] cues:", cues.length, "durationApprox:", durationApprox);
       })
       .catch(err => console.error("[sprite_preview] VTT load failed", err));
   }
@@ -89,16 +76,13 @@
     if(!cues.length) return;
     const rect = area.getBoundingClientRect();
     const rel = (ev.clientX - rect.left) / rect.width;
-    const clampedRel = Math.max(0, Math.min(1, rel));
-    const t = clampedRel * durationApprox;
+    const t = Math.max(0, Math.min(1, rel)) * durationApprox;
     const cue = cues.find(c => t >= c.start && t < c.end);
     if(!cue || !cue.spriteUrl || cue.w <= 0 || cue.h <= 0){
       pop.style.display = "none";
       return;
     }
-    while(pop.firstChild){
-      pop.removeChild(pop.firstChild);
-    }
+    while(pop.firstChild) pop.removeChild(pop.firstChild);
     const img = document.createElement("img");
     img.src = cue.spriteUrl;
     img.style.position = "absolute";
