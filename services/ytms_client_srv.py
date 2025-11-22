@@ -9,24 +9,18 @@ async def create_thumbnails_job(
     src_url: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """
-    Create thumbnails job on YTMS.
-    One of src_path or src_url must be provided.
-    Callback URL is built from APP_BASE_URL and points to /internal/ytms/thumbnails/callback.
-    """    
     if not src_path and not src_url:
         raise ValueError("src_path or src_url required")
     payload: Dict[str, Any] = {
         "video_id": video_id,
         "out_base_path": out_base_path,
         "callback_url": f"{APP_BASE_URL.rstrip('/')}/internal/ytms/thumbnails/callback",
-        "auth_token": YTMS_CALLBACK_SECRET, # shared secret for HMAC
+        "auth_token": YTMS_CALLBACK_SECRET,
     }
     if src_path:
         payload["src_path"] = src_path
     if src_url:
         payload["src_url"] = src_url
-    # Optional parameters (interval/tile/cell sizes) can be overridden via extra
     if extra:
         payload.update(extra)
     url = f"{YTMS_BASE_URL.rstrip('/')}/api/jobs/thumbnails"

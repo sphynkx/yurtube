@@ -20,3 +20,4 @@ vine >= 5.1.0
 redis >= 5.0.1
 packaging >= 24.2
 setuptools >= 70.0.0
+aiofiles

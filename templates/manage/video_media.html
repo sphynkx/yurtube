@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="/static/css/manage/account_layout.css">
+
+<div class="manage-comments-layout">
+  {% include "account/left.html" %}
+  <main class="mc-main">
+    <div class="mc-top-bar">
+      <h1 class="mc-page-title">Media: Sprites & Subtitles</h1>
+      <div class="mc-back-link">
+        <a href="/manage">Back to My Videos</a>
+      </div>
+    </div>
+
+    <section>
+      <h2 style="margin-top:0;">Current assets</h2>
+      <ul style="list-style:none; padding-left:0;">
+        {% if assets.thumb_url %}
+        <li>Thumbnail: <img src="{{ assets.thumb_url }}" alt="thumb" style="height:60px; vertical-align:middle;"></li>
+        {% endif %}
+        {% if assets.thumbs_vtt %}
+        <li>Thumbs VTT (old): <code>{{ assets.thumbs_vtt }}</code></li>
+        {% endif %}
+        {% if assets.captions_vtt %}
+        <li>Captions VTT: <code>{{ assets.captions_vtt }}</code></li>
+        {% endif %}
+      </ul>
+    </section>
+
+    <section style="margin-top:20px;">
+      <form id="ytms-start-form"
+            action="/manage/video/{{ video_id }}/media/process"
+            method="post"
+            data-video-id="{{ video_id }}"
+            novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button id="ytms-start" type="submit">Generate sprites & subtitles</button>
+        <span id="ytms-status" style="margin-left:12px; font-size:13px;"></span>
+      </form>
+      <div id="ytms-result" style="margin-top:16px; font-size:13px;"></div>
+    </section>
+  </main>
+</div>
+
+<script src="/static/js/ytms.js"></script>
+{% endblock %}

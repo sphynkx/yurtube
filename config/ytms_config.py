@@ -3,6 +3,7 @@ import os
 # Base URL of YTMS (thumbnails) service
 YTMS_BASE_URL: str = os.getenv("YTMS_BASE_URL", "http://127.0.0.1:8089")
 
+
 # Shared secret for HMAC signature (used both for job auth_token and callback verification)
 YTMS_CALLBACK_SECRET: str = os.getenv("YTMS_CALLBACK_SECRET", "dev-secret")
 
