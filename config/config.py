@@ -108,5 +108,8 @@ class Settings:
     # Auto-linking policy
     AUTO_LINK_GOOGLE_BY_EMAIL: bool = _getenv_bool("AUTO_LINK_GOOGLE_BY_EMAIL", True)
 
+    # Sprites control for video upload process
+    AUTO_SPRITES_ENABLED = True
+    AUTO_SPRITES_MIN_DURATION = 3
 
 settings = Settings()

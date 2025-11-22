@@ -22,6 +22,10 @@ from db.videos_db import (
     list_my_videos,
     set_video_ready,
 )
+
+from services.ytms_client_srv import create_thumbnails_job
+from db.ytms_db import fetch_video_storage_path
+ 
 from services.ffmpeg_srv import (
     async_generate_thumbnails,
     pick_thumbnail_offsets,
@@ -349,6 +353,31 @@ async def upload_video(
             await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel)
 
         await set_video_ready(conn, video_id, duration)
+
+        try:
+            min_dur = getattr(settings, "AUTO_SPRITES_MIN_DURATION", 3)
+            auto_enabled = getattr(settings, "AUTO_SPRITES_ENABLED", True)
+            if auto_enabled and (isinstance(duration, (int, float)) and duration >= min_dur):
+                storage_rel = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
+                if storage_rel:
+                    abs_root = getattr(settings, "STORAGE_ROOT", "/var/www/storage")
+                    original_abs = os.path.join(abs_root, storage_rel, "original.webm")
+                    if os.path.exists(original_abs):
+                        job = await create_thumbnails_job(
+                            video_id=video_id,
+                            src_path=original_abs,
+                            out_base_path=os.path.join(abs_root, storage_rel),
+                            extra=None,
+                        )
+                        print(f"[AUTOSPRITES] queued video_id={video_id} job={job.get('job_id')}")
+                    else:
+                        print(f"[AUTOSPRITES] original missing for video_id={video_id}")
+                else:
+                    print(f"[AUTOSPRITES] storage path not found for video_id={video_id}")
+            else:
+                print(f"[AUTOSPRITES] skip video_id={video_id} enabled={auto_enabled} duration={duration}")
+        except Exception as e:
+            print(f"[AUTOSPRITES] failed to enqueue video_id={video_id}: {e}")
 
         candidates: List[Dict[str, str]] = []
         for p_abs in candidates_abs:
