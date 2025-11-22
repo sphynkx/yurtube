@@ -453,55 +453,123 @@ body[data-debug="1"] .watch-layout * { outline:1px dashed rgba(0, 100, 255, .15)
 </script>
 <script>
 (function(){
-  var wrap = document.getElementById('embed-inline');
-  if (!wrap) return;
-  var trigger = wrap.querySelector('.embed-trigger');
-  var panel   = document.getElementById('embed-flyout');
-  var backdrop= document.getElementById('embed-backdrop');
-  var btnCopy = wrap.querySelector('.btn-copy-embed');
-  var btnClose= wrap.querySelector('.btn-close-embed');
-  var textarea= wrap.querySelector('.embed-code');
+  var DEBUG = /\bembeddebug=1\b/i.test(location.search);
+  function log(){ if(!DEBUG) return; try{ console.debug.apply(console, ["[EMBED]"].concat([].slice.call(arguments))); }catch(e){} }
 
-  function openPanel(){
-    if (!panel) return;
+  var wrap = document.getElementById('embed-inline');
+  if (!wrap) { log("wrap not found"); return; }
+
+  var triggerOrig = wrap.querySelector('.embed-trigger');
+  if (!triggerOrig) { log("trigger not found"); return; }
+  var trigger = triggerOrig.cloneNode(true);
+  triggerOrig.parentNode.replaceChild(trigger, triggerOrig);
+
+  var panel = wrap.querySelector('#embed-flyout');
+  var backdrop = document.getElementById('embed-backdrop');
+  var btnCopy = wrap.querySelector('.btn-copy-embed');
+  var btnCloseOrig = wrap.querySelector('.btn-close-embed');
+  var btnClose = btnCloseOrig ? btnCloseOrig.cloneNode(true) : null;
+  if (btnClose && btnCloseOrig) btnCloseOrig.parentNode.replaceChild(btnClose, btnCloseOrig);
+  var textarea = wrap.querySelector('.embed-code');
+
+  window.__embedPanel = panel;
+  window.__embedWrap = wrap;
+
+  if(!panel){ log("panel not found"); return; }
+
+  function reallyOpen(){
     panel.hidden = false;
+    panel.removeAttribute('hidden');
+    panel.classList.add('is-open');
+    panel.style.display = 'block';
+    if (backdrop) { backdrop.hidden = false; backdrop.style.display = 'block'; }
     trigger.setAttribute('aria-expanded','true');
-    if (backdrop) backdrop.hidden = false;
-    // autoselect code while opened
     try { textarea && textarea.focus(); textarea && textarea.select(); } catch(e){}
+    log("reallyOpen: state", {hiddenAttr: panel.hasAttribute('hidden'), style: getComputedStyle(panel).display});
   }
-  function closePanel(){
-    if (!panel) return;
+
+  function reallyClose(){
+    panel.classList.remove('is-open');
     panel.hidden = true;
+    panel.setAttribute('hidden', '');
+    panel.style.display = 'none';
     trigger.setAttribute('aria-expanded','false');
-    if (backdrop) backdrop.hidden = true;
+    if (backdrop) { backdrop.hidden = true; backdrop.style.display = 'none'; }
+    log("reallyClose: state", {hiddenAttr: panel.hasAttribute('hidden'), style: getComputedStyle(panel).display});
+  }
+
+  function toggle(){
+    if (panel.classList.contains('is-open')) reallyClose(); else reallyOpen();
   }
 
   trigger.addEventListener('click', function(e){
+    e.preventDefault();
     e.stopPropagation();
-    if (panel.hidden) openPanel(); else closePanel();
-  });
-  btnClose && btnClose.addEventListener('click', function(){ closePanel(); });
-
-  // Copy embed text
-  btnCopy && btnCopy.addEventListener('click', function(){
-    try{
-      textarea && textarea.select();
-      document.execCommand('copy');
-      textarea && textarea.blur();
-    }catch(e){}
+    toggle();
   });
 
-  // Close by ext. click
+  if (btnClose) {
+    btnClose.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      reallyClose();
+    });
+  }
+
+  if (btnCopy) {
+    btnCopy.addEventListener('click', function(e){
+      e.preventDefault();
+      if (!textarea) return;
+      var val = textarea.value;
+      var done = false;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(val).then(function(){ done=true; log("copied via clipboard API"); })
+          .catch(function(){ fallback(); });
+      } else fallback();
+      function fallback(){
+        try {
+          textarea.select();
+          document.execCommand('copy');
+          textarea.blur();
+          done = true;
+          log("copied via execCommand");
+        } catch(err) { log("copy failed", err); }
+      }
+    });
+  }
+
   document.addEventListener('click', function(e){
-    if (!panel || panel.hidden) return;
+    if (!panel.classList.contains('is-open')) return;
     if (wrap.contains(e.target)) return;
-    closePanel();
+    reallyClose();
   });
-  // Close by Esc
+
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape') closePanel();
+    if ((e.key||"").toLowerCase() === 'escape' && panel.classList.contains('is-open')) {
+      reallyClose();
+    }
   });
+
+  if (backdrop){
+    backdrop.addEventListener('click', function(){
+      if (panel.classList.contains('is-open')) reallyClose();
+    });
+  }
+
+  // Watch for any external script trying to re-hide
+  var mo = new MutationObserver(function(muts){
+    muts.forEach(function(m){
+      if (m.target === panel && panel.classList.contains('is-open') && panel.hasAttribute('hidden')) {
+        log("Detected external hide -> restoring open");
+        panel.removeAttribute('hidden');
+        panel.hidden = false;
+        panel.style.display='block';
+      }
+    });
+  });
+  mo.observe(panel, { attributes:true, attributeFilter:['hidden','class','style'] });
+
+  log("initialized embed controls");
 })();
 </script>
 <script src="/static/js/comments/comments_api.js"></script>
