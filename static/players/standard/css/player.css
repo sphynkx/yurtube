@@ -56,3 +56,16 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* Sprites support */
+.std-sprite-pop,
+.std-embed-sprite-pop {
+  box-shadow: 0 4px 12px rgba(0,0,0,.45);
+  border-radius: 4px;
+  transition: opacity .08s linear;
+  opacity: 0;
+}
+.std-sprite-pop[style*="display: block"],
+.std-embed-sprite-pop[style*="display: block"] {
+  opacity: 1;
+}
