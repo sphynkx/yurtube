@@ -21,6 +21,7 @@ from db.videos_db import (
     get_owned_video,
     list_my_videos,
     set_video_ready,
+    delete_video_by_owner,
 )
 
 from services.ytms_client_srv import create_thumbnails_job
@@ -195,11 +196,7 @@ async def manage_delete(
 
         rel_storage = owned["storage_path"]
 
-        res = await conn.execute(
-            "DELETE FROM videos WHERE video_id = $1 AND author_uid = $2",
-            video_id,
-            user["user_uid"],
-        )
+        res = await delete_video_by_owner(conn, video_id, user["user_uid"])
         ok = res.endswith("1")
         if not ok:
             raise HTTPException(status_code=404, detail="Video not found")

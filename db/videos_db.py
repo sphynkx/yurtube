@@ -314,3 +314,23 @@ async def get_video_min(
         "SELECT video_id, title FROM videos WHERE video_id = $1",
         video_id,
     )
+
+
+# Добавьте эту функцию в db/videos_db.py (в конец файла или в раздел CRUD для videos)
+
+from typing import Any
+
+async def delete_video_by_owner(conn: Any, video_id: str, author_uid: str) -> str:
+    """
+    Moved from routes/upload_rout.py manage_delete()
+    Remove record if owner is same as..
+    Return result string from driver (for example: 'DELETE 1' for asyncpg).
+    """
+    return await conn.execute(
+        """
+        DELETE FROM videos
+        WHERE video_id = $1 AND author_uid = $2
+        """,
+        video_id,
+        author_uid,
+    )
