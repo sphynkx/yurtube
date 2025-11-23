@@ -223,6 +223,13 @@ python3 reindex_all.py
 deactivate
 ```
 
+
+### Thumbnail preview service
+This is separate service for generation preview thumbnails. Download it from [this repository](https://github.com/sphynkx/ytms), follow [instructions](https://github.com/sphynkx/ytms/README.md) for install, configure and run. 
+
+Also need configure app to communicate with that service - set necessary params in the `config/ytms_config.py` in accordance with configured service.
+
+
 ## Run the app
 Create system user for app, ensure storage directory exists and is writable:
 ```bash
