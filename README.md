@@ -229,6 +229,11 @@ This is separate service for generation preview thumbnails. Download it from [th
 
 Also need configure app to communicate with that service - set necessary params in the `config/ytms_config.py` in accordance with configured service.
 
+Finally check service:
+```bash
+curl http://<ytms_IP>:8089/healthz
+```
+
 
 ## Run the app
 Create system user for app, ensure storage directory exists and is writable:
