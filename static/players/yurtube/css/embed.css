@@ -168,3 +168,13 @@ html, body { height:100%; background:#000; font-family:var(--yrp-font); }
 
 /* hide Autoplay button in embed */
 .yrp-container.yrp-embed .yrp-autoplay { display: none !important; }
+/* q-fix to up caption up to control panel */
+.yrp-container video::-webkit-media-text-track-display {
+  transform: translateY(-50px); /* up to above on panel */
+}
+.yrp-container video::cue {
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.35;
+}
