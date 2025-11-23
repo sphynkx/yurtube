@@ -58,6 +58,22 @@
       <div>
         <label><input type="checkbox" name="is_made_for_kids" {{ 'checked' if form and form.is_made_for_kids else '' }}> Made for kids</label>
       </div>
+<!-- captions -->
+<div>
+  <label><input type="checkbox" name="generate_captions" value="1"> Generate captions</label>
+</div>
+<div>
+  <label>Captions language
+    <select name="captions_lang">
+      <option value="auto" selected>auto</option>
+      <option value="en">en</option>
+      <option value="ru">ru</option>
+      <option value="uk">uk</option>
+      <option value="de">de</option>
+    </select>
+  </label>
+</div>
+<!-- /captions -->
       <button id="upload-submit" type="submit">Upload</button>
       <span id="upload-status" style="margin-left:8px;"></span>
     </form>

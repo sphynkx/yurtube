@@ -39,6 +39,10 @@ from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from db.comments.root_db import delete_all_comments_for_video  # best-effort
 
+from services.captions_local_srv import generate_local_captions
+from db.captions_db import set_video_captions
+
+
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 
@@ -252,6 +256,8 @@ async def upload_video(
     category_id: Optional[str] = Form(None),
     is_age_restricted: bool = Form(False),
     is_made_for_kids: bool = Form(False),
+    generate_captions: Optional[int] = Form(0),
+    captions_lang: str = Form("auto"),
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
@@ -354,6 +360,24 @@ async def upload_video(
 
         await set_video_ready(conn, video_id, duration)
 
+        # --- Optional captions generation (local mock) ---
+        want_caps = bool(generate_captions)
+        lang_req = (captions_lang or "auto").strip().lower()
+        if want_caps:
+            try:
+                rel_vtt, meta = await generate_local_captions(
+                    video_id=video_id,
+                    storage_rel=rel_storage,
+                    src_path=original_path,
+                    lang=lang_req or "auto",
+                )
+                await set_video_captions(conn, video_id, rel_vtt, meta.get("lang") or lang_req, meta)
+                print(f"[UPLOAD] captions generated video_id={video_id} lang={meta.get('lang')}")
+            except Exception as e:
+                print(f"[UPLOAD] captions generation failed video_id={video_id}: {e}")
+        else:
+            print(f"[UPLOAD] captions generation skipped video_id={video_id}")
+
         try:
             min_dur = getattr(settings, "AUTO_SPRITES_MIN_DURATION", 3)
             auto_enabled = getattr(settings, "AUTO_SPRITES_ENABLED", True)
@@ -413,6 +437,7 @@ async def upload_video(
         headers={"Cache-Control": "no-store"},
     )
     return resp
+
 
 @router.post("/upload/select-thumbnail")
 @router.post("/upload/select-thumbnail/")

@@ -140,7 +140,8 @@
       });
     }
 
-    // CAPTIONS START: append caption track if provided
+    // CAPTIONS START: append main caption track if provided
+    var btnCC = null;
     if (captionVtt) {
       try {
         var ctr = document.createElement("track");
@@ -150,7 +151,33 @@
         ctr.setAttribute("label", captionLang || "Original");
         ctr.setAttribute("default", "");
         video.appendChild(ctr);
-        d("caption track appended", {captionVtt: captionVtt, captionLang: captionLang});
+
+        // enable CC button
+        btnCC = root.querySelector(".yrp-subtitles");
+        if (btnCC) btnCC.disabled = false;
+
+        // ensure tracks become visible
+        var ensureShow = function(){
+          try {
+            var tt = video.textTracks;
+            if (!tt) return;
+            var found = false;
+            for (var i=0;i<tt.length;i++){
+              if (tt[i].kind === "subtitles" || tt[i].kind === "captions") {
+                tt[i].mode = "showing"; // force show by default
+                found = true;
+              }
+            }
+            if (!found && btnCC) btnCC.disabled = true; // no usable tracks
+          } catch(_) {}
+        };
+        // try multiple hooks to cover async loading
+        setTimeout(ensureShow, 0);
+        video.addEventListener("loadedmetadata", function once(){
+          video.removeEventListener("loadedmetadata", once);
+          ensureShow();
+        });
+        ctr.addEventListener("load", ensureShow);
       } catch(e){
         d("caption track append failed", e);
       }
@@ -214,6 +241,7 @@
     var leftGrp = root.querySelector(".yrp-left");
     var rightGrp = root.querySelector(".yrp-right");
     var btnAutoplay = root.querySelector(".yrp-autoplay");
+    var btnSubtitles = root.querySelector(".yrp-subtitles");
 
     var hideTimer = null;
     var seeking = false;
@@ -222,7 +250,6 @@
     var userTouchedVolume = false;
     var autoMuteApplied = false;
 
-    // PiP state bookkeeping
     var pipInSystem = false;
     var pipWasPlayingOrig = false;
     var pipWasMutedOrig = false;
@@ -241,9 +268,7 @@
     function parseTimestamp(ts){
       var m = String(ts||"").match(/^(\d{2}):(\d{2}):(\d{2}\.\d{3})$/);
       if(!m) return 0;
-      var h = parseInt(m[1],10);
-      var mm = parseInt(m[2],10);
-      var ss = parseFloat(m[3]);
+      var h = parseInt(m[1],10), mm = parseInt(m[2],10), ss = parseFloat(m[3]);
       return h*3600 + mm*60 + ss;
     }
     function buildAbsoluteSpriteUrl(rel){
@@ -313,11 +338,9 @@
             }
           }
           spritesLoaded = true;
-          d("sprites VTT loaded", {cues: spriteCues.length, durationApprox: spriteDurationApprox});
         })
         .catch(function(err){
           spritesLoadError = true;
-          d("sprites VTT load failed", err);
         });
     }
     function showSpritePreviewAtClientX(clientX){
@@ -352,17 +375,24 @@
       pop.style.height = cue.h + "px";
     }
 
-    function refreshAutoplayBtn(){
-      if (!btnAutoplay) return;
-      btnAutoplay.setAttribute("aria-pressed", autoplayOn ? "true" : "false");
-      btnAutoplay.title = autoplayOn ? "Autoplay on (A)" : "Autoplay off (A)";
-      btnAutoplay.textContent = autoplayOn ? "Autoplay on" : "Autoplay off";
-      var img = autoplayOn ? "var(--icon-autoplay-on)" : "var(--icon-autoplay-off)";
-      try {
-        btnAutoplay.style.webkitMaskImage = img;
-        btnAutoplay.style.maskImage = img;
-      } catch(_){}
-    }
+	function refreshAutoplayBtn(){
+	  if (!btnAutoplay) return;
+	  var on = autoplayOn;
+	  btnAutoplay.setAttribute("aria-pressed", on ? "true" : "false");
+	  btnAutoplay.setAttribute("aria-label", on ? "Autoplay on (A)" : "Autoplay off (A)");
+	  btnAutoplay.title = on ? "Autoplay on (A)" : "Autoplay off (A)";
+	  btnAutoplay.textContent = "";
+	  var iconVar = on ? "var(--icon-autoplay-on)" : "var(--icon-autoplay-off)";
+	  btnAutoplay.style.backgroundColor = "#6cc9fa";
+	  btnAutoplay.style.webkitMaskImage = iconVar;
+	  btnAutoplay.style.maskImage = iconVar;
+	  btnAutoplay.style.webkitMaskRepeat = "no-repeat";
+	  btnAutoplay.style.maskRepeat = "no-repeat";
+	  btnAutoplay.style.webkitMaskPosition = "center";
+	  btnAutoplay.style.maskPosition = "center";
+	  btnAutoplay.style.webkitMaskSize = "20px 20px";
+	  btnAutoplay.style.maskSize = "20px 20px";
+	}
 
     function scheduleAutoHide(delayMs) {
       if (hideTimer) clearTimeout(hideTimer);
@@ -425,7 +455,6 @@
       if (ctx) ctx.hidden = true;
       root.classList.remove("vol-open");
     }
-
     function measureControlsMinWidth() {
       var lw = leftGrp ? leftGrp.getBoundingClientRect().width : 0;
       var rw = rightGrp ? rightGrp.getBoundingClientRect().width : 0;
@@ -434,7 +463,6 @@
       if (!isFinite(minW) || minW <= 0) minW = 480;
       return minW;
     }
-
     function adjustWidthByAspect() {
       if (root.classList.contains("yrp-theater")) return;
       var csVideo = getComputedStyle(video);
@@ -453,7 +481,6 @@
       root.style.width = "100%";
     }
 
-    // Persist volume/mute
     (function(){
       var vs = load("volume", null);
       if (vs && typeof vs.v === "number") video.volume = clamp(vs.v, 0, 1);
@@ -481,14 +508,12 @@
       });
     })();
 
-    // Persist speed
     (function(){
       var sp = load("speed", null);
       if (typeof sp === "number" && sp > 0) video.playbackRate = sp;
       video.addEventListener("ratechange", function(){ save("speed", video.playbackRate); });
     })();
 
-    // Persist theater
     (function(){
       if (!btnTheater) return;
       var th = !!load("theater", false);
@@ -508,7 +533,6 @@
       });
     })();
 
-    // Persist resume
     (function(){
       var vid = root.getAttribute("data-video-id") || "";
       if (!vid) return;
@@ -540,12 +564,10 @@
       video.addEventListener("ended", function(){ var m = load("resume", {}); delete m[vid]; save("resume", m); });
     })();
 
-    // Debug events
     ["loadedmetadata","loadeddata","canplay","canplaythrough","play","playing","pause","stalled","suspend","waiting","error","abort","emptied"].forEach(function(ev){
       video.addEventListener(ev, function(){ d("event:", ev, {rs: video.readyState, paused: video.paused, muted: video.muted}); });
     });
 
-    // Autoplay
     (function(){
       var host = root.closest(".player-host") || root;
       var opt = parseJSONAttr(host, "data-options", null);
@@ -554,24 +576,20 @@
         return !!load("autoplay", false);
       }
       var WANT = wantAutoplay();
-      d("autoplay check", {WANT:WANT, opt:opt, saved:load("autoplay", false)});
       if (!WANT) {
         setTimeout(function(){ scheduleAutoHide(1000); }, 0);
         return;
       }
-
       function tryPlaySequence(reason){
-        d("tryPlaySequence", {reason:reason, muted: video.muted, rs: video.readyState});
         var p=null;
-        try { p = video.play(); } catch(e){ d("play() threw sync", e); p = null; }
+        try { p = video.play(); } catch(e){ p = null; }
         if (p && typeof p.then === "function") {
-          p.then(function(){ d("play() resolved"); }).catch(function(err){
-            d("play() rejected", {name: err && err.name, msg: err && err.message});
+          p.then(function(){}).catch(function(err){
             if (!video.muted) {
               autoMuteApplied = true;
               video.muted = true;
               video.setAttribute("muted","");
-              try { video.play().catch(function(e2){ d("retry rejected", e2); }); } catch(e2){ d("retry threw sync", e2); }
+              try { video.play().catch(function(){}); } catch(_){}
             }
           });
         } else {
@@ -580,14 +598,13 @@
               autoMuteApplied = true;
               video.muted = true;
               video.setAttribute("muted","");
-              try { video.play().catch(function(e3){ d("no-promise fallback rejected", e3); }); } catch(e3){ d("no-promise fallback threw", e3); }
+              try { video.play().catch(function(){}); } catch(_){}
             }
           }, 0);
         }
       }
-
       var fired=false;
-      function fireOnce(tag){ if (fired) return; fired=true; tryPlaySequence(tag); }
+      function fireOnce(tag){ if(fired) return; fired=true; tryPlaySequence(tag); }
       if (video.readyState >= 1) fireOnce("readyState>=1");
       ["loadedmetadata","loadeddata","canplay","canplaythrough"].forEach(function(ev){
         var once=function(){ video.removeEventListener(ev, once); fireOnce(ev); };
@@ -595,14 +612,12 @@
       });
       setTimeout(function(){
         if (video.paused) {
-          d("watchdog: still paused, force muted play");
           autoMuteApplied = true; video.muted = true; video.setAttribute("muted","");
-          try { video.play().catch(function(e){ d("watchdog play rejected", e); }); } catch(e){ d("watchdog play threw", e); }
+          try { video.play().catch(function(){}); } catch(_){}
         }
       }, 1200);
     })();
 
-    // Initial layout
     video.addEventListener("loadedmetadata", function () {
       if (startAt && startAt > 0) {
         try { video.currentTime = Math.min(startAt, Math.floor(video.duration || startAt)); } catch (e) {}
@@ -630,7 +645,6 @@
       if (pipInSystem) pipUserState = false;
     });
 
-    // PiP helpers
     function enterVideoPiP() {
       var needTempPlay = video.paused;
       var prevMuted = video.muted;
@@ -665,7 +679,6 @@
       if (shouldPlay) { video.play().catch(function(){}); } else { video.pause(); }
     });
 
-    // Basic UI bindings
     video.addEventListener("click", function(){ playToggle(); });
     if (centerPlay) centerPlay.addEventListener("click", playToggle);
     if (btnPlay) btnPlay.addEventListener("click", playToggle);
@@ -803,7 +816,27 @@
       });
     }
 
-    // Context menu
+    if (btnSubtitles) {
+      btnSubtitles.addEventListener("click", function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          var tt = video.textTracks;
+          if (!tt || tt.length === 0) return;
+          var anyShowing = false;
+          for (var i=0;i<tt.length;i++){
+            if ((tt[i].kind === "subtitles" || tt[i].kind === "captions") && tt[i].mode === "showing") {
+              anyShowing = true; break;
+            }
+          }
+          var target = anyShowing ? "hidden" : "showing";
+          for (var j=0;j<tt.length;j++){
+            if (tt[j].kind === "subtitles" || tt[j].kind === "captions") tt[j].mode = target;
+          }
+        } catch(_){}
+      });
+    }
+
     root.addEventListener("contextmenu", function (e) {
       e.preventDefault();
       hideMenus();
@@ -813,7 +846,6 @@
       ctx.style.left = (e.clientX - rw.left) + "px";
       ctx.style.top = (e.clientY - rw.top) + "px";
       ctx.hidden = false;
-
       ctx.onclick = function (ev) {
         var act = ev.target && ev.target.getAttribute("data-action");
         var at = Math.floor(video.currentTime || 0);
@@ -883,9 +915,7 @@
       var code = e.code;
       var key = (e.key || "").toLowerCase();
 
-      if (code === "Space" || code === "Enter" || code === "NumpadEnter" ||
-          code === "MediaPlayPause" ||
-          code === "KeyK" || key === "k") {
+      if (code === "Space" || code === "Enter" || code === "NumpadEnter" || code === "MediaPlayPause" || code === "KeyK" || key === "k") {
         playToggle(); e.preventDefault(); return;
       }
       if (code === "ArrowLeft" || key === "arrowleft" || code === "KeyJ" || key === "j") {

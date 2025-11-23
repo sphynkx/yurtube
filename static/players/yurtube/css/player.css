@@ -175,3 +175,15 @@
 .yrp-icons-ready .yrp-btn.icon-settings{ -webkit-mask-image: var(--icon-settings);mask-image: var(--icon-settings); }
 .yrp-icons-ready .yrp-btn.icon-theater { -webkit-mask-image: var(--icon-theater); mask-image: var(--icon-theater); }
 .yrp-icons-ready .yrp-btn.icon-full    { -webkit-mask-image: var(--icon-full);    mask-image: var(--icon-full); }
+
+
+/* q-fix to up caption up to control panel */
+.yrp-container video::-webkit-media-text-track-display {
+  transform: translateY(-50px); /* up to above on panel */
+}
+.yrp-container video::cue {
+  background: rgba(0,0,0,.55);
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.35;
+}

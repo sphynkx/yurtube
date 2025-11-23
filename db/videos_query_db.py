@@ -96,6 +96,8 @@ async def fetch_watch_video_full(conn, video_id: str) -> Optional[Dict[str, Any]
           v.likes_count,
           v.allow_embed,
           v.embed_params,
+       v.captions_vtt, 
+       v.captions_lang,
           u.username,
           u.channel_id,
           vcat.name AS category,
@@ -133,17 +135,36 @@ async def fetch_watch_video_full(conn, video_id: str) -> Optional[Dict[str, Any]
 async def fetch_embed_video_info(conn, video_id: str) -> Optional[Dict[str, Any]]:
     row = await conn.fetchrow(
         """
-        SELECT v.video_id, v.title, v.storage_path,
-               a.path AS thumb_asset_path
+        SELECT
+          v.video_id,
+          v.title,
+          v.storage_path,
+          v.allow_embed,
+          v.captions_vtt,
+          v.captions_lang,
+          v.likes_count,
+          v.views_count,
+          v.created_at,
+          thumb.path  AS thumb_asset_path,
+          anim.path   AS thumb_anim_asset_path
         FROM videos v
-        LEFT JOIN video_assets a
-          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_default'
+          LIMIT 1
+        ) thumb ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_anim'
+          LIMIT 1
+        ) anim ON TRUE
         WHERE v.video_id = $1
         """,
         video_id,
     )
     return dict(row) if row else None
-
 
 async def set_video_allow_comments(conn, video_id: str, allow: bool) -> None:
     await conn.execute(

@@ -220,7 +220,7 @@ async def embed_page(
         caption_vtt: Optional[str] = video.get("captions_vtt") if video and video.get("captions_vtt") else None
         caption_lang: str = video.get("captions_lang") if video and video.get("captions_lang") else "auto"
 
-        if not row:
+        if not video:
             subtitles: List[Dict[str, Any]] = []
             player_options: Dict[str, Any] = {
                 "autoplay": bool(autoplay),
