@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 
 from config.config import settings
 from db import get_conn, release_conn
-from db.assets_db import get_thumbnail_asset_path
+from db.assets_db import get_thumbnail_asset_path, get_thumbs_vtt_asset
 from db.views_db import add_view, increment_video_views_counter
 from db.videos_db import get_video
 from db.videos_query_db import fetch_watch_video_full, fetch_embed_video_info
@@ -109,44 +109,43 @@ async def watch_page(request: Request, v: str) -> Any:
     conn = await get_conn()
     try:
         row = await fetch_watch_video_full(conn, v)
+        video: Optional[Dict[str, Any]] = dict(row) if row else None
+
+        caption_vtt: Optional[str] = video.get("captions_vtt") if video and video.get("captions_vtt") else None
+        caption_lang: str = video.get("captions_lang") if video and video.get("captions_lang") else "auto"
 
         if not row:
-            video: Optional[Dict[str, Any]] = None
-            poster_url = None
-            thumb_anim_url = None
-            avatar_url = None
-            allow_embed = False
+            # Video not found
             subtitles: List[Dict[str, Any]] = []
             player_options: Dict[str, Any] = {"autoplay": False, "muted": False, "loop": False, "start": 0}
             embed_url = f"{_base_url(request)}/embed?v={v}"
-            return templates.TemplateResponse(
-                "watch.html",
-                {
-                    "brand_logo_url": settings.BRAND_LOGO_URL,
-                    "brand_tagline": settings.BRAND_TAGLINE,
-                    "favicon_url": settings.FAVICON_URL,
-                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-                    "request": request,
-                    "current_user": user,
-                    "video": video,
-                    "video_id": v,
-                    "player_name": settings.VIDEO_PLAYER,
-                    "video_src": None,
-                    "poster_url": poster_url,
-                    "thumb_anim_url": thumb_anim_url,
-                    "avatar_url": avatar_url,
-                    "allow_embed": allow_embed,
-                    "embed_url": embed_url,
-                    "subtitles": subtitles,
-                    "player_options": player_options,
-                    "not_found": True,
-                    "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
-                    "sprites_vtt_url": None,
-                },
-                headers={"Cache-Control": "no-store"},
-            )
+            context = {
+                "brand_logo_url": settings.BRAND_LOGO_URL,
+                "brand_tagline": settings.BRAND_TAGLINE,
+                "favicon_url": settings.FAVICON_URL,
+                "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+                "request": request,
+                "current_user": user,
+                "video": None,
+                "video_id": v,
+                "player_name": settings.VIDEO_PLAYER,
+                "video_src": None,
+                "poster_url": None,
+                "thumb_anim_url": None,
+                "avatar_url": None,
+                "allow_embed": False,
+                "embed_url": embed_url,
+                "subtitles": subtitles,
+                "player_options": player_options,
+                "not_found": True,
+                "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
+                "sprites_vtt_url": None,
+                "caption_vtt": caption_vtt,
+                "caption_lang": caption_lang,
+            }
+            return templates.TemplateResponse("watch.html", context, headers={"Cache-Control": "no-store"})
 
-        video: Dict[str, Any] = dict(row)
+        # Video found
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
@@ -176,30 +175,29 @@ async def watch_page(request: Request, v: str) -> Any:
         except Exception:
             recommended_videos = []
 
-        return templates.TemplateResponse(
-            "watch.html",
-            {
-                "brand_logo_url": settings.BRAND_LOGO_URL,
-                "brand_tagline": settings.BRAND_TAGLINE,
-                "favicon_url": settings.FAVICON_URL,
-                "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-                "request": request,
-                "current_user": user,
-                "video": video,
-                "player_name": settings.VIDEO_PLAYER,
-                "video_src": video_src,
-                "poster_url": poster_url,
-                "thumb_anim_url": thumb_anim_url,
-                "avatar_url": avatar_url,
-                "allow_embed": allow_embed,
-                "embed_url": embed_url,
-                "subtitles": subtitles,
-                "player_options": player_options,
-                "recommended_videos": recommended_videos,
-                "sprites_vtt_url": sprites_vtt_url,
-            },
-            headers={"Cache-Control": "no-store"},
-        )
+        context = {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request,
+            "current_user": user,
+            "video": video,
+            "player_name": settings.VIDEO_PLAYER,
+            "video_src": video_src,
+            "poster_url": poster_url,
+            "thumb_anim_url": thumb_anim_url,
+            "avatar_url": avatar_url,
+            "allow_embed": allow_embed,
+            "embed_url": embed_url,
+            "subtitles": subtitles,
+            "player_options": player_options,
+            "recommended_videos": recommended_videos,
+            "sprites_vtt_url": sprites_vtt_url,
+            "caption_vtt": caption_vtt,
+            "caption_lang": caption_lang,
+        }
+        return templates.TemplateResponse("watch.html", context, headers={"Cache-Control": "no-store"})
     finally:
         await release_conn(conn)
 
@@ -217,10 +215,12 @@ async def embed_page(
     conn = await get_conn()
     try:
         row = await fetch_embed_video_info(conn, v)
+        video: Optional[Dict[str, Any]] = dict(row) if row else None
+
+        caption_vtt: Optional[str] = video.get("captions_vtt") if video and video.get("captions_vtt") else None
+        caption_lang: str = video.get("captions_lang") if video and video.get("captions_lang") else "auto"
 
         if not row:
-            video: Optional[Dict[str, Any]] = None
-            poster_url = None
             subtitles: List[Dict[str, Any]] = []
             player_options: Dict[str, Any] = {
                 "autoplay": bool(autoplay),
@@ -228,33 +228,31 @@ async def embed_page(
                 "loop": bool(loop),
                 "start": max(0, int(t or 0)),
             }
-            return templates.TemplateResponse(
-                "embed.html",
-                {
-                    "brand_logo_url": settings.BRAND_LOGO_URL,
-                    "brand_tagline": settings.BRAND_TAGLINE,
-                    "favicon_url": settings.FAVICON_URL,
-                    "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-                    "request": request,
-                    "video": video,
-                    "player_name": settings.VIDEO_PLAYER,
-                    "video_src": None,
-                    "poster_url": poster_url,
-                    "video_id": v,
-                    "subtitles": subtitles,
-                    "player_options": player_options,
-                    "not_found": True,
-                    "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
-                    "sprites_vtt_url": None,  # NEW
-                },
-                headers={"Cache-Control": "no-store"},
-            )
+            context = {
+                "brand_logo_url": settings.BRAND_LOGO_URL,
+                "brand_tagline": settings.BRAND_TAGLINE,
+                "favicon_url": settings.FAVICON_URL,
+                "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+                "request": request,
+                "video": None,
+                "player_name": settings.VIDEO_PLAYER,
+                "video_src": None,
+                "poster_url": None,
+                "video_id": v,
+                "subtitles": subtitles,
+                "player_options": player_options,
+                "not_found": True,
+                "fallback_image_url": settings.FALLBACK_PLACEHOLDER_URL,
+                "sprites_vtt_url": None,
+                "caption_vtt": caption_vtt,
+                "caption_lang": caption_lang,
+            }
+            return templates.TemplateResponse("embed.html", context, headers={"Cache-Control": "no-store"})
 
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
 
-        video: Dict[str, Any] = dict(row)
         video_src = "/storage/" + video["storage_path"].strip("/").rstrip("/") + "/original.webm"
         poster_url = build_storage_url(video["thumb_asset_path"]) if video.get("thumb_asset_path") else None
 
@@ -266,28 +264,26 @@ async def embed_page(
             "start": max(0, int(t or 0)),
         }
 
-        # sprites vtt for embed
         sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
         sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
 
-        return templates.TemplateResponse(
-            "embed.html",
-            {
-                "brand_logo_url": settings.BRAND_LOGO_URL,
-                "brand_tagline": settings.BRAND_TAGLINE,
-                "favicon_url": settings.FAVICON_URL,
-                "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-                "request": request,
-                "video": video,
-                "player_name": settings.VIDEO_PLAYER,
-                "video_src": video_src,
-                "poster_url": poster_url,
-                "video_id": video["video_id"],
-                "subtitles": subtitles,
-                "player_options": player_options,
-                "sprites_vtt_url": sprites_vtt_url,  # NEW
-            },
-            headers={"Cache-Control": "no-store"},
-        )
+        context = {
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "request": request,
+            "video": video,
+            "player_name": settings.VIDEO_PLAYER,
+            "video_src": video_src,
+            "poster_url": poster_url,
+            "video_id": video["video_id"],
+            "subtitles": subtitles,
+            "player_options": player_options,
+            "sprites_vtt_url": sprites_vtt_url,
+            "caption_vtt": caption_vtt,
+            "caption_lang": caption_lang,
+        }
+        return templates.TemplateResponse("embed.html", context, headers={"Cache-Control": "no-store"})
     finally:
         await release_conn(conn)

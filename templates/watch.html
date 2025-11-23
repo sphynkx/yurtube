@@ -251,7 +251,9 @@ body[data-debug="1"] .watch-layout * { outline:1px dashed rgba(0, 100, 255, .15)
 			 video_id=video['video_id'] if video else None,
 			 subtitles=subtitles,
 			 options=player_options,
-			 sprites_vtt_url=sprites_vtt_url
+			 sprites_vtt_url=sprites_vtt_url,
+			caption_vtt=video.captions_vtt,
+			caption_lang=video.captions_lang
 		   ) }}
       {% endif %}
     </div>

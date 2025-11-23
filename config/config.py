@@ -112,4 +112,8 @@ class Settings:
     AUTO_SPRITES_ENABLED = True
     AUTO_SPRITES_MIN_DURATION = 3
 
+    AUTO_CAPTIONS_MIN_DURATION = 3
+    AUTO_CAPTIONS_ENABLED = False
+    AUTO_CAPTIONS_LANG = "auto"
+
 settings = Settings()

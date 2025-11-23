@@ -111,6 +111,8 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             "captions_vtt": owned.get("captions_vtt"),
             "thumbs_vtt": thumbs_vtt_url,
             "sprites": sprite_urls,
+            "captions_vtt": owned.get("captions_vtt"),
+            "captions_lang": owned.get("captions_lang"),
         }
     finally:
         await release_conn(conn)

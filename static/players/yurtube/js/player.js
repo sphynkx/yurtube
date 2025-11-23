@@ -109,6 +109,10 @@
     var subs = parseJSONAttr(host, "data-subtitles", []);
     var opts = parseJSONAttr(host, "data-options", {});
     var spritesVtt = host.getAttribute("data-sprites-vtt") || "";
+    // CAPTIONS START
+    var captionVtt = host.getAttribute("data-caption-vtt") || "";
+    var captionLang = host.getAttribute("data-caption-lang") || "";
+    // CAPTIONS END
 
     var DEBUG = /\byrpdebug=1\b/i.test(location.search) || !!(opts && opts.debug);
     function d(){ if(!DEBUG) return; try { console.debug.apply(console, ["[YRP]"].concat([].slice.call(arguments))); } catch(_){} }
@@ -135,6 +139,23 @@
         video.appendChild(tr);
       });
     }
+
+    // CAPTIONS START: append caption track if provided
+    if (captionVtt) {
+      try {
+        var ctr = document.createElement("track");
+        ctr.setAttribute("kind", "subtitles");
+        ctr.setAttribute("src", captionVtt);
+        ctr.setAttribute("srclang", captionLang || "auto");
+        ctr.setAttribute("label", captionLang || "Original");
+        ctr.setAttribute("default", "");
+        video.appendChild(ctr);
+        d("caption track appended", {captionVtt: captionVtt, captionLang: captionLang});
+      } catch(e){
+        d("caption track append failed", e);
+      }
+    }
+    // CAPTIONS END
 
     try { video.load(); d("video.load() called", {src: videoSrc}); } catch(e){ d("video.load() error", e); }
 
@@ -205,7 +226,7 @@
     var pipInSystem = false;
     var pipWasPlayingOrig = false;
     var pipWasMutedOrig = false;
-    var pipUserState = null; // true playing, false paused, null no explicit user change
+    var pipUserState = null;
 
     var autoplayOn = !!load("autoplay", false);
 
@@ -263,34 +284,34 @@
         .then(function(r){ return r.text(); })
         .then(function(text){
           var lines = text.split(/\r?\n/);
-            for (var i=0;i<lines.length;i++){
-              var line = lines[i].trim();
-              if(!line) continue;
-              if(line.indexOf("-->") >= 0){
-                var parts = line.split("-->").map(function(s){ return s.trim(); });
-                if (parts.length < 2) continue;
-                var start = parseTimestamp(parts[0]);
-                var end = parseTimestamp(parts[1]);
-                var ref = (lines[i+1]||"").trim();
-                var spriteRel = "";
-                var x=0,y=0,w=0,h=0;
-                var hashIdx = ref.indexOf("#xywh=");
-                if (hashIdx > 0) {
-                  spriteRel = ref.substring(0, hashIdx);
-                  var xywh = ref.substring(hashIdx+6).split(",");
-                  if (xywh.length === 4) {
-                    x = parseInt(xywh[0],10);
-                    y = parseInt(xywh[1],10);
-                    w = parseInt(xywh[2],10);
-                    h = parseInt(xywh[3],10);
-                  }
+          for (var i=0;i<lines.length;i++){
+            var line = lines[i].trim();
+            if(!line) continue;
+            if(line.indexOf("-->") >= 0){
+              var parts = line.split("-->").map(function(s){ return s.trim(); });
+              if (parts.length < 2) continue;
+              var start = parseTimestamp(parts[0]);
+              var end = parseTimestamp(parts[1]);
+              var ref = (lines[i+1]||"").trim();
+              var spriteRel = "";
+              var x=0,y=0,w=0,h=0;
+              var hashIdx = ref.indexOf("#xywh=");
+              if (hashIdx > 0) {
+                spriteRel = ref.substring(0, hashIdx);
+                var xywh = ref.substring(hashIdx+6).split(",");
+                if (xywh.length === 4) {
+                  x = parseInt(xywh[0],10);
+                  y = parseInt(xywh[1],10);
+                  w = parseInt(xywh[2],10);
+                  h = parseInt(xywh[3],10);
                 }
-                var absUrl = buildAbsoluteSpriteUrl(spriteRel);
-                spriteCues.push({start:start,end:end,spriteUrl:absUrl,x:x,y:y,w:w,h:h});
-                if (end > spriteDurationApprox) spriteDurationApprox = end;
-                i++; // skip ref line
               }
+              var absUrl = buildAbsoluteSpriteUrl(spriteRel);
+              spriteCues.push({start:start,end:end,spriteUrl:absUrl,x:x,y:y,w:w,h:h});
+              if (end > spriteDurationApprox) spriteDurationApprox = end;
+              i++;
             }
+          }
           spritesLoaded = true;
           d("sprites VTT loaded", {cues: spriteCues.length, durationApprox: spriteDurationApprox});
         })

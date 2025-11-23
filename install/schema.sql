@@ -79,6 +79,11 @@ CREATE TABLE IF NOT EXISTS videos (
     comments_enabled     BOOLEAN NOT NULL DEFAULT TRUE,
     comments_root_doc_id TEXT NULL,
     thumbnails_ready    BOOLEAN NOT NULL DEFAULT FALSE,
+    captions_vtt         TEXT NULL,
+    captions_lang        VARCHAR(8) NULL,
+    captions_meta        JSONB NULL,
+    captions_ready       BOOLEAN NOT NULL DEFAULT FALSE,
+    captions_alt         JSONB NULL,-- Future translations container
 
     CONSTRAINT videos_video_id_len CHECK (char_length(video_id) = 12)
 );
@@ -89,6 +94,7 @@ CREATE INDEX IF NOT EXISTS videos_created_idx ON videos (created_at DESC);
 CREATE INDEX IF NOT EXISTS videos_category_idx ON videos (category_id);
 CREATE INDEX IF NOT EXISTS idx_videos_comments_enabled ON videos(comments_enabled);
 UPDATE videos SET comments_enabled = true WHERE comments_enabled IS NULL;
+CREATE INDEX IF NOT EXISTS video_captions_video_idx ON video_captions(video_id);
 
 -- Reactions
 CREATE TABLE IF NOT EXISTS reactions (
@@ -215,5 +221,18 @@ CREATE TABLE IF NOT EXISTS user_notification_prefs (
     allow_unlisted BOOLEAN NULL,
     PRIMARY KEY (user_uid, type)
 );
+
+-- Captions translations table (future; minimal columns now)
+CREATE TABLE IF NOT EXISTS video_captions (
+    video_id    TEXT NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
+    lang        VARCHAR(8) NOT NULL,
+    rel_path    TEXT NULL,
+    status      TEXT NOT NULL DEFAULT 'pending', -- pending|ready|failed
+    meta        JSONB NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (video_id, lang)
+);
+CREATE INDEX IF NOT EXISTS video_captions_video_idx ON video_captions(video_id);
 
 COMMIT;
