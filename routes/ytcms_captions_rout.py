@@ -1,17 +1,19 @@
 import os
 import json
+import asyncio
 from typing import Optional, Any
 
 from fastapi import APIRouter, Request, Form, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 
 from config.config import settings
 from db import get_conn, release_conn
-from db.videos_db import get_owned_video
+from db.videos_db import get_owned_video, set_video_ready
 from db.ytms_db import fetch_video_storage_path
 from db.captions_db import set_video_captions, reset_video_captions, get_video_captions_status
 from utils.security_ut import get_current_user
-from services.captions_local_srv import generate_local_captions  # mock
+from services.ytcms.captions_generation import generate_captions  # mock
+from services.ffmpeg_srv import async_probe_duration_seconds  # re-probe if duration is zero
 
 router = APIRouter(tags=["captions"])
 
@@ -34,8 +36,6 @@ async def captions_process(
         if not owned:
             return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
         duration = int(owned.get("duration_sec") or 0)
-        if duration < AUTO_MIN_DURATION:
-            return JSONResponse({"ok": False, "error": "too_short", "duration": duration}, status_code=400)
         storage_rel = owned["storage_path"].rstrip("/")
     finally:
         await release_conn(conn)
@@ -45,20 +45,43 @@ async def captions_process(
     if not os.path.exists(original_abs):
         return JSONResponse({"ok": False, "error": "original_missing"}, status_code=404)
 
-    rel_vtt, meta = await generate_local_captions(
-        video_id=video_id,
-        storage_rel=storage_rel,
-        src_path=original_abs,
-        lang=lang,
-    )
+    # If duration is zero in DB, try to re-probe and persist
+    if duration <= 0:
+        try:
+            duration = await async_probe_duration_seconds(original_abs)
+            conn = await get_conn()
+            try:
+                await set_video_ready(conn, video_id, duration)
+            finally:
+                await release_conn(conn)
+        except Exception:
+            return JSONResponse({"ok": False, "error": "too_short", "duration": 0}, status_code=400)
 
-    conn = await get_conn()
-    try:
-        await set_video_captions(conn, video_id, rel_vtt, meta.get("lang") or lang, meta)
-    finally:
-        await release_conn(conn)
+    if duration < AUTO_MIN_DURATION:
+        return JSONResponse({"ok": False, "error": "too_short", "duration": duration}, status_code=400)
 
-    return JSONResponse({"ok": True, "video_id": video_id, "vtt": rel_vtt, "meta": meta})
+    async def _bg_worker():
+        try:
+            rel_vtt, meta = await generate_captions(
+                video_id=video_id,
+                storage_rel=storage_rel,
+                src_path=original_abs,
+                lang=lang,
+            )
+            c = await get_conn()
+            try:
+                await set_video_captions(c, video_id, rel_vtt, meta.get("lang") or lang, meta)
+            finally:
+                await release_conn(c)
+            print(f"[YTCMS] captions done video_id={video_id} lang={meta.get('lang')} vtt={rel_vtt}")
+        except Exception as e:
+            print(f"[YTCMS] captions failed video_id={video_id}: {e}")
+
+    # Fire-and-forget background job to avoid 504
+    asyncio.create_task(_bg_worker())
+
+    # Redirect back to media page with a query flag
+    return RedirectResponse(url=f"/manage/video/{video_id}/media?captions=queued", status_code=303)
 
 @router.get("/internal/ytcms/captions/status")
 async def captions_status(video_id: str):
@@ -103,17 +126,22 @@ async def captions_retry(
     if not os.path.exists(original_abs):
         raise HTTPException(status_code=404, detail="original_missing")
 
-    rel_vtt, meta = await generate_local_captions(
-        video_id=video_id,
-        storage_rel=storage_rel,
-        src_path=original_abs,
-        lang=lang,
-    )
+    async def _bg_worker():
+        try:
+            rel_vtt, meta = await generate_captions(
+                video_id=video_id,
+                storage_rel=storage_rel,
+                src_path=original_abs,
+                lang=lang,
+            )
+            c = await get_conn()
+            try:
+                await set_video_captions(c, video_id, rel_vtt, meta.get("lang") or lang, meta)
+            finally:
+                await release_conn(c)
+            print(f"[YTCMS] captions retry done video_id={video_id} lang={meta.get('lang')} vtt={rel_vtt}")
+        except Exception as e:
+            print(f"[YTCMS] captions retry failed video_id={video_id}: {e}")
 
-    conn = await get_conn()
-    try:
-        await set_video_captions(conn, video_id, rel_vtt, meta.get("lang") or lang, meta)
-    finally:
-        await release_conn(conn)
-
-    return {"ok": True, "video_id": video_id, "vtt": rel_vtt, "meta": meta, "reset": True}
+    asyncio.create_task(_bg_worker())
+    return RedirectResponse(url=f"/manage/video/{video_id}/media?captions=queued&reset=1", status_code=303)

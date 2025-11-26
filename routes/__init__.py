@@ -29,6 +29,8 @@ from routes.reactions_rout import router as reactions_router
 
 from routes.ytms_thumbnails_rout import router as ytms_router
 
+from .ytcms_captions_rout import router as ytcms_captions_router
+
 
 def register_routes(app: FastAPI) -> None:
     app.include_router(root_router)
@@ -60,3 +62,4 @@ def register_routes(app: FastAPI) -> None:
 
     app.include_router(ytms_router)
 
+    app.include_router(ytcms_captions_router)

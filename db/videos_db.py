@@ -1,5 +1,4 @@
-from typing import List, Optional
-
+from typing import Any, List, Optional
 import asyncpg
 
 
@@ -315,10 +314,6 @@ async def get_video_min(
         video_id,
     )
 
-
-# Добавьте эту функцию в db/videos_db.py (в конец файла или в раздел CRUD для videos)
-
-from typing import Any
 
 async def delete_video_by_owner(conn: Any, video_id: str, author_uid: str) -> str:
     """

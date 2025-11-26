@@ -38,9 +38,9 @@ from utils.idgen_ut import gen_id
 from utils.path_ut import build_video_storage_dir
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
-from db.comments.root_db import delete_all_comments_for_video  # best-effort
+from db.comments.root_db import delete_all_comments_for_video
 
-from services.captions_local_srv import generate_local_captions
+from services.ytcms.captions_generation import generate_captions
 from db.captions_db import set_video_captions
 
 
@@ -362,7 +362,7 @@ async def upload_video(
         lang_req = (captions_lang or "auto").strip().lower()
         if want_caps:
             try:
-                rel_vtt, meta = await generate_local_captions(
+                rel_vtt, meta = await generate_captions(
                     video_id=video_id,
                     storage_rel=rel_storage,
                     src_path=original_path,
