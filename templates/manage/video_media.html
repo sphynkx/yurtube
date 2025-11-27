@@ -4,7 +4,7 @@
 
 <div class="manage-comments-layout">
   {% include "account/left.html" %}
-  <main class="mc-main">
+  <main class="mc-main" data-video-id="{{ video_id }}">
     <div class="mc-top-bar">
       <h1 class="mc-page-title">Media: Sprites & Subtitles</h1>
       <div class="mc-back-link">
@@ -38,33 +38,7 @@
         </li>
         {% endif %}
       </ul>
-    </section>
 
-	<section style="margin-top:24px;">
-	  <h2>Captions</h2>
-	  {% if assets.captions_vtt %}
-		<p>Captions available (lang: {{ assets.captions_lang or 'auto' }}):
-		   <a href="/storage/{{ assets.captions_vtt.split('/storage/')[-1] if assets.captions_vtt.startswith('/storage/') else assets.captions_vtt }}" target="_blank">
-			 <code>{{ assets.captions_vtt }}</code>
-		   </a>
-		</p>
-		<form action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;">
-		  <input type="hidden" name="video_id" value="{{ video_id }}">
-		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="{{ assets.captions_lang or 'auto' }}" style="width:90px;"></label>
-		  <button type="submit">Regenerate captions</button>
-		</form>
-	  {% else %}
-		<p>No captions generated.</p>
-		<form action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">
-		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>
-		  <button type="submit">Generate captions</button>
-		</form>
-	  {% endif %}
-	</section>
-
-    <section style="margin-top:20px;">
       <form id="ytms-start-form"
             action="/manage/video/{{ video_id }}/media/process"
             method="post"
@@ -104,9 +78,42 @@
       </div>
     </section>
     {% endif %}
+
+	<section style="margin-top:24px;">
+	  <h2>Captions</h2>
+
+      <div class="alert" style="font-size:13px; white-space:pre-line; margin-bottom:10px;">
+Set lang code in ISO format (2 symbols), or
+auto - to detect lang automatically, or
+mixed - if you sure that video with voice on several langs.
+NOTE: Captions generation may take a long time.
+      </div>
+
+	  {% if assets.captions_vtt %}
+		<p>Captions available (lang: {{ assets.captions_lang or 'auto' }}):
+		   <a href="/storage/{{ assets.captions_vtt.split('/storage/')[-1] if assets.captions_vtt.startswith('/storage/') else assets.captions_vtt }}" target="_blank">
+			 <code>{{ assets.captions_vtt }}</code>
+		   </a>
+		</p>
+		<form action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;" onsubmit="return disableCaptionsButton(this);">
+		  <input type="hidden" name="video_id" value="{{ video_id }}">
+		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="{{ assets.captions_lang or 'auto' }}" style="width:90px;"></label>
+		  <button id="btn-generate-captions" type="submit">Regenerate captions</button>
+		</form>
+	  {% else %}
+		<p>No captions generated.</p>
+		<form action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;" onsubmit="return disableCaptionsButton(this);">
+		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>
+		  <button id="btn-generate-captions" type="submit">Generate captions</button>
+		</form>
+	  {% endif %}
+	</section>
   </main>
 </div>
 
 <script src="/static/js/ytms.js"></script>
 <script src="/static/js/sprite_preview.js"></script>
+<script src="/static/js/manage_video_media.js"></script>
 {% endblock %}

@@ -80,8 +80,8 @@ async def captions_process(
     # Fire-and-forget background job to avoid 504
     asyncio.create_task(_bg_worker())
 
-    # Redirect back to media page with a query flag
-    return RedirectResponse(url=f"/manage/video/{video_id}/media?captions=queued", status_code=303)
+    # Redirect back to media page
+    return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
 
 @router.get("/internal/ytcms/captions/status")
 async def captions_status(video_id: str):
@@ -144,4 +144,4 @@ async def captions_retry(
             print(f"[YTCMS] captions retry failed video_id={video_id}: {e}")
 
     asyncio.create_task(_bg_worker())
-    return RedirectResponse(url=f"/manage/video/{video_id}/media?captions=queued&reset=1", status_code=303)
+    return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
