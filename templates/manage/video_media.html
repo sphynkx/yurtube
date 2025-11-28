@@ -22,7 +22,16 @@
         <li>Thumbs VTT: <a href="{{ assets.thumbs_vtt }}" target="_blank"><code>{{ assets.thumbs_vtt }}</code></a></li>
         {% endif %}
         {% if assets.captions_vtt %}
-        <li>Captions VTT: <code>{{ assets.captions_vtt }}</code></li>
+        {% set rel_vtt = assets.captions_vtt %}
+        {% if assets.storage_path %}
+          {% set prefix = '/storage/' ~ assets.storage_path ~ '/' %}
+          {% if rel_vtt.startswith(prefix) %}
+            {% set rel_vtt = rel_vtt[prefix|length:] %}
+          {% endif %}
+        {% endif %}
+        <li>Captions VTT: <code>{{ assets.captions_vtt }}</code>
+          <a href="/manage/video/{{ video_id }}/vtt/edit?rel_vtt={{ rel_vtt }}" style="margin-left:8px;">Edit</a>
+        </li>
         {% endif %}
         {% if assets.sprites and assets.sprites|length > 0 %}
         <li>Sprites:
@@ -91,7 +100,7 @@ NOTE: Captions generation may take a long time.
 
 	  {% if assets.captions_vtt %}
 		<p>Captions available (lang: {{ assets.captions_lang or 'auto' }}):
-		   <a href="/storage/{{ assets.captions_vtt.split('/storage/')[-1] if assets.captions_vtt.startswith('/storage/') else assets.captions_vtt }}" target="_blank">
+		   <a href="{{ assets.captions_vtt }}" target="_blank">
 			 <code>{{ assets.captions_vtt }}</code>
 		   </a>
 		</p>

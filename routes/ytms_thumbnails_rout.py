@@ -29,6 +29,7 @@ from db.ytms_db import (
     reset_thumbnails_state,
 )
 from db.videos_db import get_owned_video
+from db.captions_db import get_video_captions_status
 from services.ytms_client_srv import create_thumbnails_job
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
@@ -96,7 +97,11 @@ async def video_media_page(request: Request, video_id: str) -> Any:
         owned = await get_owned_video(conn, video_id, user["user_uid"])
         if not owned:
             raise HTTPException(status_code=404, detail="Video not found")
-        thumb_rel = owned.get("thumb_asset_path")
+
+        storage_rel = owned["storage_path"].rstrip("/")
+
+        # thumbnails main asset (may be None, depends on separate asset tracking)
+        thumb_rel = owned.get("thumb_asset_path")  # NOTE: get_owned_video does not return this; kept for future extension
         thumb_url = build_storage_url(thumb_rel) if thumb_rel else None
 
         sprite_paths_rel = await get_video_sprite_assets(conn, video_id)
@@ -105,14 +110,21 @@ async def video_media_page(request: Request, video_id: str) -> Any:
         vtt_rel = await get_thumbs_vtt_asset(conn, video_id)
         thumbs_vtt_url = build_storage_url(vtt_rel) if vtt_rel else None
 
+        # captions status (from captions_db)
+        captions_status = await get_video_captions_status(conn, video_id)
+        captions_vtt_url = None
+        captions_lang = None
+        if captions_status and captions_status.get("captions_vtt"):
+            captions_vtt_url = build_storage_url(captions_status["captions_vtt"])
+            captions_lang = captions_status.get("captions_lang")
         assets = {
             "thumb_asset_path": thumb_rel,
             "thumb_url": thumb_url,
-            "captions_vtt": owned.get("captions_vtt"),
             "thumbs_vtt": thumbs_vtt_url,
             "sprites": sprite_urls,
-            "captions_vtt": owned.get("captions_vtt"),
-            "captions_lang": owned.get("captions_lang"),
+            "captions_vtt": captions_vtt_url,
+            "captions_lang": captions_lang,
+            "storage_path": storage_rel,
         }
     finally:
         await release_conn(conn)

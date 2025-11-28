@@ -12,12 +12,13 @@ from db.videos_db import get_owned_video, set_video_ready
 from db.ytms_db import fetch_video_storage_path
 from db.captions_db import set_video_captions, reset_video_captions, get_video_captions_status
 from utils.security_ut import get_current_user
-from services.ytcms.captions_generation import generate_captions  # mock
-from services.ffmpeg_srv import async_probe_duration_seconds  # re-probe if duration is zero
+from services.ytcms.captions_generation import generate_captions
+from services.ffmpeg_srv import async_probe_duration_seconds
 
 router = APIRouter(tags=["captions"])
 
 AUTO_MIN_DURATION = getattr(settings, "AUTO_CAPTIONS_MIN_DURATION", 3)
+
 
 @router.post("/manage/video/{video_id}/captions/process")
 async def captions_process(
@@ -80,7 +81,9 @@ async def captions_process(
     # Fire-and-forget background job to avoid 504
     asyncio.create_task(_bg_worker())
 
+    # Redirect back to media page
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
+
 
 @router.get("/internal/ytcms/captions/status")
 async def captions_status(video_id: str):
@@ -99,6 +102,7 @@ async def captions_status(video_id: str):
         "vtt": status["captions_vtt"],
         "meta": status["captions_meta"],
     }
+
 
 @router.post("/internal/ytcms/captions/retry")
 async def captions_retry(
@@ -145,6 +149,7 @@ async def captions_retry(
     asyncio.create_task(_bg_worker())
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
 
+
 @router.post("/internal/ytcms/captions/delete")
 async def captions_delete(
     request: Request,
@@ -160,7 +165,6 @@ async def captions_delete(
         storage_rel = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
         if not storage_rel:
             raise HTTPException(status_code=404, detail="video_not_ready")
-        # Reset metadata in DB
         await reset_video_captions(conn, video_id)
     finally:
         await release_conn(conn)
