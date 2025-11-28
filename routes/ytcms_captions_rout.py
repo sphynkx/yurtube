@@ -80,7 +80,6 @@ async def captions_process(
     # Fire-and-forget background job to avoid 504
     asyncio.create_task(_bg_worker())
 
-    # Redirect back to media page
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
 
 @router.get("/internal/ytcms/captions/status")
@@ -144,4 +143,48 @@ async def captions_retry(
             print(f"[YTCMS] captions retry failed video_id={video_id}: {e}")
 
     asyncio.create_task(_bg_worker())
+    return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
+
+@router.post("/internal/ytcms/captions/delete")
+async def captions_delete(
+    request: Request,
+    video_id: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+):
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="login_required")
+
+    conn = await get_conn()
+    try:
+        storage_rel = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
+        if not storage_rel:
+            raise HTTPException(status_code=404, detail="video_not_ready")
+        # Reset metadata in DB
+        await reset_video_captions(conn, video_id)
+    finally:
+        await release_conn(conn)
+
+    abs_root = getattr(settings, "STORAGE_ROOT", "/var/www/storage")
+    captions_dir = os.path.join(abs_root, storage_rel, "captions")
+    try:
+        if os.path.isdir(captions_dir):
+            for root, dirs, files in os.walk(captions_dir, topdown=False):
+                for name in files:
+                    try:
+                        os.remove(os.path.join(root, name))
+                    except Exception:
+                        pass
+                for name in dirs:
+                    try:
+                        os.rmdir(os.path.join(root, name))
+                    except Exception:
+                        pass
+            try:
+                os.rmdir(captions_dir)
+            except Exception:
+                pass
+    except Exception as e:
+        print(f"[YTCMS] captions delete fs error video_id={video_id}: {e}")
+
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)

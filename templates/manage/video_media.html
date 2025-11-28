@@ -95,19 +95,29 @@ NOTE: Captions generation may take a long time.
 			 <code>{{ assets.captions_vtt }}</code>
 		   </a>
 		</p>
-		<form action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;" onsubmit="return disableCaptionsButton(this);">
+		<form action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;">
 		  <input type="hidden" name="video_id" value="{{ video_id }}">
 		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="{{ assets.captions_lang or 'auto' }}" style="width:90px;"></label>
 		  <button id="btn-generate-captions" type="submit">Regenerate captions</button>
 		</form>
+        <form action="/internal/ytcms/captions/delete" method="post" style="margin-top:6px;">
+          <input type="hidden" name="video_id" value="{{ video_id }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Delete captions</button>
+        </form>
 	  {% else %}
 		<p>No captions generated.</p>
-		<form action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;" onsubmit="return disableCaptionsButton(this);">
+		<form action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">
 		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>
 		  <button id="btn-generate-captions" type="submit">Generate captions</button>
 		</form>
+        <form action="/internal/ytcms/captions/delete" method="post" style="margin-top:6px;">
+          <input type="hidden" name="video_id" value="{{ video_id }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button type="submit">Delete captions</button>
+        </form>
 	  {% endif %}
 	</section>
   </main>
