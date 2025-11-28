@@ -289,7 +289,7 @@
       spritePop.className = "yrp-sprite-pop";
       spritePop.style.position = "absolute";
       spritePop.style.display = "none";
-      spritePop.style.bottom = "calc(100% + 6px)";
+      spritePop.style.bottom = "calc(100% + 30px)";
       spritePop.style.left = "0";
       spritePop.style.width = "160px";
       spritePop.style.height = "90px";

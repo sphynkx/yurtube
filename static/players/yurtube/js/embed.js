@@ -254,7 +254,7 @@
       spritePop = document.createElement("div");
       spritePop.className = "yrp-sprite-pop";
       spritePop.style.position = "absolute";
-      spritePop.style.bottom = "calc(100% + 6px)";
+      spritePop.style.bottom = "calc(100% + 30px)";
       spritePop.style.left = "0";
       spritePop.style.display = "none";
       spritePop.style.width = "160px";
