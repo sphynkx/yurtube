@@ -4,6 +4,7 @@ Highlights
 * Accounts and authentication: local sign‑in and SSO (Google, X)
 * Two video players: a custom YouTube‑style player and a simple HTML5 player
 * Uploading and editing videos with automatic thumbnails, animated previews and sprites generation
+* Generation and display captions (by separate microservice)
 * Watch and embed videos
 * Search powered by [Manticore](https://manticoresearch.com/) and PostgreSQL FTS
 * Comments with like/dislike and persistent user votes
@@ -14,7 +15,10 @@ Application is WIP now. Available base functional:
 * Register and authentification - local and SSO (Gmail, X)
 * Two video players - custom (fully inspired by Youtube's one) and simple standard.
 * View and embed videos
-* Upload and edit videos, generation of animated previews and sprites.
+* Upload and edit videos:
+  * generation of animated previews
+  * Sprites generation
+  * Captions generation
 * Two Search engines (Manticore and Postgres FTS)
 * Comments
 * Notifications system
@@ -233,6 +237,16 @@ Finally check service:
 ```bash
 curl http://<ytms_IP>:8089/healthz
 ```
+
+### Caption generation service
+This is separate service based on gRPC+protobuf and faster-whisper. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/ytcms) for details about it's install and configuration.
+
+At app config you need to set IP address (`YTCMS_HOST`) and port (`YTCMS_PORT`) of ytcms service, `YTCMS_TOKEN` same as on service side. Also make sure that file `services/ytcms/ytcms_proto/captions.proto` is identical with one at ytcms service. If not - you have to regenerate stubs:
+```bash
+cd services/ytcms_proto
+./gen_proto.sh
+```
+
 
 
 ## Run the app
