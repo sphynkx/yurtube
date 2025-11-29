@@ -29,9 +29,7 @@
             {% set rel_vtt = rel_vtt[prefix|length:] %}
           {% endif %}
         {% endif %}
-        <li>Captions VTT: <code>{{ assets.captions_vtt }}</code>
-          <a href="/manage/video/{{ video_id }}/vtt/edit?rel_vtt={{ rel_vtt }}" style="margin-left:8px;">Edit</a>
-        </li>
+        <li>Captions VTT (primary): <code>{{ assets.captions_vtt }}</code></li>
         {% endif %}
         {% if assets.sprites and assets.sprites|length > 0 %}
         <li>Sprites:
@@ -91,6 +89,20 @@
 	<section style="margin-top:24px;">
 	  <h2>Captions</h2>
 
+      {% if assets.captions_files and assets.captions_files|length > 0 %}
+      <ul style="list-style:none; padding-left:0; margin:0 0 18px;">
+        {% for cf in assets.captions_files %}
+          <li style="margin-bottom:4px;">
+            <code>{{ cf.rel_vtt }}</code>
+            <a href="/manage/video/{{ video_id }}/vtt/edit?rel_vtt={{ cf.rel_vtt }}" style="margin-left:8px;">Edit</a>
+            <a href="/manage/video/{{ video_id }}/vtt/download?rel_vtt={{ cf.rel_vtt }}" style="margin-left:8px;">Download</a>
+          </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p style="margin:6px 0 12px;">No caption files found.</p>
+      {% endif %}
+
       <div class="alert" style="font-size:13px; white-space:pre-line; margin-bottom:10px;">
 Set lang code in ISO format (2 symbols), or
 auto - to detect lang automatically, or
@@ -99,11 +111,7 @@ NOTE: Captions generation may take a long time.
       </div>
 
 	  {% if assets.captions_vtt %}
-		<p>Captions available (lang: {{ assets.captions_lang or 'auto' }}):
-		   <a href="{{ assets.captions_vtt }}" target="_blank">
-			 <code>{{ assets.captions_vtt }}</code>
-		   </a>
-		</p>
+		<p>Primary captions track detected.</p>
 		<form action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;">
 		  <input type="hidden" name="video_id" value="{{ video_id }}">
 		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -116,7 +124,7 @@ NOTE: Captions generation may take a long time.
           <button type="submit">Delete captions</button>
         </form>
 	  {% else %}
-		<p>No captions generated.</p>
+		<p>No primary captions track (generate first).</p>
 		<form action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">
 		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>

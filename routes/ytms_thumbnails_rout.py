@@ -100,8 +100,7 @@ async def video_media_page(request: Request, video_id: str) -> Any:
 
         storage_rel = owned["storage_path"].rstrip("/")
 
-        # thumbnails main asset (may be None, depends on separate asset tracking)
-        thumb_rel = owned.get("thumb_asset_path")  # NOTE: get_owned_video does not return this; kept for future extension
+        thumb_rel = owned.get("thumb_asset_path")
         thumb_url = build_storage_url(thumb_rel) if thumb_rel else None
 
         sprite_paths_rel = await get_video_sprite_assets(conn, video_id)
@@ -110,13 +109,42 @@ async def video_media_page(request: Request, video_id: str) -> Any:
         vtt_rel = await get_thumbs_vtt_asset(conn, video_id)
         thumbs_vtt_url = build_storage_url(vtt_rel) if vtt_rel else None
 
-        # captions status (from captions_db)
         captions_status = await get_video_captions_status(conn, video_id)
         captions_vtt_url = None
         captions_lang = None
+        captions_primary_rel = None
         if captions_status and captions_status.get("captions_vtt"):
-            captions_vtt_url = build_storage_url(captions_status["captions_vtt"])
+            captions_primary_rel = captions_status["captions_vtt"]
+            captions_vtt_url = build_storage_url(captions_primary_rel)
             captions_lang = captions_status.get("captions_lang")
+
+        # Gather all captions/*.vtt for video
+        abs_root = getattr(settings, "STORAGE_ROOT", STORAGE_FS_ROOT)
+        captions_dir = os.path.join(abs_root, storage_rel, "captions")
+        captions_files: List[Dict[str, Optional[str]]] = []
+        if os.path.isdir(captions_dir):
+            for name in sorted(os.listdir(captions_dir)):
+                if not name.lower().endswith(".vtt"):
+                    continue
+                rel_path = f"captions/{name}"
+                captions_files.append({
+                    "rel_vtt": rel_path,
+                    "lang": None,
+                })
+
+        if captions_primary_rel:
+            prefix = storage_rel + "/"
+            rel_inside = captions_primary_rel
+            if rel_inside.startswith(prefix):
+                rel_inside = rel_inside[len(prefix):]
+            if rel_inside.startswith("/"):
+                rel_inside = rel_inside[1:]
+            if rel_inside.startswith("captions/") and all(cf["rel_vtt"] != rel_inside for cf in captions_files):
+                captions_files.insert(0, {
+                    "rel_vtt": rel_inside,
+                    "lang": None,
+                })
+
         assets = {
             "thumb_asset_path": thumb_rel,
             "thumb_url": thumb_url,
@@ -125,6 +153,7 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             "captions_vtt": captions_vtt_url,
             "captions_lang": captions_lang,
             "storage_path": storage_rel,
+            "captions_files": captions_files,
         }
     finally:
         await release_conn(conn)
@@ -184,8 +213,6 @@ async def start_media_process(
     finally:
         await release_conn(conn)
 
-    print("[YTMS PROCESS RESPONSE]", job)
-
     if "ok" not in job:
         if any(k in job for k in ("job_id", "job", "id")):
             job["ok"] = True
@@ -225,7 +252,7 @@ async def media_fetch_result(
 async def ytms_thumbnails_callback(request: Request):
     body = await request.body()
     sig = request.headers.get("X-Signature", "").strip()
-    calc = _hmac_sha256_hex(YTMS_CALLBACK_SECRET, body)
+    calc = hmac.new(YTMS_CALLBACK_SECRET.encode("utf-8"), body, hashlib.sha256).hexdigest()
     if not sig or not hmac.compare_digest(sig, calc):
         raise HTTPException(status_code=401, detail="invalid_signature")
     try:
@@ -237,8 +264,6 @@ async def ytms_thumbnails_callback(request: Request):
     video_id = payload.get("video_id")
     if not video_id:
         raise HTTPException(status_code=400, detail="missing_video_id")
-
-    print("[YTMS CALLBACK RAW]", payload)
 
     if status != "succeeded":
         return {"ok": True, "status": status}
@@ -260,38 +285,27 @@ async def ytms_thumbnails_callback(request: Request):
 
         rel_vtt = os.path.join(storage_base, vtt_rel_path)
         vtt_abs = os.path.join(abs_root, rel_vtt)
-        if not os.path.exists(vtt_abs):
-            print("[YTMS CALLBACK WARN] VTT file not found on disk:", vtt_abs)
-
         vtt_url = build_storage_url(rel_vtt)
         await upsert_video_asset(conn, video_id, "thumbs_vtt", rel_vtt)
 
-        saved_sprites: List[str] = []
         for sp in sprites_payload:
             rel = sp.get("path")
             idx = sp.get("index")
             if rel is None or idx is None:
                 continue
             rel_sprite = os.path.join(storage_base, rel)
-            sprite_abs = os.path.join(abs_root, rel_sprite)
-            if not os.path.exists(sprite_abs):
-                print("[YTMS CALLBACK WARN] Sprite missing on disk:", sprite_abs)
-            sprite_url = build_storage_url(rel_sprite)
             await upsert_video_asset(conn, video_id, f"sprite:{idx}", rel_sprite)
-            saved_sprites.append(sprite_url)
 
         try:
             await mark_thumbnails_ready(conn, video_id)
-        except Exception as e:
-            print("[YTMS CALLBACK WARN] mark_thumbnails_ready failed:", e)
+        except Exception:
+            pass
 
-        print("[YTMS CALLBACK DONE] video_id=", video_id, "sprites=", len(saved_sprites), "vtt=", vtt_url)
         return {
             "ok": True,
             "status": status,
             "asset_type": "thumbs_vtt",
             "path": vtt_url,
-            "sprites": saved_sprites,
         }
     finally:
         await release_conn(conn)
