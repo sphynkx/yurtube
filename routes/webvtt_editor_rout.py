@@ -60,6 +60,10 @@ async def webvtt_edit(request: Request, video_id: str, rel_vtt: str) -> HTMLResp
     Simple WebVTT editor.
     rel_vtt is relative path from video's dir
     """
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/auth/login", status_code=302)
+
     storage_rel = await _ensure_owned_storage_rel(request, video_id)
     if not storage_rel:
         raise HTTPException(status_code=401, detail="login_required_or_not_owner")
@@ -83,10 +87,15 @@ async def webvtt_edit(request: Request, video_id: str, rel_vtt: str) -> HTMLResp
         "manage/webvtt_editor.html",
         {
             "request": request,
+            "current_user": user,
             "video_id": video_id,
             "rel_vtt": rel_vtt,
             "content": content,
             "csrf_token": getattr(settings, "CSRF_TOKEN", ""),
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
         },
     )
 
@@ -99,6 +108,10 @@ async def webvtt_save(
     content: str = Form(...),
     csrf_token: Optional[str] = Form(None),
 ):
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/auth/login", status_code=302)
+
     storage_rel = await _ensure_owned_storage_rel(request, video_id)
     if not storage_rel:
         raise HTTPException(status_code=401, detail="login_required_or_not_owner")
@@ -130,6 +143,10 @@ async def webvtt_download(request: Request, video_id: str, rel_vtt: str):
     """
     To hide and pass real path to files. No direct access to files.
     """
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/auth/login", status_code=302)
+
     storage_rel = await _ensure_owned_storage_rel(request, video_id)
     if not storage_rel:
         raise HTTPException(status_code=401, detail="login_required_or_not_owner")
