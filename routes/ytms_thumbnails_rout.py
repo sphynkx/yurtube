@@ -10,7 +10,7 @@ from fastapi import APIRouter, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from config.ytms_config import (
+from config.ytms_cfg import (
     YTMS_CALLBACK_SECRET,
     STORAGE_FS_ROOT,
     STORAGE_WEB_PREFIX,

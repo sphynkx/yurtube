@@ -1,6 +1,6 @@
 import celery
 from celery.schedules import schedule
-from config.notifications_config import notifications_config
+from config.notifications_cfg import notifications_config
 
 celery_app = celery.Celery(
     "notifications",

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Tuple, List, Set
 from bson import ObjectId
 from .mongo_conn import root_coll, chunk_coll
-from config.comments_config import comments_settings
+from config.comments_cfg import comments_settings
 from utils.comments.time_ut import now_unix
 
 

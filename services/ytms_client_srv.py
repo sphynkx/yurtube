@@ -1,6 +1,6 @@
 import httpx
 from typing import Optional, Dict, Any
-from config.ytms_config import YTMS_BASE_URL, APP_BASE_URL, YTMS_CALLBACK_SECRET
+from config.ytms_cfg import YTMS_BASE_URL, APP_BASE_URL, YTMS_CALLBACK_SECRET
 
 async def create_thumbnails_job(
     video_id: str,

@@ -6,7 +6,7 @@ from datetime import datetime
 from redis.asyncio import Redis as RedisClient
 
 from services.notifications.celery_app import celery_app
-from config.notifications_config import notifications_config
+from config.notifications_cfg import notifications_config
 from db import get_conn, release_conn
 from db.notifications_db import insert_notification, get_user_prefs
 from db.videos_db import get_video, get_video_min

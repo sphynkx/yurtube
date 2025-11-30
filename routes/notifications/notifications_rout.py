@@ -13,7 +13,7 @@ from db.notifications_db import (
     get_user_prefs,
     set_user_prefs,
 )
-from config.notifications_config import notifications_config
+from config.notifications_cfg import notifications_config
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Query, Depends
 from typing import Dict, Any, Optional, List, Set
 from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
-from config.comments_config import comments_settings
+from config.comments_cfg import comments_settings
 from utils.security_ut import get_current_user
 import json
 

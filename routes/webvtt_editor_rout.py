@@ -6,7 +6,7 @@ from fastapi import APIRouter, Request, Form, HTTPException, Query
 from fastapi.responses import RedirectResponse, HTMLResponse, Response
 
 from config.config import settings
-from config.ytms_config import STORAGE_FS_ROOT, STORAGE_WEB_PREFIX
+from config.ytms_cfg import STORAGE_FS_ROOT, STORAGE_WEB_PREFIX
 from utils.security_ut import get_current_user
 from db import get_conn, release_conn
 from db.videos_db import get_owned_video

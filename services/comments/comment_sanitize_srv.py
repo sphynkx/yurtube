@@ -1,6 +1,6 @@
 import re
 from typing import List, Tuple
-from config.comments_config import comments_settings
+from config.comments_cfg import comments_settings
 
 URL_RE = re.compile(r"https?://", re.I)
 TIME_LINK_RE = re.compile(r"#t=(\d+)", re.I)

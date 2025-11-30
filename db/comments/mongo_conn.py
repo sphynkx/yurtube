@@ -1,7 +1,7 @@
 from typing import Optional
 import motor.motor_asyncio ## TODO: will deprecated!!
 from pymongo.errors import PyMongoError
-from config.comments_config import comments_settings
+from config.comments_cfg import comments_settings
 
 _client: Optional[motor.motor_asyncio.AsyncIOMotorClient] = None
 

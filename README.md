@@ -29,6 +29,13 @@ Design notes
 
 
 # Base install and config
+For a minimal version with limited functionality, installing this app is sufficient. However, for full functionality, there are separate services with separate repositories:
+
+* [ytms](https://github.com/sphynkx/ytms) - service for WevVTT sprites generation
+* [ytcms](https://github.com/sphynkx/ytcms) - service for captions generation
+
+These must be installed and configured separately. About this see below in the appropriate sections.
+
 
 ## Download repo
 ```bash
@@ -126,6 +133,7 @@ Edit `/etc/mongod.conf` again - enable "security" section, restart mongodb:
 service mongod restart
 ```
 
+
 ## Notifications (Redis + Celery)
 ```bash
 dnf install redis && systemctl enable --now redis
@@ -141,7 +149,7 @@ redis-cli ping
 ```
 Expect: `PONG`
 
-Also see `config/notifications_config.py` - it consists default params for localhost. You may redefin them in `.env`.
+Also see `config/notifications_cfg.py` - it consists default params for localhost. You may redefin them in `.env`.
 
 
 ## Configure application .env
@@ -157,11 +165,13 @@ STORAGE_ROOT=/var/www/yurtube/storage
 SESSION_COOKIE_SECURE=true
 ```
 
+
 ## Create admin account
 ```bash
 ./run.sh bootstrap-admin
 ```
 Enter username, email, password for admin-user.
+
 
 ## SSO configuration
 Go to [Google Cloud Console](https://console.cloud.google.com/), create new Web-app, config it, get secrets, set them to `.env` also.
@@ -177,6 +187,7 @@ At first:
 sudo dnf install hunspell-ru hunspell-en postgresql-contrib postgresql-devel
 install/dicts_prep.sh
 ```
+
 
 ### Postgres FTS
 Apply schemas:
@@ -228,17 +239,18 @@ deactivate
 ```
 
 
-### Thumbnail preview service
-This is separate service for generation preview thumbnails. Download it from [this repository](https://github.com/sphynkx/ytms), follow [instructions](https://github.com/sphynkx/ytms/README.md) for install, configure and run. 
+### Sprites preview service (external)
+This is separate service for generation sprites preview. It could be installed locally or on some other server. Download it from [this repository](https://github.com/sphynkx/ytms), follow [instructions](https://github.com/sphynkx/ytms/README.md) for install, configure and run. 
 
-Also need configure app to communicate with that service - set necessary params in the `config/ytms_config.py` in accordance with configured service.
+Also need configure app to communicate with that service - set necessary params to `.env`, about params and current defaults - see in the `config/ytms_cfg.py`.
 
 Finally check service:
 ```bash
 curl http://<ytms_IP>:8089/healthz
 ```
 
-### Caption generation service
+
+### Caption generation service (external)
 This is separate service based on gRPC+protobuf and faster-whisper. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/ytcms) for details about it's install and configuration.
 
 At app config you need to set IP address (`YTCMS_HOST`) and port (`YTCMS_PORT`) of ytcms service, `YTCMS_TOKEN` same as on service side. Also make sure that file `services/ytcms/ytcms_proto/captions.proto` is identical with one at ytcms service. If not - you have to regenerate stubs:
@@ -246,7 +258,6 @@ At app config you need to set IP address (`YTCMS_HOST`) and port (`YTCMS_PORT`) 
 cd services/ytcms_proto
 ./gen_proto.sh
 ```
-
 
 
 ## Run the app
@@ -260,6 +271,7 @@ and:
 ```bash
 ./run.sh
 ```
+
 
 ## Nginx
 On external hosting server - create `/etc/nginx/conf.d/yurtube.conf`:
@@ -310,6 +322,4 @@ Firewall (if needed):
 sudo firewall-cmd --add-port=8077/tcp --permanent
 sudo firewall-cmd --reload
 ```
-
-
 
