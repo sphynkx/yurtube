@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% import "players_macros.html" as pm %}
 {% block content %}
 <link rel="stylesheet" href="/static/css/manage/account_layout.css">
 
@@ -12,31 +13,63 @@
       </div>
     </div>
 
-    <section>
-      <h2 style="margin-top:0;">Editing file</h2>
-      <p><code>{{ rel_vtt }}</code></p>
+    {# Move file name above the player, remove redundant "Editing file" block heading #}
+    <div style="font-size:12px; color:#666; margin-bottom:6px;">
+      File: <code>{{ rel_vtt }}</code>
+    </div>
 
-      <form action="/manage/video/{{ video_id }}/vtt/save" method="post" style="margin-top:12px;">
+    <section>
+      <div id="editor-player-wrap" style="max-width:960px;">
+        {% if video_src_url %}
+          {{ pm.render_player(
+               player_name=(player_name if player_name else 'yurtube'),
+               video_src=video_src_url,
+               poster_url='',
+               video_id=video_id,
+               subtitles=subtitles,
+               options=player_options,
+               sprites_vtt_url=(sprites_vtt_url if sprites_vtt_url else None)
+             )
+          }}
+        {% else %}
+          <div style="padding:12px; border:1px solid #ddd; background:#fafafa; color:#666;">
+            No video source found (original.webm missing).
+          </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section style="margin-top:12px;">
+      <form id="vtt-form" action="/manage/video/{{ video_id }}/vtt/save" method="post" style="margin-top:8px;">
         <input type="hidden" name="rel_vtt" value="{{ rel_vtt }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <textarea name="content" rows="28" style="width:100%;font-family:monospace;">{{ content }}</textarea>
+
+        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+          <label style="font-size:12px; color:#444;">
+            <input type="checkbox" id="vtt-follow-chk" checked>
+            Follow player time
+          </label>
+          <span style="font-size:12px; color:#777;">Click a cue time in editor to move the player.</span>
+        </div>
+
+        <div id="vtt-editor-wrap" style="position:relative;">
+          <div id="vtt-highlight" style="
+               position:absolute; left:0; right:0;
+               height:0; transform:translateY(0);
+               background:rgba(255,235,59,0.25); /* yellow highlight */
+               pointer-events:none; opacity:0; transition:transform 0.08s linear, height 0.08s linear;"></div>
+          <textarea id="vtt-textarea" name="content" rows="10" style="width:100%;font-family:monospace;line-height:1.4;">{{ content }}</textarea>
+        </div>
+
         <div style="margin-top:10px;">
-          <button type="submit">Save</button>
+          <button type="submit" id="btn-save">Save</button>
           <a href="/manage/video/{{ video_id }}/vtt/download?rel_vtt={{ rel_vtt }}" style="margin-left:10px;">Download</a>
           <a href="/manage/video/{{ video_id }}/media" style="margin-left:10px;">Cancel</a>
         </div>
       </form>
-
-      <div style="margin-top:16px;font-size:12px;color:#666;">
-        <p>Notes:</p>
-        <ul>
-          <li>Plain text editing only.</li>
-          <li>Keep the file starting with "WEBVTT".</li>
-          <li>Time format: HH:MM:SS.mmm --> HH:MM:SS.mmm</li>
-          <li>Remove trailing spaces to avoid parser warnings.</li>
-        </ul>
-      </div>
     </section>
+
+    <script src="/static/js/vtt_editor.js"></script>
   </main>
 </div>
 {% endblock %}

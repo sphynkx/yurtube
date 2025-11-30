@@ -1,15 +1,17 @@
 import os
 import re
-from typing import Optional
+from typing import Optional, List, Dict
 
-from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi import APIRouter, Request, Form, HTTPException, Query
 from fastapi.responses import RedirectResponse, HTMLResponse, Response
 
 from config.config import settings
-from config.ytms_config import STORAGE_FS_ROOT
+from config.ytms_config import STORAGE_FS_ROOT, STORAGE_WEB_PREFIX
 from utils.security_ut import get_current_user
 from db import get_conn, release_conn
 from db.videos_db import get_owned_video
+from db.assets_db import get_thumbs_vtt_asset
+from utils.url_ut import build_storage_url
 
 router = APIRouter(tags=["webvtt"])
 
@@ -54,12 +56,20 @@ async def _ensure_owned_storage_rel(request: Request, video_id: str) -> Optional
         await release_conn(conn)
 
 
+def _build_storage_url(rel_path: Optional[str]) -> Optional[str]:
+    if not rel_path:
+        return None
+    rel_path = rel_path.lstrip("/")
+    return STORAGE_WEB_PREFIX.rstrip("/") + "/" + rel_path
+
+
 @router.get("/manage/video/{video_id}/vtt/edit")
-async def webvtt_edit(request: Request, video_id: str, rel_vtt: str) -> HTMLResponse:
-    """
-    Simple WebVTT editor.
-    rel_vtt is relative path from video's dir
-    """
+async def webvtt_edit(
+    request: Request,
+    video_id: str,
+    rel_vtt: str,
+    t: int = Query(0),
+) -> HTMLResponse:
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
@@ -74,6 +84,39 @@ async def webvtt_edit(request: Request, video_id: str, rel_vtt: str) -> HTMLResp
     abs_path = _safe_join_storage(storage_rel, rel_vtt)
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="vtt_not_found")
+
+    # video src (original.webm)
+    abs_video = _safe_join_storage(storage_rel, "original.webm")
+    video_src_url = None
+    if os.path.isfile(abs_video):
+        video_src_url = _build_storage_url(os.path.join(storage_rel, "original.webm"))
+
+    # sprites vtt for thumbnails preview (if any)
+    conn = await get_conn()
+    try:
+        sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video_id)
+    finally:
+        await release_conn(conn)
+    sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
+
+    # current captions track for player
+    subtitles: List[Dict[str, str]] = []
+    if rel_vtt:
+        base = os.path.basename(rel_vtt)
+        lang_guess = "auto"
+        name_no_ext = base.rsplit(".", 1)[0]
+        parts = name_no_ext.split("_")
+        if parts and len(parts[-1]) in (2, 3):
+            lang_guess = parts[-1]
+        subtitles.append({
+            "label": "Captions",
+            "lang": lang_guess,
+            "src": f"/manage/video/{video_id}/vtt/download?rel_vtt={rel_vtt}",
+            "default": True,
+        })
+
+    # options: rely on player’s own resume mechanism; start=t is optional
+    player_options = {"autoplay": False, "muted": False, "loop": False, "start": max(0, int(t or 0))}
 
     try:
         with open(abs_path, "r", encoding="utf-8") as f:
@@ -91,11 +134,16 @@ async def webvtt_edit(request: Request, video_id: str, rel_vtt: str) -> HTMLResp
             "video_id": video_id,
             "rel_vtt": rel_vtt,
             "content": content,
+            "video_src_url": video_src_url,
+            "subtitles": subtitles,
+            "sprites_vtt_url": sprites_vtt_url,
+            "player_options": player_options,
             "csrf_token": getattr(settings, "CSRF_TOKEN", ""),
             "brand_logo_url": settings.BRAND_LOGO_URL,
             "brand_tagline": settings.BRAND_TAGLINE,
             "favicon_url": settings.FAVICON_URL,
             "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            "player_name": settings.VIDEO_PLAYER,
         },
     )
 
@@ -106,6 +154,7 @@ async def webvtt_save(
     video_id: str,
     rel_vtt: str = Form(...),
     content: str = Form(...),
+    t: Optional[int] = Form(None),
     csrf_token: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
@@ -132,17 +181,15 @@ async def webvtt_save(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"write_failed: {e}")
 
+    suffix = f"&t={int(t)}" if t is not None else ""
     return RedirectResponse(
-        url=f"/manage/video/{video_id}/vtt/edit?rel_vtt={rel_vtt}",
+        url=f"/manage/video/{video_id}/vtt/edit?rel_vtt={rel_vtt}{suffix}",
         status_code=303,
     )
 
 
 @router.get("/manage/video/{video_id}/vtt/download")
 async def webvtt_download(request: Request, video_id: str, rel_vtt: str):
-    """
-    To hide and pass real path to files. No direct access to files.
-    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
