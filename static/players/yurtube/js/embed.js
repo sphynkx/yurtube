@@ -60,7 +60,7 @@
   function installFallbackGuards(video, sourceEl, onDebug) {
     var applied = false;
     var watchdog = null;
-    function applyFallback(reason) {
+    function applyFallback(reason){
       if (applied) return;
       applied = true;
       onDebug && onDebug("fallback: applying", reason);
@@ -68,23 +68,23 @@
         if (sourceEl) sourceEl.setAttribute("src", FALLBACK_SRC);
         else video.src = FALLBACK_SRC;
         video.load();
-      } catch (e) {}
+      } catch(e) {}
     }
-    function clearWatchdog() { if (watchdog) { clearTimeout(watchdog); watchdog = null; } }
-    video.addEventListener("loadstart", function () {
+    function clearWatchdog(){ if (watchdog) { clearTimeout(watchdog); watchdog = null; } }
+    video.addEventListener("loadstart", function(){
       clearWatchdog();
-      watchdog = setTimeout(function () {
+      watchdog = setTimeout(function(){
         if (!applied && video.readyState < 1) applyFallback("watchdog-timeout");
       }, 4000);
     });
-    ["loadeddata", "canplay", "canplaythrough", "play", "playing"].forEach(function (ev) {
+    ["loadeddata","canplay","canplaythrough","play","playing"].forEach(function(ev){
       video.addEventListener(ev, clearWatchdog);
     });
-    video.addEventListener("error", function () {
+    video.addEventListener("error", function(){
       if (!applied) applyFallback("error-event");
     });
-    setTimeout(function () {
-      var src = sourceEl ? (sourceEl.getAttribute("src") || "") : (video.currentSrc || video.src || "");
+    setTimeout(function(){
+      var src = sourceEl ? (sourceEl.getAttribute("src")||"") : (video.currentSrc||video.src||"");
       if (!applied && !src) applyFallback("empty-src");
     }, 0);
   }
@@ -110,10 +110,8 @@
     var vid = host.getAttribute("data-video-id") || "";
     var subs = parseJSONAttr(host, "data-subtitles", []);
     var spritesVtt = host.getAttribute("data-sprites-vtt") || "";
-    // CAPTIONS START
     var captionVtt = host.getAttribute("data-caption-vtt") || "";
     var captionLang = host.getAttribute("data-caption-lang") || "";
-    // CAPTIONS END
 
     if (source) source.setAttribute("src", videoSrc);
     if (poster) video.setAttribute("poster", poster);
@@ -122,7 +120,6 @@
     if (opts && opts.loop) video.setAttribute("loop", "");
     if (vid) root.setAttribute("data-video-id", vid);
     if (spritesVtt) root.setAttribute("data-sprites-vtt", spritesVtt);
-
     video.setAttribute("playsinline", "");
 
     if (Array.isArray(subs)) {
@@ -138,8 +135,7 @@
       });
     }
 
-    // CAPTIONS START
-    var ccBtn = null;
+    var ccBtn = root.querySelector(".yrp-subtitles");
     if (captionVtt) {
       try {
         var ctr = document.createElement("track");
@@ -149,30 +145,27 @@
         ctr.setAttribute("label", captionLang || "Original");
         ctr.setAttribute("default", "");
         video.appendChild(ctr);
-        ccBtn = root.querySelector(".yrp-subtitles");
-        if (ccBtn) ccBtn.disabled = false;
-        var ensureShow = function(){
+        var ensureHidden = function(){
           try {
             if (!video.textTracks) return;
             for (var i=0;i<video.textTracks.length;i++){
               var tt = video.textTracks[i];
               if (tt.kind === "subtitles" || tt.kind === "captions") {
-                tt.mode = "showing";
+                tt.mode = "hidden";
               }
             }
           } catch(_){}
         };
-        setTimeout(ensureShow, 0);
-        ctr.addEventListener("load", ensureShow);
+        setTimeout(ensureHidden, 0);
+        ctr.addEventListener("load", ensureHidden);
         video.addEventListener("loadedmetadata", function once(){
           video.removeEventListener("loadedmetadata", once);
-          ensureShow();
+          ensureHidden();
         });
       } catch(e){
         d("caption track append failed", e);
       }
     }
-    // CAPTIONS END
 
     try { video.load(); d("video.load() called", { src: videoSrc }); } catch (e) { d("video.load() error", e); }
     installFallbackGuards(video, source, d);
@@ -224,7 +217,135 @@
     var userTouchedVolume = false;
     var autoMuteApplied = false;
 
-    // SPRITES PREVIEW STATE
+    // Captions overlay (draggable) with reliable end (pointer events)
+    function createCaptionsOverlay(container){
+      var layer = document.createElement("div");
+      layer.className = "yrp-embed-captions-layer";
+      Object.assign(layer.style, {
+        position:"absolute",
+        left:"50%",
+        top:"80%",
+        transform:"translate(-50%,-50%)",
+        zIndex:"21",
+        pointerEvents:"auto",
+        userSelect:"none",
+        touchAction:"none"
+      });
+      var box = document.createElement("div");
+      box.className = "yrp-embed-captions-text";
+      layer.appendChild(box);
+
+      var cs=getComputedStyle(container);
+      if(cs.position==="static") container.style.position="relative";
+      container.appendChild(layer);
+
+      var drag = { active:false, sx:0, sy:0 };
+      var leaveGuardTimer = null;
+
+      function wrapRect(){ return container.getBoundingClientRect(); }
+      function endDrag(e){
+        if (!drag.active) return;
+        drag.active = false;
+        if (leaveGuardTimer) { clearTimeout(leaveGuardTimer); leaveGuardTimer = null; }
+        if (e && e.preventDefault) { try { e.preventDefault(); } catch(_){} }
+        if (e && e.stopPropagation) { try { e.stopPropagation(); } catch(_){} }
+      }
+      function onStart(e){
+        var t = e;
+        drag.active = true;
+        drag.sx = t.clientX;
+        drag.sy = t.clientY;
+        try { layer.setPointerCapture && layer.setPointerCapture(e.pointerId); } catch(_) {}
+        if (leaveGuardTimer) { clearTimeout(leaveGuardTimer); leaveGuardTimer = null; }
+        e.preventDefault(); e.stopPropagation();
+      }
+      function onMove(e){
+        if(!drag.active) return;
+        var t = e;
+        var dx = t.clientX - drag.sx, dy = t.clientY - drag.sy;
+        var r = wrapRect(), ov = layer.getBoundingClientRect();
+        var cx = (ov.left + ov.width/2) + dx, cy = (ov.top + ov.height/2) + dy;
+        var halfW = ov.width/2, halfH = ov.height/2;
+        cx = Math.min(Math.max(cx, r.left + halfW), r.right - halfW);
+        cy = Math.min(Math.max(cy, r.top  + halfH), r.bottom- halfH);
+        var relX = (cx - r.left) / r.width * 100;
+        var relY = (cy - r.top ) / r.height* 100;
+        layer.style.left = relX + "%";
+        layer.style.top  = relY + "%";
+        layer.style.transform = "translate(-50%,-50%)";
+        drag.sx = t.clientX; drag.sy = t.clientY;
+        e.preventDefault(); e.stopPropagation();
+      }
+      function onLeaveRegion(){
+        if (leaveGuardTimer) { clearTimeout(leaveGuardTimer); }
+        leaveGuardTimer = setTimeout(function(){ endDrag(new Event("leaveguard")); }, 200);
+      }
+
+      layer.addEventListener("pointerdown", onStart);
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", endDrag);
+      document.addEventListener("pointercancel", endDrag);
+      document.addEventListener("mouseup", endDrag);
+      document.addEventListener("touchend", endDrag);
+      container.addEventListener("pointerleave", onLeaveRegion);
+      layer.addEventListener("click", function(e){ e.stopPropagation(); });
+
+      return { layer: layer, box: box };
+    }
+
+    var overlay = createCaptionsOverlay(wrap);
+    var overlayActive = true;
+
+    function firstSubtitleTrack(){
+      try {
+        var tt = video.textTracks || [];
+        for (var i=0;i<tt.length;i++){
+          var k = tt[i].kind;
+          if (k === "subtitles" || k === "captions") return tt[i];
+        }
+      } catch(_) {}
+      return null;
+    }
+    function currentCueText(track){
+      if (!track || !track.cues || track.cues.length===0) return "";
+      var t = video.currentTime || 0;
+      for (var i=0;i<track.cues.length;i++){
+        var c = track.cues[i];
+        if (t>=c.startTime && t<=c.endTime) return (c.text||"").replace(/\r/g,"");
+      }
+      return "";
+    }
+    function updateOverlayText(){
+      var tr = firstSubtitleTrack();
+      if (tr) tr.mode = "hidden";
+      overlay.box.textContent = overlayActive ? currentCueText(tr) : "";
+    }
+
+    function anySubtitleTracks(){
+      try {
+        var tt = video.textTracks || [];
+        for (var i=0;i<tt.length;i++){
+          var k=tt[i].kind;
+          if (k==="subtitles" || k==="captions") return true;
+        }
+      } catch(_) {}
+      return false;
+    }
+    function refreshSubtitlesBtnUI() {
+      if (!ccBtn) return;
+      var has = anySubtitleTracks();
+      ccBtn.disabled = !has;
+      ccBtn.style.visibility = has ? "visible" : "hidden";
+      ccBtn.classList.toggle("no-tracks", !has);
+      ccBtn.classList.toggle("has-tracks", has);
+      ccBtn.classList.toggle("active", has && overlayActive);
+      ccBtn.classList.toggle("disabled-track", has && !overlayActive);
+      ccBtn.setAttribute("aria-pressed", overlayActive ? "true" : "false");
+      ccBtn.title = overlayActive ? "Subtitles: on" : "Subtitles: off";
+      ccBtn.setAttribute("aria-label", overlayActive ? "Subtitles enabled" : "Subtitles disabled");
+    }
+
+    // Sprite preview (unchanged)
     var spriteCues = [];
     var spritesLoaded = false;
     var spritesLoadError = false;
@@ -407,6 +528,16 @@
       root.classList.remove("vol-open");
     }
 
+    function refreshPlayBtn() {
+      if (!btnPlay) return;
+      var playing = !video.paused;
+      btnPlay.classList.toggle("icon-play", !playing);
+      btnPlay.classList.toggle("icon-pause", playing);
+      btnPlay.setAttribute("aria-label", playing ? "Pause (Space, K)" : "Play (Space, K)");
+      btnPlay.title = playing ? "Pause (Space, K)" : "Play (Space, K)";
+      btnPlay.textContent = "";
+    }
+
     // volume persistence
     (function(){
       var vs = (function(){
@@ -528,6 +659,15 @@
     if (centerPlay) centerPlay.addEventListener("click", function(){ playToggle(); });
     if (btnPlay) btnPlay.addEventListener("click", function(){ playToggle(); });
     video.addEventListener("click", function(){ playToggle(); });
+
+    video.addEventListener("play", function(){
+      root.classList.add("playing");
+      refreshPlayBtn();
+    });
+    video.addEventListener("pause", function(){
+      root.classList.remove("playing");
+      refreshPlayBtn();
+    });
 
     if (btnVol) btnVol.addEventListener("click", function(e){
       e.preventDefault(); e.stopPropagation();
@@ -740,37 +880,56 @@
     setTimeout(relayout, 0);
     setTimeout(relayout, 100);
 
+    function attachCue(){
+      try{
+        var tr=firstSubtitleTrack();
+        if(!tr) return;
+        tr.addEventListener("cuechange", updateOverlayText);
+        tr.addEventListener("load", updateOverlayText);
+      }catch(_){}
+    }
+
     video.addEventListener("loadedmetadata", function(){
       updateTimes();
       updateProgress();
       relayout();
       loadSpritesVTT();
+      refreshPlayBtn();
+
+      try {
+        if (video.textTracks) {
+          for (var i=0;i<video.textTracks.length;i++){
+            var tt = video.textTracks[i];
+            if (tt.kind==="subtitles" || tt.kind==="captions") tt.mode="hidden";
+          }
+        }
+      } catch(_) {}
+      updateOverlayText();
+      refreshSubtitlesBtnUI();
+      attachCue();
     });
-    video.addEventListener("timeupdate", function(){ updateTimes(); updateProgress(); });
+    video.addEventListener("timeupdate", function(){ updateTimes(); updateProgress(); updateOverlayText(); });
     video.addEventListener("progress", function(){ updateProgress(); });
 
-    // CAPTIONS START: switch by CC button
     if (ccBtn) {
       ccBtn.addEventListener("click", function(e){
         e.preventDefault(); e.stopPropagation();
+        overlayActive = !overlayActive;
+        overlay.layer.style.display = overlayActive ? "" : "none";
         try {
           var tracks = video.textTracks;
-          if (!tracks) return;
-          var showing = false;
-          for (var i=0;i<tracks.length;i++){
-            var tt = tracks[i];
-            if ((tt.kind === "subtitles" || tt.kind === "captions") && tt.mode === "showing") { showing = true; break; }
+          if (tracks) {
+            for (var i=0;i<tracks.length;i++){
+              var tt = tracks[i];
+              if (tt.kind==="subtitles" || tt.kind==="captions") tt.mode="hidden";
+            }
           }
-          var target = showing ? "hidden" : "showing";
-          for (var j=0;j<tracks.length;j++){
-            var ttrack = tracks[j];
-            if (ttrack.kind === "subtitles" || ttrack.kind === "captions") ttrack.mode = target;
-          }
-        } catch(_){}
+        } catch(_) {}
+        refreshSubtitlesBtnUI();
+        updateOverlayText();
         showControls();
       });
     }
-    // CAPTIONS END
   }
 
   function initAll() {
