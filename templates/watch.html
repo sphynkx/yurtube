@@ -76,6 +76,13 @@
     gap:16px;
     align-items:start;
   }
+  /* Ensure correct placement/order in theater grid:
+     - first child (reactions block) spans full width
+     - comments (under-left) in left column
+     - right bar slot in right column */
+  .watch-layout.theater-mode .under-row > :first-child { grid-column: 1 / -1; }
+  .watch-layout.theater-mode .under-row > .under-left { grid-column: 1; }
+  .watch-layout.theater-mode .under-row > .under-right-slot { grid-column: 2; }
 }
 .under-left { min-width:0; }
 .under-right-slot { width:360px; }
@@ -345,7 +352,7 @@ body[data-debug="1"] .watch-layout * { outline:1px dashed rgba(0, 100, 255, .15)
                 <div>No recommendations.</div>
               {% endif %}
             </div>
-<!-- Removed block.html inclusion - there was dupl. new-comment field in short mode -->
+<!-- Removed comments/block.html inclusion - there was dupl. new-comment field in short mode -->
 			<div id="panel-comments" class="tab-panel" role="tabpanel" aria-labelledby="tab-comments">
 			  <div id="comments-mount-narrow">
 				<div class="comments-placeholder">
