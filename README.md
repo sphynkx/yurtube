@@ -31,11 +31,12 @@ Design notes
 # Base install and config
 For a minimal version with limited functionality, installing this app is sufficient. However, for full functionality, there are separate services with separate repositories:
 
-* [ytms](https://github.com/sphynkx/ytms) - service for WevVTT sprites generation
+* [ytms](https://github.com/sphynkx/ytms) - service for WebVTT sprites generation
 * [ytcms](https://github.com/sphynkx/ytcms) - service for captions generation
 
 These must be installed and configured separately. About this see below in the appropriate sections.
 
+__Note__: This installation is designed for the Fedora distribution, but with appropriate modifications, it can be used on other distributions as well. However, some issues have been noted, such as the fact that FFMpeg is supplied in a stripped-down form in Debian-based distributions and requires a special build. This issue primarily affects external services and can be resolved through dockerization.
 
 ## Download repo
 ```bash
