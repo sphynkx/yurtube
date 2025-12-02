@@ -34,10 +34,10 @@ async def generate_captions(
     vtt_abs = os.path.join(captions_dir, "captions.vtt")
     meta_abs = os.path.join(captions_dir, "captions.meta.json")
 
-    # Save VTT
+    # Save VTT (ResultReply now carries VTT in `content`; keep compat with `vtt`)
+    vtt_payload = getattr(result, "vtt", None) or getattr(result, "content", "") or ""
     with open(vtt_abs, "w", encoding="utf-8") as f:
-        vtt = result.vtt or ""
-        f.write(vtt if vtt.endswith("\n") else (vtt + "\n"))
+        f.write(vtt_payload if vtt_payload.endswith("\n") else (vtt_payload + "\n"))
 
     # Meta
     meta: Dict = {
@@ -48,10 +48,13 @@ async def generate_captions(
         "compute_type": getattr(result, "compute_type", None),
         "duration_sec": getattr(result, "duration_sec", None),
         "task": getattr(result, "task", "transcribe"),
+        "job_id": getattr(result, "job_id", None),
+        "source": "ytcms",
     }
 
     with open(meta_abs, "w", encoding="utf-8") as mf:
         json.dump(meta, mf)
 
+    # Return relative path for DB and meta
     rel_vtt = os.path.join(storage_rel, "captions", "captions.vtt")
     return rel_vtt, meta

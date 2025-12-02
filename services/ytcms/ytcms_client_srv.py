@@ -11,13 +11,17 @@ from config.ytcms_cfg import ytcms_address, YTCMS_TOKEN, YTCMS_DEFAULT_LANG, YTC
 # Make generated stubs importable as top-level modules (captions_pb2_grpc imports captions_pb2).
 sys.path.append(str(pathlib.Path(__file__).resolve().parent / "ytcms_proto"))
 
-import captions_pb2  # noqa: E402
-import captions_pb2_grpc  # noqa: E402
+import captions_pb2
+import captions_pb2_grpc
 
 
 def _upload_stream(video_path: str, video_id: str, lang: str, task: str) -> Iterator[captions_pb2.UploadChunk]:
-    # Client-side request id for correlation
+    """
+    Stream file to the service using the original chunk contract:
+    each chunk includes request_id, video_id, lang, task, filename, data and 'last' flag.
+    """
     request_id = uuid.uuid4().hex
+    filename = os.path.basename(video_path)
 
     # Stream file chunks (avoid loading entire file into memory)
     with open(video_path, "rb") as f:
@@ -38,7 +42,7 @@ def _upload_stream(video_path: str, video_id: str, lang: str, task: str) -> Iter
                 task=task,
                 data=chunk,
                 last=is_last,
-                filename=os.path.basename(video_path),
+                filename=filename,
             )
 
 
@@ -55,6 +59,9 @@ def submit_and_wait(
     """
     Submit a video to ytcms for transcription, poll status, and fetch final result.
     Deadlines (timeouts) are set to fail fast if service is unreachable.
+
+    Service now uses async contract: Submit returns job_id + status (QUEUED/PROCESSING),
+    and the result is fetched separately via GetResult(job_id).
     """
     addr = ytcms_address()
     lang = (lang or YTCMS_DEFAULT_LANG).strip() or "auto"
@@ -64,23 +71,45 @@ def submit_and_wait(
     stub = captions_pb2_grpc.CaptionsServiceStub(channel)
     md = [("authorization", f"Bearer {YTCMS_TOKEN}")]
 
-    # Submit job (deadline)
-    submit_reply = stub.Submit(_upload_stream(video_path, video_id, lang, task), metadata=md, timeout=submit_timeout)
-    if submit_reply.status != "queued":
-        raise RuntimeError(f"Submit failed: {submit_reply.error}")
+    # Submit job (each RPC has a deadline)
+    submit_reply = stub.Submit(
+        _upload_stream(video_path, video_id, lang, task),
+        metadata=md,
+        timeout=submit_timeout,
+    )
+
+    submit_status = (submit_reply.status or "").strip().lower()
+    if submit_status not in ("queued", "processing"):
+        # In async mode, SubmitReply.content is empty; rely on .error if any
+        raise RuntimeError(f"Submit failed: {getattr(submit_reply, 'error', '')}")
 
     job_id = submit_reply.job_id
 
-    # Poll status (each call with its own deadline)
+    # Poll status
+    final_status = None
+    final_error = ""
     while True:
-        st = stub.GetStatus(captions_pb2.JobStatusRequest(job_id=job_id), metadata=md, timeout=status_timeout)
-        if st.status in ("done", "error"):
+        st = stub.GetStatus(
+            captions_pb2.JobStatusRequest(job_id=job_id),
+            metadata=md,
+            timeout=status_timeout,
+        )
+        st_status = (st.status or "").strip().lower()
+        if st_status in ("done", "error", "not_found"):
+            final_status = st_status
+            final_error = getattr(st, "error", "") or ""
             break
         time.sleep(poll_interval)
 
-    if st.status == "error":
-        raise RuntimeError(f"Job failed: {st.error}")
+    if final_status == "error":
+        raise RuntimeError(f"Job failed: {final_error}")
+    if final_status == "not_found":
+        raise RuntimeError("Job not found")
 
-    # Fetch final result (deadline)
-    result = stub.GetResult(captions_pb2.ResultRequest(job_id=job_id), metadata=md, timeout=result_timeout)
-    return result
+    # Fetch result
+    res = stub.GetResult(
+        captions_pb2.ResultRequest(job_id=job_id),
+        metadata=md,
+        timeout=result_timeout,
+    )
+    return res
