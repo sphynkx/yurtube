@@ -3,7 +3,7 @@ import json
 import asyncio
 from typing import Optional, Any
 
-from fastapi import APIRouter, Request, Form, HTTPException
+from fastapi import APIRouter, Request, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from config.config import settings
@@ -44,22 +44,14 @@ async def captions_process(
     abs_root = getattr(settings, "STORAGE_ROOT", "/var/www/storage")
     original_abs = os.path.join(abs_root, storage_rel, "original.webm")
     if not os.path.exists(original_abs):
-        return JSONResponse({"ok": False, "error": "original_missing"}, status_code=404)
-
-    # If duration is zero in DB, try to re-probe and persist
-    if duration <= 0:
         try:
-            duration = await async_probe_duration_seconds(original_abs)
-            conn = await get_conn()
-            try:
-                await set_video_ready(conn, video_id, duration)
-            finally:
-                await release_conn(conn)
+            dsec = await async_probe_duration_seconds(original_abs)
+            if dsec and dsec > 0:
+                duration = int(dsec)
         except Exception:
-            return JSONResponse({"ok": False, "error": "too_short", "duration": 0}, status_code=400)
-
-    if duration < AUTO_MIN_DURATION:
-        return JSONResponse({"ok": False, "error": "too_short", "duration": duration}, status_code=400)
+            pass
+        if not os.path.exists(original_abs):
+            return JSONResponse({"ok": False, "error": "original_missing"}, status_code=404)
 
     async def _bg_worker():
         try:
@@ -78,29 +70,70 @@ async def captions_process(
         except Exception as e:
             print(f"[YTCMS] captions failed video_id={video_id}: {e}")
 
-    # Fire-and-forget background job to avoid 504
     asyncio.create_task(_bg_worker())
-
-    # Redirect back to media page
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
 
 
 @router.get("/internal/ytcms/captions/status")
-async def captions_status(video_id: str):
+async def captions_status(video_id: str = Query(...)):
+    """
+    Return normalized status so UI can render correctly:
+    - status: one of idle | queued | processing | done | error | not_found
+    - has_vtt: True/False
+    - rel_vtt: relative path to vtt (if any)
+    - lang, job_id: optional meta hints
+    """
     conn = await get_conn()
     try:
-        status = await get_video_captions_status(conn, video_id)
+        row = await get_video_captions_status(conn, video_id)
+        print(f"STATUSES from YTCMS: {row}")
     finally:
         await release_conn(conn)
-    if not status:
-        return {"ok": False, "error": "not_found"}
+
+    # No record -> idle (no job and no file)
+    if not row:
+        return {
+            "ok": True,
+            "video_id": video_id,
+            "status": "idle",
+            "has_vtt": False,
+            "rel_vtt": None,
+            "lang": None,
+            "job_id": None,
+        }
+
+    # Map various schemas to normalized fields
+    ready = bool(row.get("captions_ready") or row.get("ready"))
+    rel_vtt = row.get("captions_vtt") or row.get("rel_vtt")
+    lang = row.get("captions_lang") or row.get("lang")
+    meta = row.get("captions_meta") or row.get("meta") or {}
+    job_id = None
+    try:
+        if isinstance(meta, dict):
+            job_id = meta.get("job_id")
+    except Exception:
+        job_id = None
+
+    # Determine status:
+    # If we have a vtt saved -> done
+    # Else if job_id exists -> queued/processing, but we cannot know which one without service poll here.
+    # For UI simplicity treat presence of job_id as queued (will be updated by separate JS polling against service, if needed).
+    if ready or rel_vtt:
+        norm_status = "done"
+    elif job_id:
+        # Assume queued until worker flips DB to ready
+        norm_status = "queued"
+    else:
+        norm_status = "idle"
+
     return {
         "ok": True,
         "video_id": video_id,
-        "ready": status["captions_ready"],
-        "lang": status["captions_lang"],
-        "vtt": status["captions_vtt"],
-        "meta": status["captions_meta"],
+        "status": norm_status,
+        "has_vtt": bool(rel_vtt),
+        "rel_vtt": rel_vtt,
+        "lang": lang,
+        "job_id": job_id,
     }
 
 
@@ -117,9 +150,12 @@ async def captions_retry(
 
     conn = await get_conn()
     try:
-        storage_rel = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
+        owned = await get_owned_video(conn, video_id, user["user_uid"])
+        if not owned:
+            raise HTTPException(status_code=404, detail="not_found")
+        storage_rel = (owned.get("storage_path") or "").strip().rstrip("/")
         if not storage_rel:
-            raise HTTPException(status_code=404, detail="video_not_ready")
+            raise HTTPException(status_code=404, detail="storage_missing")
         await reset_video_captions(conn, video_id)
     finally:
         await release_conn(conn)
@@ -127,6 +163,7 @@ async def captions_retry(
     abs_root = getattr(settings, "STORAGE_ROOT", "/var/www/storage")
     original_abs = os.path.join(abs_root, storage_rel, "original.webm")
     if not os.path.exists(original_abs):
+        print(f"[YTCMS] retry original missing video_id={video_id} path={original_abs}")
         raise HTTPException(status_code=404, detail="original_missing")
 
     async def _bg_worker():

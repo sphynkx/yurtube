@@ -35,6 +35,7 @@ from .webvtt_editor_rout import router as webvtt_editor_router
 
 
 def register_routes(app: FastAPI) -> None:
+    # Core
     app.include_router(root_router)
     app.include_router(auth_router, prefix="/auth")
     app.include_router(upload_router)
@@ -50,6 +51,7 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(edit_router)
     app.include_router(search_router)
 
+    # Comments
     app.include_router(comments_create_router)
     app.include_router(comments_list_router)
     app.include_router(comments_like_router)

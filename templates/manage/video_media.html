@@ -89,19 +89,6 @@
 	<section style="margin-top:24px;">
 	  <h2>Captions</h2>
 
-      {% if assets.captions_files and assets.captions_files|length > 0 %}
-      <ul style="list-style:none; padding-left:0; margin:0 0 18px;">
-        {% for cf in assets.captions_files %}
-          <li style="margin-bottom:4px;">
-            <code>{{ cf.rel_vtt }}</code>
-            <a href="/manage/video/{{ video_id }}/vtt/edit?rel_vtt={{ cf.rel_vtt }}" style="margin-left:8px;">Edit</a>
-            <a href="/manage/video/{{ video_id }}/vtt/download?rel_vtt={{ cf.rel_vtt }}" style="margin-left:8px;">Download</a>
-          </li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <p style="margin:6px 0 12px;">No caption files found.</p>
-      {% endif %}
 
       <div class="alert" style="font-size:13px; white-space:pre-line; margin-bottom:10px;">
 Set lang code in ISO format (2 symbols), or
@@ -117,6 +104,8 @@ NOTE: Captions generation may take a long time.
 		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="{{ assets.captions_lang or 'auto' }}" style="width:90px;"></label>
 		  <button id="btn-generate-captions" type="submit">Regenerate captions</button>
+          <!-- Captions status -->
+          <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
 		</form>
         <form action="/internal/ytcms/captions/delete" method="post" style="margin-top:6px;">
           <input type="hidden" name="video_id" value="{{ video_id }}">
@@ -129,6 +118,8 @@ NOTE: Captions generation may take a long time.
 		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>
 		  <button id="btn-generate-captions" type="submit">Generate captions</button>
+          <!-- Captions status -->
+          <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
 		</form>
         <form action="/internal/ytcms/captions/delete" method="post" style="margin-top:6px;">
           <input type="hidden" name="video_id" value="{{ video_id }}">
@@ -142,4 +133,17 @@ NOTE: Captions generation may take a long time.
 
 <script src="/static/js/ytms.js"></script>
 <script src="/static/js/sprite_preview.js"></script>
+<script src="/static/js/captions_status.js"></script>
+<script>
+(function(){
+  var el = document.getElementById('captions-status');
+  if (el && window.CaptionsStatus) {
+    window.CaptionsStatus.init({
+      el: el,
+      videoId: el.getAttribute('data-video-id'),
+      intervalMs: 10000
+    });
+  }
+})();
+</script>
 {% endblock %}

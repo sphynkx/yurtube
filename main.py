@@ -38,3 +38,4 @@ app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
 
 # Register routes
 register_routes(app)
+##print(f"ENABLED ROUTES: {app.routes}")
