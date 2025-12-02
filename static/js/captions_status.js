@@ -1,21 +1,30 @@
 (function () {
-  // Map backend statuses to display labels and colors
+  var GRACE_MS_AFTER_ACTIVE = 12000;
+  var MIN_POLL_MS = 2500;
+  var DEFAULT_POLL_MS = 6000;
+
+  var last = {
+    status: "idle",
+    statusTs: 0,
+    percent: -1,
+    percentTs: 0
+  };
+
   function mapStatusDisplay(s, hasVtt) {
     var label = "unknown";
     var color = "#555";
     switch (s) {
       case "start":
-        label = "queued"; color = "#0070cc"; break;
       case "wait":
-        label = "queued"; color = "#0070cc"; break;
+        label = "queued";      color = "#0070cc"; break;
       case "process":
-        label = "processing"; color = "#0070cc"; break;
+        label = "processing";  color = "#0070cc"; break;
       case "done":
-        label = "done"; color = "#0a8a66"; break;
+        label = "done";        color = "#0a8a66"; break;
       case "fail":
-        label = "error"; color = "#a00"; break;
+        label = "error";       color = "#a00";    break;
       case "idle":
-        label = "idle"; color = "#888"; break;
+        label = "idle";        color = "#888";    break;
       default:
         label = hasVtt ? "done" : "unknown";
         color = hasVtt ? "#0a8a66" : "#a00";
@@ -24,12 +33,10 @@
     return { label: label, color: color };
   }
 
-  // Normalize rel_vtt so links use "captions/..." (without video_id prefix)
   function normalizeRelVtt(relVtt, videoId) {
     try {
       if (!relVtt) return relVtt;
-      relVtt = String(relVtt).replace(/^\/*/, ""); // trim leading slashes
-
+      relVtt = String(relVtt).replace(/^\/*/, "");
       var vid = String(videoId || "");
       if (vid) {
         var parts = relVtt.split("/");
@@ -47,11 +54,6 @@
     }
   }
 
-  // Fetch status from backend (extended contract)
-  // Expected shape:
-  // { ok: true,
-  //   video_id, status: "start|wait|process|done|fail|idle",
-  //   percent: -1..100 (int), has_vtt: bool, rel_vtt: string }
   function fetchStatus(videoId) {
     var url = "/internal/ytcms/captions/status?video_id=" + encodeURIComponent(videoId);
     return fetch(url, { credentials: "same-origin" })
@@ -59,7 +61,6 @@
       .catch(function () { return null; });
   }
 
-  // Render status text and color. If processing and percent >= 0, append " (NN%)"
   function renderStatusText(el, s, hasVtt, percent) {
     var mapped = mapStatusDisplay(s, hasVtt);
     var pctStr = (s === "process" && typeof percent === "number" && percent >= 0)
@@ -69,7 +70,6 @@
     el.style.color = mapped.color;
   }
 
-  // Find the "Captions" section container robustly
   function findCaptionsSectionRoot() {
     var headers = document.querySelectorAll("h2");
     for (var i = 0; i < headers.length; i++) {
@@ -84,7 +84,6 @@
     return null;
   }
 
-  // Ensure captions list container exists (ul), and return it
   function ensureCaptionsList(section) {
     var list = section.querySelector("ul");
     if (!list) {
@@ -102,7 +101,6 @@
     return list;
   }
 
-  // Remove "No caption files found." paragraph if present
   function removeEmptyParagraph(section) {
     var ps = section.querySelectorAll("p");
     for (var i = 0; i < ps.length; i++) {
@@ -113,23 +111,17 @@
     }
   }
 
-  // Add or update the single caption entry; deduplicate variants
   function upsertCaptionEntry(list, videoId, relVtt) {
-    // Deduplicate existing entries that represent the same file
     var items = list.querySelectorAll("li");
     for (var i = 0; i < items.length; i++) {
       var codeEl = items[i].querySelector("code");
       var codeTxt = codeEl ? (codeEl.textContent || "").trim() : "";
       if (!codeTxt) continue;
-
-      // consider equal if either normalized string matches,
-      // or one contains the other (full path vs normalized)
       if (codeTxt === relVtt || codeTxt.indexOf(relVtt) >= 0 || relVtt.indexOf(codeTxt) >= 0) {
-        // Update links and keep this single entry
-        var edit = items[i].querySelector("a[href*='/vtt/edit']");
-        var dl = items[i].querySelector("a[href*='/vtt/download']");
         var editHref = "/manage/video/" + encodeURIComponent(videoId) + "/vtt/edit?rel_vtt=" + encodeURIComponent(relVtt);
-        var dlHref = "/manage/video/" + encodeURIComponent(videoId) + "/vtt/download?rel_vtt=" + encodeURIComponent(relVtt);
+        var dlHref   = "/manage/video/" + encodeURIComponent(videoId) + "/vtt/download?rel_vtt=" + encodeURIComponent(relVtt);
+        var edit = items[i].querySelector("a[href*='/vtt/edit']");
+        var dl   = items[i].querySelector("a[href*='/vtt/download']");
         if (edit) edit.href = editHref; else {
           var e = document.createElement("a");
           e.href = editHref; e.style.marginLeft = "8px"; e.textContent = "Edit";
@@ -140,9 +132,7 @@
           d.href = dlHref; d.style.marginLeft = "8px"; d.textContent = "Download";
           items[i].appendChild(d);
         }
-        // Normalize code text to the desired format (without video_id)
         if (codeEl) codeEl.textContent = relVtt;
-        // Remove any other duplicates
         for (var k = items.length - 1; k >= 0; k--) {
           if (items[k] !== items[i]) {
             var ce = items[k].querySelector("code");
@@ -155,31 +145,24 @@
         return;
       }
     }
-
-    // Create new entry
     var li = document.createElement("li");
     li.style.marginBottom = "4px";
-
     var code = document.createElement("code");
     code.textContent = relVtt;
-
     var edit = document.createElement("a");
     edit.href = "/manage/video/" + encodeURIComponent(videoId) + "/vtt/edit?rel_vtt=" + encodeURIComponent(relVtt);
     edit.style.marginLeft = "8px";
     edit.textContent = "Edit";
-
     var dl = document.createElement("a");
     dl.href = "/manage/video/" + encodeURIComponent(videoId) + "/vtt/download?rel_vtt=" + encodeURIComponent(relVtt);
     dl.style.marginLeft = "8px";
     dl.textContent = "Download";
-
     li.appendChild(code);
     li.appendChild(edit);
     li.appendChild(dl);
     list.appendChild(li);
   }
 
-  // Ensure the "No caption files found." paragraph is shown if no items exist
   function ensureEmptyParagraphIfNeeded(section) {
     var list = section.querySelector("ul");
     var hasItems = !!(list && list.querySelector("li"));
@@ -201,18 +184,15 @@
           section.appendChild(emptyP);
         }
       }
-      if (list) { try { list.remove(); } catch (_) {} }
+      if (list) { try { list.remove(); } catch(_) {} }
     }
   }
 
-  // Update captions list UI according to relVtt presence
   function updateCaptionsList(videoId, rawRelVtt) {
     try {
       var section = findCaptionsSectionRoot();
       if (!section) return;
-
       var relVtt = normalizeRelVtt(rawRelVtt, videoId);
-
       if (relVtt) {
         removeEmptyParagraph(section);
         var list = ensureCaptionsList(section);
@@ -221,6 +201,30 @@
         ensureEmptyParagraphIfNeeded(section);
       }
     } catch (_) {}
+  }
+
+  // Add some gisteresis for  UI
+  function stabilizeStatus(incomingStatus, incomingPercent) {
+    var now = Date.now();
+    if (typeof incomingPercent === "number" && incomingPercent > 0 && incomingPercent < 100) {
+      last.percent = incomingPercent;
+      last.percentTs = now;
+    }
+    if (incomingStatus && incomingStatus !== last.status) {
+      last.status = incomingStatus;
+      last.statusTs = now;
+    }
+
+    var s = incomingStatus || "idle";
+    if (s === "idle") {
+      if (last.percent > 0 && last.percent < 100 && (now - last.percentTs) <= GRACE_MS_AFTER_ACTIVE) {
+        return "process";
+      }
+      if ((last.status === "process" || last.status === "wait") && (now - last.statusTs) <= GRACE_MS_AFTER_ACTIVE) {
+        return "wait";
+      }
+    }
+    return s;
   }
 
   function start(el, videoId, intervalMs) {
@@ -232,34 +236,39 @@
           renderStatusText(el, "unknown", false, -1);
           return;
         }
-        // Extended status contract from service:
-        // status: start | wait | process | done | fail | idle
-        var s = (d.status || "").toLowerCase();
+        var sRaw = (d.status || "idle").toLowerCase();
+        var pctRaw = (typeof d.percent === "number") ? d.percent : -1;
         var hasVtt = !!d.has_vtt;
-        var percent = (typeof d.percent === "number") ? d.percent : -1;
 
-        renderStatusText(el, s, hasVtt, percent);
+        var s = stabilizeStatus(sRaw, pctRaw);
 
-        // Update captions list if VTT present; otherwise ensure empty state
+        renderStatusText(el, s, hasVtt, pctRaw);
         updateCaptionsList(videoId, hasVtt ? d.rel_vtt : null);
       });
     }
 
-    // initial
     tick();
-    // periodic
-    var ms = Math.max(2000, parseInt(intervalMs || 8000, 10));
+    var ms = Math.max(MIN_POLL_MS, parseInt(intervalMs || DEFAULT_POLL_MS, 10));
     var timer = setInterval(tick, ms);
+    window.addEventListener("beforeunload", function () { try { clearInterval(timer); } catch (_) {} });
+  }
 
-    window.addEventListener("beforeunload", function () {
-      try { clearInterval(timer); } catch (_) { }
-    });
+  // DirtyHack: set `processing (0%)` just button pressed
+  function setImmediateProcessing(el) {
+    if (!el) return;
+    var now = Date.now();
+    last.status = "process";
+    last.statusTs = now;
+    last.percent = 0;
+    last.percentTs = now;
+    renderStatusText(el, "process", false, 0);
   }
 
   window.CaptionsStatus = {
     init: function (opts) {
       opts = opts || {};
       start(opts.el || document.getElementById("captions-status"), opts.videoId, opts.intervalMs);
-    }
+    },
+    setImmediateProcessing: setImmediateProcessing
   };
 })();

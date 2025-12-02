@@ -89,7 +89,6 @@
 	<section style="margin-top:24px;">
 	  <h2>Captions</h2>
 
-
       <div class="alert" style="font-size:13px; white-space:pre-line; margin-bottom:10px;">
 Set lang code in ISO format (2 symbols), or
 auto - to detect lang automatically, or
@@ -99,12 +98,11 @@ NOTE: Captions generation may take a long time.
 
 	  {% if assets.captions_vtt %}
 		<p>Primary captions track detected.</p>
-		<form action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;">
+		<form id="form-retry-captions" action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;">
 		  <input type="hidden" name="video_id" value="{{ video_id }}">
 		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="{{ assets.captions_lang or 'auto' }}" style="width:90px;"></label>
 		  <button id="btn-generate-captions" type="submit">Regenerate captions</button>
-          <!-- Captions status -->
           <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
 		</form>
         <form action="/internal/ytcms/captions/delete" method="post" style="margin-top:6px;">
@@ -114,11 +112,10 @@ NOTE: Captions generation may take a long time.
         </form>
 	  {% else %}
 		<p>No primary captions track (generate first).</p>
-		<form action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">
+		<form id="form-start-captions" action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">
 		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
 		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>
 		  <button id="btn-generate-captions" type="submit">Generate captions</button>
-          <!-- Captions status -->
           <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
 		</form>
         <form action="/internal/ytcms/captions/delete" method="post" style="margin-top:6px;">
@@ -138,10 +135,25 @@ NOTE: Captions generation may take a long time.
 (function(){
   var el = document.getElementById('captions-status');
   if (el && window.CaptionsStatus) {
+    // Set "processing (0%)" just button pressed
+    var formStart = document.getElementById('form-start-captions');
+    var formRetry = document.getElementById('form-retry-captions');
+    function setProcessingInstant(){
+      try {
+        window.CaptionsStatus.setImmediateProcessing(el);
+      } catch (_) {}
+    }
+    if (formStart) {
+      formStart.addEventListener('submit', setProcessingInstant);
+    }
+    if (formRetry) {
+      formRetry.addEventListener('submit', setProcessingInstant);
+    }
+
     window.CaptionsStatus.init({
       el: el,
       videoId: el.getAttribute('data-video-id'),
-      intervalMs: 10000
+      intervalMs: 6000
     });
   }
 })();
