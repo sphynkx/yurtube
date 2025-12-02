@@ -48,7 +48,7 @@ def submit_and_wait(
     lang: Optional[str] = None,
     task: Optional[str] = None,
     poll_interval: float = 1.5,
-    submit_timeout: float = 10.0,
+    submit_timeout: float = 1800.0,
     status_timeout: float = 5.0,
     result_timeout: float = 30.0,
 ) -> captions_pb2.ResultReply:
