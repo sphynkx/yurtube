@@ -11,8 +11,8 @@ from config.ytcms_cfg import ytcms_address, YTCMS_TOKEN, YTCMS_DEFAULT_LANG, YTC
 # Make generated stubs importable as top-level modules (captions_pb2_grpc imports captions_pb2).
 sys.path.append(str(pathlib.Path(__file__).resolve().parent / "ytcms_proto"))
 
-import captions_pb2
-import captions_pb2_grpc
+import captions_pb2  # noqa: E402
+import captions_pb2_grpc  # noqa: E402
 
 
 def _upload_stream(video_path: str, video_id: str, lang: str, task: str) -> Iterator[captions_pb2.UploadChunk]:
@@ -67,6 +67,8 @@ def submit_and_wait(
     lang = (lang or YTCMS_DEFAULT_LANG).strip() or "auto"
     task = (task or YTCMS_DEFAULT_TASK).strip() or "transcribe"
 
+    print(f"[YTCMS] submit start video_id={video_id} path={video_path} lang={lang} task={task}")
+
     channel = grpc.insecure_channel(addr)
     stub = captions_pb2_grpc.CaptionsServiceStub(channel)
     md = [("authorization", f"Bearer {YTCMS_TOKEN}")]
@@ -79,13 +81,15 @@ def submit_and_wait(
     )
 
     submit_status = (submit_reply.status or "").strip().lower()
+    job_id = submit_reply.job_id or ""
+    print(f"[YTCMS] submit reply video_id={video_id} job_id={job_id} status={submit_status} err={(submit_reply.error or '')}")
+
     if submit_status not in ("queued", "processing"):
         # In async mode, SubmitReply.content is empty; rely on .error if any
         raise RuntimeError(f"Submit failed: {getattr(submit_reply, 'error', '')}")
 
-    job_id = submit_reply.job_id
-
     # Poll status
+    last_status = None
     final_status = None
     final_error = ""
     while True:
@@ -95,16 +99,25 @@ def submit_and_wait(
             timeout=status_timeout,
         )
         st_status = (st.status or "").strip().lower()
+        if st_status != last_status:
+            print(f"[YTCMS] status video_id={video_id} job_id={job_id} status={st_status} err={(st.error or '')}")
+            last_status = st_status
+
         if st_status in ("done", "error", "not_found"):
             final_status = st_status
             final_error = getattr(st, "error", "") or ""
             break
+
         time.sleep(poll_interval)
 
     if final_status == "error":
+        print(f"[YTCMS] job failed video_id={video_id} job_id={job_id} err={final_error}")
         raise RuntimeError(f"Job failed: {final_error}")
     if final_status == "not_found":
+        print(f"[YTCMS] job not found video_id={video_id} job_id={job_id}")
         raise RuntimeError("Job not found")
+
+    print(f"[YTCMS] job done video_id={video_id} job_id={job_id} -> fetching result")
 
     # Fetch result
     res = stub.GetResult(
@@ -112,4 +125,10 @@ def submit_and_wait(
         metadata=md,
         timeout=result_timeout,
     )
+
+    # Small summary for diagnostics
+    vtt_len = len(getattr(res, "vtt", "") or getattr(res, "content", "") or "")
+    meta_lang = getattr(res, "detected_lang", None)
+    print(f"[YTCMS] result received video_id={video_id} job_id={job_id} vtt_len={vtt_len} detected_lang={meta_lang}")
+
     return res
