@@ -6,7 +6,16 @@ import sys
 import pathlib
 from typing import Iterator, Optional, Tuple, Callable
 
-from config.ytcms_cfg import ytcms_address, YTCMS_TOKEN, YTCMS_DEFAULT_LANG, YTCMS_DEFAULT_TASK
+from config.ytcms_cfg import (
+    ytcms_address, 
+    YTCMS_TOKEN, 
+    YTCMS_DEFAULT_LANG, 
+    YTCMS_DEFAULT_TASK,
+    YTCMS_POLL_INTERVAL,
+    YTCMS_SUBMIT_TIMEOUT,
+    YTCMS_STATUS_TIMEOUT,
+    YTCMS_RESULT_TIMEOUT,
+    )
 
 # Make generated stubs importable as top-level modules (captions_pb2_grpc imports captions_pb2).
 sys.path.append(str(pathlib.Path(__file__).resolve().parent / "ytcms_proto"))
@@ -76,10 +85,10 @@ def submit_and_wait(
     video_id: str,
     lang: Optional[str] = None,
     task: Optional[str] = None,
-    poll_interval: float = 1.5,
-    submit_timeout: float = 1800.0,
-    status_timeout: float = 5.0,
-    result_timeout: float = 30.0,
+    poll_interval: float = YTCMS_POLL_INTERVAL,
+    submit_timeout: float = YTCMS_SUBMIT_TIMEOUT,
+    status_timeout: float = YTCMS_STATUS_TIMEOUT,
+    result_timeout: float = YTCMS_RESULT_TIMEOUT,
     on_status: Optional[Callable[[str, str, str, int, float], None]] = None,
 ) -> captions_pb2.ResultReply:
     """
