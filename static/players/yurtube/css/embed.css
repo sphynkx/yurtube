@@ -194,3 +194,19 @@ html, body { height:100%; background:#000; font-family:var(--yrp-font); }
   white-space:pre-wrap;
   word-break:break-word;
 }
+
+/* Artefacts with empty captions (embed): collapse overlay visuals and dimensions when there's no text */
+.yrp-embed-captions-text:empty {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  display: inline-block; /* keep element present, but zero-sized with no visuals */
+}
+
+/* guard against min-height artifacts */
+.yrp-embed-captions-text {
+  min-height: 0;
+}
