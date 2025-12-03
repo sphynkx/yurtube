@@ -5,12 +5,13 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
+from config.config import settings
 from services.search.search_client_srch import get_backend
-from services.search.settings_srch import settings
+from services.search.settings_srch import settings as settings_srch
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from db import get_conn, release_conn
-from db.search_db import fetch_video_assets_by_ids  # moved DB query into db utility
+from db.search_db import fetch_video_assets_by_ids
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -105,7 +106,11 @@ async def search_page(
             "results": rows,
             "page": args["page"],
             "per_page": args["per_page"],
-            "engine": settings.BACKEND,
+            "engine": settings_srch.BACKEND,
+            "brand_logo_url": settings.BRAND_LOGO_URL,
+            "brand_tagline": settings.BRAND_TAGLINE,
+            "favicon_url": settings.FAVICON_URL,
+            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
         },
     )
 
