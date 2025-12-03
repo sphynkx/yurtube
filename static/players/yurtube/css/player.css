@@ -361,3 +361,20 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Artefacts with empty captions: collapse overlay visuals and dimensions when there's no text */
+.yrp-captions-text:empty {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: 0 !important;
+  display: inline-block;
+}
+
+/* guard against whitespace-only (if any) */
+.yrp-captions-text {
+  /* prevent default min-height artifacts */
+  min-height: 0;
+}
