@@ -11,6 +11,9 @@ def get_backend() -> BaseSearchBackend:
     global _backend
     if _backend is not None:
         return _backend
+    # Graceful selection: prefer configured backend, but ensure no 500 on downtime.
+    # If BACKEND is manticore, use ManticoreBackend which now returns [] on network failures.
+    # If BACKEND is postgres, use PostgresBackend.
     if settings.BACKEND == "manticore":
         _backend = ManticoreBackend()
     else:

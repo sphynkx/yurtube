@@ -52,11 +52,17 @@ class _ManticoreHttpTransport(_Transport):
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 return resp.read().decode("utf-8")
-        except Exception:
-            qs = urllib.parse.urlencode({"query": sql})
-            url = f"{base}?{qs}"
-            with urllib.request.urlopen(url, timeout=10) as resp2:
-                return resp2.read().decode("utf-8")
+        except Exception as e:
+            # Graceful fallback to GET, and if GET also fails — return an empty JSON to avoid 500 upstream.
+            try:
+                qs = urllib.parse.urlencode({"query": sql})
+                url = f"{base}?{qs}"
+                with urllib.request.urlopen(url, timeout=10) as resp2:
+                    return resp2.read().decode("utf-8")
+            except Exception as e2:
+                log.error("Manticore http_sql_select_raw failed: POST err=%r; GET err=%r", e, e2)
+                # Return an empty result instead of raising to allow upper layers to fallback.
+                return "{}"
 
     def http_sql_raw_post(self, sql: str) -> Tuple[bool, str]:
         base = self._base_http()

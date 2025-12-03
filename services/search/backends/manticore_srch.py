@@ -105,7 +105,12 @@ def _normalize_rows(res: Union[Dict[str, Any], List[Any]]) -> List[Dict[str, Any
 def _run_select(sql: str) -> List[Dict[str, Any]]:
     if log.isEnabledFor(logging.DEBUG):
         log.debug("Manticore SELECT: %s", sql)
-    res = http_sql_select(sql)
+    # Graceful: protect network/JSON errors and return empty rows on failure
+    try:
+        res = http_sql_select(sql)
+    except Exception as e:
+        log.error("Manticore SELECT failed: %r", e)
+        return []
     return _normalize_rows(res)
 
 
