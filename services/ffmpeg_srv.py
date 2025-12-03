@@ -294,3 +294,94 @@ async def async_generate_animated_preview(input_path: str, out_path: str, start_
     ]
     rc = await _run_proc(cmd)
     return rc == 0 and os.path.exists(out_path)
+
+
+# ---------------------------------------------
+# Audio extraction/transcoding helpers (async)
+# ---------------------------------------------
+
+async def async_extract_audio_demux(input_path: str, out_path: str) -> bool:
+    """
+    Extract (demux) audio stream without re-encoding.
+    Uses container/codec from the source. out_path extension can be arbitrary (e.g. .bin).
+    """
+    if not _have("ffmpeg"):
+        return False
+    if not os.path.exists(input_path):
+        return False
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        input_path,
+        "-vn",
+        "-c:a",
+        "copy",
+        out_path,
+    ]
+    rc = await _run_proc(cmd)
+    return rc == 0 and os.path.exists(out_path)
+
+
+async def async_transcode_audio(
+    input_path: str,
+    out_path: str,
+    codec: str = "mp3",
+    channels: int = 1,
+    sample_rate: int = 16000,
+    bitrate: str = "48k",
+) -> bool:
+    """
+    Transcode audio for ASR-friendly settings.
+    codec: mp3 | opus | aac | flac | wav
+    """
+    if not _have("ffmpeg"):
+        return False
+    if not os.path.exists(input_path):
+        return False
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+
+    codec = (codec or "mp3").lower().strip()
+    ca = []
+    if codec == "mp3":
+        ca = ["-c:a", "libmp3lame", "-b:a", str(bitrate)]
+        ext_ok = out_path.endswith(".mp3")
+    elif codec == "opus":
+        ca = ["-c:a", "libopus", "-b:a", str(bitrate)]
+        ext_ok = out_path.endswith(".opus") or out_path.endswith(".ogg") or out_path.endswith(".webm")
+    elif codec == "aac":
+        ca = ["-c:a", "aac", "-b:a", str(bitrate)]
+        ext_ok = out_path.endswith(".m4a") or out_path.endswith(".aac") or out_path.endswith(".mp4")
+    elif codec == "flac":
+        ca = ["-c:a", "flac", "-compression_level", "5"]
+        ext_ok = out_path.endswith(".flac")
+    elif codec == "wav":
+        ca = ["-c:a", "pcm_s16le"]
+        ext_ok = out_path.endswith(".wav")
+    else:
+        # fallback
+        ca = ["-c:a", "libmp3lame", "-b:a", str(bitrate)]
+        ext_ok = out_path.endswith(".mp3")
+
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        input_path,
+        "-vn",
+        "-ac",
+        str(max(1, int(channels))),
+        "-ar",
+        str(max(8000, int(sample_rate))),
+        *ca,
+        out_path,
+    ]
+    rc = await _run_proc(cmd)
+    return rc == 0 and os.path.exists(out_path)
