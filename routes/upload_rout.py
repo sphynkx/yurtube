@@ -24,10 +24,6 @@ from db.videos_db import (
     delete_video_by_owner,
 )
 
-## Deprecated
-#from services.ytms_client_srv import create_thumbnails_job
-#from db.ytms_db import fetch_video_storage_path
-## Replacement:
 from services.ytsprites.ytsprites_client_srv import create_thumbnails_job
 from db.ytsprites.ytsprites_db  import fetch_video_storage_path
 

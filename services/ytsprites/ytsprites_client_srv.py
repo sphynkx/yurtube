@@ -1,5 +1,3 @@
-# Client part to operation with external ytsprites service (replacement for ytms)
-
 import os
 import sys
 import time
@@ -162,7 +160,7 @@ async def create_thumbnails_job(
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Thumbs generator. Moved from old ytms
+    Thumbs generator. 
     Calls gRPC ytsprites
     Sync processing, saves files to out_base_path.
 

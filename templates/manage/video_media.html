@@ -46,20 +46,6 @@
         {% endif %}
       </ul>
 
-<!-- Deprecate - will be removed -->
-      <form id="ytms-start-form"
-            action="/manage/video/{{ video_id }}/media/process"
-            method="post"
-            data-video-id="{{ video_id }}"
-            novalidate
-            style="margin-bottom:12px;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button id="ytms-start" type="submit" disabled>Generate sprites & subtitles (deprecated)</button>
-        <span id="ytms-status" style="margin-left:12px; font-size:13px;"></span>
-      </form>
-
-<!-- /Deprecate - will be removed -->
-
 	{% if assets.thumbs_vtt %}
 	<form id="ytms-retry-form"
 		  action="/internal/ytsprites/thumbnails/retry"

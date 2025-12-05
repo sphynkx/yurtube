@@ -1,5 +1,3 @@
-# DB utils for client sid of ytsprites. Same as for deprecated ytms.
-
 from typing import Optional, List, Any
 
 async def fetch_video_storage_path(conn, video_id: str, ensure_ready: bool = False) -> Optional[str]:

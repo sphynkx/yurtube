@@ -1,6 +1,4 @@
 # For client side which working with external ytsprites service
-# Service generates sprites and VTT for received video. Replacement of ytms service. Logic is same.
-
 import os
 
 def ytsprites_address() -> str:
