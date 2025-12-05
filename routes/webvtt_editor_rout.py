@@ -6,7 +6,9 @@ from fastapi import APIRouter, Request, Form, HTTPException, Query
 from fastapi.responses import RedirectResponse, HTMLResponse, Response
 
 from config.config import settings
-from config.ytms_cfg import STORAGE_FS_ROOT, STORAGE_WEB_PREFIX
+## Deprecated
+##from config.ytms_cfg import STORAGE_FS_ROOT, STORAGE_WEB_PREFIX
+from config.ytsprites.ytsprites_cfg import APP_STORAGE_FS_ROOT, APP_STORAGE_WEB_PREFIX
 from utils.security_ut import get_current_user
 from db import get_conn, release_conn
 from db.videos_db import get_owned_video
@@ -60,7 +62,7 @@ def _build_storage_url(rel_path: Optional[str]) -> Optional[str]:
     if not rel_path:
         return None
     rel_path = rel_path.lstrip("/")
-    return STORAGE_WEB_PREFIX.rstrip("/") + "/" + rel_path
+    return APP_STORAGE_WEB_PREFIX.rstrip("/") + "/" + rel_path
 
 
 @router.get("/manage/video/{video_id}/vtt/edit")
