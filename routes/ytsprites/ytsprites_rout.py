@@ -30,6 +30,7 @@ from db.captions_db import get_video_captions_status
 from services.ytsprites.ytsprites_client_srv import submit_and_wait
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
+from utils.ytsprites.ytsprites_ut import prefix_sprite_paths, normalize_vtt
 
 router = APIRouter(tags=["ytsprites"])
 templates = Jinja2Templates(directory="templates")
@@ -201,12 +202,16 @@ async def start_media_process(
 
         abs_root = getattr(settings, "STORAGE_ROOT", APP_STORAGE_FS_ROOT)
 
+        # bugfix - if subdir "sprites/" is lost
+        vtt_patched = prefix_sprite_paths(vtt_text, prefix="sprites/")
+        vtt_final = normalize_vtt(vtt_patched)
+
         # Save VTT
         rel_vtt = os.path.join(storage_rel, "sprites.vtt")
         abs_vtt = os.path.join(abs_root, rel_vtt)
         try:
             with open(abs_vtt, "w", encoding="utf-8") as f:
-                f.write(vtt_text or "")
+                f.write(vtt_final or "")
         except Exception:
             try:
                 with open(abs_vtt, "w", encoding="utf-8") as f:
@@ -309,6 +314,11 @@ async def ytsprites_thumbnails_retry(
     # run gRPC flow and persist results
     video_id2, sprites, vtt_text = submit_and_wait(video_id, original_path, (YTSPRITES_DEFAULT_MIME or "video/webm"))
 
+    # bugfix - if subdir "sprites/" is lost
+    vtt_patched = prefix_sprite_paths(vtt_text, prefix="sprites/")
+    vtt_final = normalize_vtt(vtt_patched)
+
+
     # save files
     target_dir_rel = os.path.join(storage_base, "sprites")
     target_dir_abs = os.path.join(abs_root, target_dir_rel)
@@ -321,7 +331,7 @@ async def ytsprites_thumbnails_retry(
     abs_vtt = os.path.join(abs_root, rel_vtt)
     try:
         with open(abs_vtt, "w", encoding="utf-8") as f:
-            f.write(vtt_text or "")
+            f.write(vtt_final or "")
     except Exception:
         try:
             with open(abs_vtt, "w", encoding="utf-8") as f:
