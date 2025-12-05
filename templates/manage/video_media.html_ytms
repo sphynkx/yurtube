@@ -53,7 +53,7 @@
             novalidate
             style="margin-bottom:12px;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <button id="ytms-start" type="submit" disabled>Generate sprites & subtitles (deprecated)</button>
+        <button id="ytms-start" type="submit">Generate sprites & subtitles</button>
         <span id="ytms-status" style="margin-left:12px; font-size:13px;"></span>
       </form>
 
