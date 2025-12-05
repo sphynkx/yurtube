@@ -46,6 +46,7 @@
         {% endif %}
       </ul>
 
+<!-- Deprecate - will be removed -->
       <form id="ytms-start-form"
             action="/manage/video/{{ video_id }}/media/process"
             method="post"
@@ -57,18 +58,32 @@
         <span id="ytms-status" style="margin-left:12px; font-size:13px;"></span>
       </form>
 
-      {% if assets.thumbs_vtt %}
-      <form id="ytms-retry-form"
-            action="/internal/ytms/thumbnails/retry"
-            method="post"
-            data-video-id="{{ video_id }}"
-            style="margin-bottom:4px;">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="video_id" value="{{ video_id }}">
-        <button id="ytms-retry" type="submit">Regenerate thumbnails</button>
-        <span id="ytms-retry-status" style="margin-left:12px; font-size:13px;"></span>
-      </form>
-      {% endif %}
+<!-- /Deprecate - will be removed -->
+
+	{% if assets.thumbs_vtt %}
+	<form id="ytms-retry-form"
+		  action="/internal/ytsprites/thumbnails/retry"
+		  method="post"
+		  data-video-id="{{ video_id }}"
+		  style="margin-bottom:4px;">
+	  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	  <input type="hidden" name="video_id" value="{{ video_id }}">
+	  <button id="ytms-retry" type="submit">Regenerate thumbnails</button>
+	  <span id="ytms-retry-status" style="margin-left:12px; font-size:13px;"></span>
+	</form>
+	{% else %}
+	<form id="ytsprites-start-form"
+		  action="/internal/ytsprites/thumbnails/retry"
+		  method="post"
+		  data-video-id="{{ video_id }}"
+		  style="margin-bottom:4px;">
+	  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+	  <input type="hidden" name="video_id" value="{{ video_id }}">
+	  <button id="ytsprites-start" type="submit">Generate sprites & subtitles</button>
+	  <span id="ytsprites-start-status" style="margin-left:12px; font-size:13px;"></span>
+	</form>
+	{% endif %}
+
       <div id="ytms-result" style="margin-top:16px; font-size:13px;"></div>
     </section>
 
@@ -128,7 +143,7 @@ NOTE: Captions generation may take a long time.
   </main>
 </div>
 
-<script src="/static/js/ytms.js"></script>
+<script src="/static/js/ytsprites.js"></script>
 <script src="/static/js/sprite_preview.js"></script>
 <script src="/static/js/captions_status.js"></script>
 <script>

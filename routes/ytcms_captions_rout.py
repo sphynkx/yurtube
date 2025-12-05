@@ -10,7 +10,11 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from config.config import settings
 from db import get_conn, release_conn
 from db.videos_db import get_owned_video, set_video_ready
-from db.ytms_db import fetch_video_storage_path
+## Deprecated
+#from db.ytms_db import fetch_video_storage_path
+## Replacement:
+from db.ytsprites.ytsprites_db  import fetch_video_storage_path
+
 from db.captions_db import set_video_captions, reset_video_captions, get_video_captions_status
 from utils.security_ut import get_current_user
 from services.ytcms.captions_generation import generate_captions

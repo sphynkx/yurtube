@@ -2,10 +2,11 @@
 
 import os
 import sys
-import pathlib
 import time
+import pathlib
+import asyncio
 import grpc
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple, Any
 
 from config.ytsprites.ytsprites_cfg import (
     ytsprites_address,
@@ -20,10 +21,14 @@ from config.ytsprites.ytsprites_cfg import (
     YTSPRITES_SPRITE_ROWS,
     YTSPRITES_SPRITE_FORMAT,
     YTSPRITES_SPRITE_QUALITY,
+    YTSPRITES_GRPC_MAX_SEND_MB,
+    YTSPRITES_GRPC_MAX_RECV_MB,
+    YTSPRITES_GRPC_COMPRESSION,
 )
 
+# Import protobuf stubs: add the ytsprites_proto directory to sys.path
+# TODO: rework gen_proto.sh with sed, remove this construct (see in ytsprites realization)
 sys.path.append(str(pathlib.Path(__file__).resolve().parent / "ytsprites_proto"))
-
 import ytsprites_pb2 as pb
 import ytsprites_pb2_grpc as pbg
 
@@ -58,8 +63,22 @@ def _read_file_bytes(abs_path: str) -> bytes:
 
 def _open_stub() -> pbg.SpritesStub:
     addr = ytsprites_address()
-    channel = grpc.insecure_channel(addr)
+    max_send = int(YTSPRITES_GRPC_MAX_SEND_MB) * 1024 * 1024
+    max_recv = int(YTSPRITES_GRPC_MAX_RECV_MB) * 1024 * 1024
+    compression = None
+    if (YTSPRITES_GRPC_COMPRESSION or "").lower() == "gzip":
+        compression = grpc.Compression.Gzip
+
+    channel = grpc.insecure_channel(
+        addr,
+        options=[
+            ("grpc.max_send_message_length", max_send),
+            ("grpc.max_receive_message_length", max_recv),
+        ],
+        compression=compression,
+    )
     return pbg.SpritesStub(channel)
+
 
 def health_check() -> bool:
     stub = _open_stub()
@@ -70,7 +89,7 @@ def health_check() -> bool:
         return False
 
 
-# Send only (get job_id), dont wait for result
+# Send only (get job_id), without waiting for the result
 def submit_only(video_id: str, video_abs_path: str, video_mime: Optional[str] = None) -> str:
     data = _read_file_bytes(video_abs_path)
     mime = (video_mime or YTSPRITES_DEFAULT_MIME).strip() or YTSPRITES_DEFAULT_MIME
@@ -132,3 +151,76 @@ def submit_and_wait(video_id: str, video_abs_path: str, video_mime: Optional[str
     job_id = submit_only(video_id, video_abs_path, video_mime=video_mime)
     watch_status(job_id, on_update=on_status)
     return get_result(job_id)
+
+
+# Local processing via ytsprites
+async def create_thumbnails_job(
+    video_id: str,
+    src_path: Optional[str],
+    out_base_path: str,
+    src_url: Optional[str] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Thumbs generator. Moved from old ytms
+    Calls gRPC ytsprites
+    Sync processing, saves files to out_base_path.
+
+    Returns:
+    {
+      "ok": True,
+      "job_id": "ytsprites-local",
+      "vtt_rel": "sprites.vtt",
+      "sprites": ["sprites/sprite_0001.jpg", ..]
+    }
+    """
+    if not src_path and not src_url:
+        raise ValueError("src_path or src_url required")
+    # Currently only src_path (local file)
+    if not src_path or not os.path.isfile(src_path):
+        raise FileNotFoundError(f"Video src_path not found: {src_path}")
+
+    mime = (YTSPRITES_DEFAULT_MIME or "video/webm").strip() or "video/webm"
+
+    # Send and wait in sep thread
+    video_id2, sprites, vtt_text = await asyncio.to_thread(submit_and_wait, video_id, src_path, mime)
+
+    # Save result close to out_base_path
+    os.makedirs(out_base_path, exist_ok=True)
+
+    # VTT
+    vtt_abs = os.path.join(out_base_path, "sprites.vtt")
+    try:
+        with open(vtt_abs, "w", encoding="utf-8") as f:
+            f.write(vtt_text or "")
+    except Exception:
+        try:
+            with open(vtt_abs, "w", encoding="utf-8") as f:
+                f.write("")
+        except Exception:
+            pass
+
+    # sprites/ subfolder
+    sprites_dir_abs = os.path.join(out_base_path, "sprites")
+    try:
+        os.makedirs(sprites_dir_abs, exist_ok=True)
+    except Exception:
+        pass
+
+    rel_sprites: List[str] = []
+    for name, data in sprites:
+        rel_path = os.path.join("sprites", name)
+        abs_path = os.path.join(out_base_path, rel_path)
+        try:
+            with open(abs_path, "wb") as f:
+                f.write(data or b"")
+            rel_sprites.append(rel_path)
+        except Exception:
+            continue
+
+    return {
+        "ok": True,
+        "job_id": "ytsprites-local",
+        "vtt_rel": "sprites.vtt",
+        "sprites": rel_sprites,
+    }

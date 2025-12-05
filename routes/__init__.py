@@ -27,10 +27,11 @@ from routes.notifications.notifications_rout import router as notifications_rout
 
 from routes.reactions_rout import router as reactions_router
 
-from routes.ytms_sprites_rout import router as ytms_router
-
-from .ytcms_captions_rout import router as ytcms_captions_router ##will deprecate
+##from routes.ytms_sprites_rout import router as ytms_router ##will deprecate
 from routes.ytsprites.ytsprites_rout import router as ytsprites_router
+
+from .ytcms_captions_rout import router as ytcms_captions_router
+
 
 from .webvtt_editor_rout import router as webvtt_editor_router
 
@@ -65,9 +66,9 @@ def register_routes(app: FastAPI) -> None:
 
     app.include_router(reactions_router)
 
-    app.include_router(ytms_router)
-
-    app.include_router(ytcms_captions_router) ## will deprecate
+    ##app.include_router(ytms_router) ## will deprecate
     app.include_router(ytsprites_router)
+
+    app.include_router(ytcms_captions_router)
 
     app.include_router(webvtt_editor_router)
