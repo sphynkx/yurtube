@@ -20,9 +20,9 @@ YTSPRITES_MAX_UPLOAD_BYTES: int = int(os.getenv("YTSPRITES_MAX_UPLOAD_BYTES", st
 YTSPRITES_DEFAULT_MIME: str = os.getenv("YTSPRITES_DEFAULT_MIME", "video/webm")
 
 # Options for send to ytsprites service
-YTSPRITES_SPRITE_STEP_SEC: float = float(os.getenv("YTSPRITES_SPRITE_STEP_SEC", "10.0"))
-YTSPRITES_SPRITE_COLS: int = int(os.getenv("YTSPRITES_SPRITE_COLS", "5"))
-YTSPRITES_SPRITE_ROWS: int = int(os.getenv("YTSPRITES_SPRITE_ROWS", "5"))
+YTSPRITES_SPRITE_STEP_SEC: float = float(os.getenv("YTSPRITES_SPRITE_STEP_SEC", "2.0"))
+YTSPRITES_SPRITE_COLS: int = int(os.getenv("YTSPRITES_SPRITE_COLS", "10"))
+YTSPRITES_SPRITE_ROWS: int = int(os.getenv("YTSPRITES_SPRITE_ROWS", "10"))
 YTSPRITES_SPRITE_FORMAT: str = os.getenv("YTSPRITES_SPRITE_FORMAT", "jpg")
 YTSPRITES_SPRITE_QUALITY: int = int(os.getenv("YTSPRITES_SPRITE_QUALITY", "85"))
 
