@@ -98,6 +98,7 @@ async def _render_channel(request: Request, owner: Optional[Dict[str, Any]]) -> 
                 "brand_tagline": settings.BRAND_TAGLINE,
                 "favicon_url": settings.FAVICON_URL,
                 "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+                "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
             },
             status_code=404,
         )
@@ -132,6 +133,7 @@ async def _render_channel(request: Request, owner: Optional[Dict[str, Any]]) -> 
             "subscribers": subs_cnt,
             "subscribed": subd,
             "csrf_token": csrf_token,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
     )
     if not _get_csrf_cookie(request):
