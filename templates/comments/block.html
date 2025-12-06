@@ -1,4 +1,5 @@
 <!-- 
+## SRTG_DONE
 ## SRTG_2MODIFY: storage/
 -->
 <div id="comments-root"
@@ -11,7 +12,12 @@
   {% set _sso_pic = request.cookies.get('yt_gpic') if request else None %}
   {% set _avatar_src = None %}
   {% if current_user %}
-    {% set _avatar_src = '/storage/users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
+    {% set _avatar_rel = 'users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
+    {% if storage_public_base_url %}
+      {% set _avatar_src = storage_public_base_url ~ '/' ~ _avatar_rel %}
+    {% else %}
+      {% set _avatar_src = '/storage/' ~ _avatar_rel %}
+    {% endif %}
     {% if _authp and _authp != 'local' and _sso_pic %}
       {% set _avatar_src = _sso_pic %}
     {% endif %}
