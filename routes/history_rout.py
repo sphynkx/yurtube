@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: build_storage_url(
 ## SRTG_2MODIFY: os.path.
@@ -19,6 +20,9 @@ from utils.url_ut import build_storage_url
 from utils.security_ut import get_current_user
 from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
 from utils.format_ut import fmt_dt
+
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -56,14 +60,13 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
 
 # --- Helpers ---
 
-def _augment(vrow: dict) -> dict:
+def _augment(vrow: dict, storage_client: StorageClient) -> dict:
     v = dict(vrow)
     tap = v.get("thumb_asset_path")
     v["thumb_url"] = build_storage_url(tap) if tap else DEFAULT_THUMB_DATA_URI
     if tap and "/" in tap:
         anim_rel = tap.rsplit("/", 1)[0] + "/thumb_anim.webp"
-        abs_anim = os.path.join(settings.STORAGE_ROOT, anim_rel)
-        v["thumb_anim_url"] = build_storage_url(anim_rel) if os.path.isfile(abs_anim) else None
+        v["thumb_anim_url"] = build_storage_url(anim_rel) if storage_client.exists(anim_rel) else None
     else:
         v["thumb_anim_url"] = None
     return v
@@ -104,7 +107,8 @@ async def history_page(request: Request) -> Any:
     conn = await get_conn()
     try:
         rows = await list_history_distinct_latest(conn, user["user_uid"], limit=200, offset=0)
-        videos: List[dict] = [_augment(dict(r)) for r in rows]
+        storage_client: StorageClient = request.app.state.storage
+        videos: List[dict] = [_augment(dict(r), storage_client) for r in rows]
     finally:
         await release_conn(conn)
 
