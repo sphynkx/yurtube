@@ -27,6 +27,36 @@
   </div>
   {% endfor %}
 </div>
+
+<nav class="pagination"
+     style="margin-top: 24px; margin-bottom: 36px; display:flex; gap:12px; align-items:center; justify-content:center;">
+  {% if has_prev %}
+    <a class="btn" href="/?page={{ prev_page }}&page_size={{ page_size }}">« Previous</a>
+  {% else %}
+    <span class="btn disabled" style="opacity:0.6; cursor:default;">« Previous</span>
+  {% endif %}
+
+  <span style="display:flex; gap:8px; align-items:center;">
+    {% for item in page_items %}
+      {% if item.kind == 'ellipsis' %}
+        <span style="opacity:0.7;">…</span>
+      {% elif item.kind == 'number' %}
+        {% if item.current %}
+          <span class="btn" style="font-weight:600; border-bottom:2px solid #444; cursor:default;">{{ item.num }}</span>
+        {% else %}
+          <a class="btn" href="{{ item.url }}">{{ item.num }}</a>
+        {% endif %}
+      {% endif %}
+    {% endfor %}
+  </span>
+
+  {% if has_next %}
+    <a class="btn" href="/?page={{ next_page }}&page_size={{ page_size }}">Next »</a>
+  {% else %}
+    <span class="btn disabled" style="opacity:0.6; cursor:default;">Next »</span>
+  {% endif %}
+</nav>
+
 <div style="clear:both;"></div>
 {% include "partials/footer.html" %}
 {% endblock %}

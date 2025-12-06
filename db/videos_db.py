@@ -60,7 +60,7 @@ async def set_video_ready(
         )
 
 
-async def list_latest_public_videos(
+async def list_latest_public_videos_OLD(
     conn: asyncpg.Connection,
     limit: int = 20,
 ):
@@ -81,6 +81,64 @@ async def list_latest_public_videos(
         """,
         limit,
     )
+
+
+
+async def list_latest_public_videos_count(conn) -> int:
+    """
+    Amount of public videos - for pagination on root page
+    """
+    row = await conn.fetchrow(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM videos
+        WHERE status = 'public'
+          AND processing_status = 'ready'
+        """
+    )
+    return int(row["cnt"] if row and row["cnt"] is not None else 0)
+
+
+async def list_latest_public_videos(conn, limit: int = 24, offset: int = 0):
+    """
+    returns list of public videos sorted by date desc., with pagination.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT v.video_id, v.title, v.duration_sec, v.storage_path, v.created_at,
+               vthumb.path AS thumb_asset_path,
+               vanim.path AS thumb_anim_asset_path,
+               u.username, u.channel_id,
+               uava.path AS avatar_asset_path
+        FROM videos v
+        JOIN users u ON u.user_uid = v.author_uid
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_default'
+          LIMIT 1
+        ) vthumb ON true
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_anim'
+          LIMIT 1
+        ) vanim ON true
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM user_assets
+          WHERE user_uid = v.author_uid AND asset_type = 'avatar'
+          LIMIT 1
+        ) uava ON true
+        WHERE v.status = 'public'
+          AND v.processing_status = 'ready'
+        ORDER BY v.created_at DESC
+        LIMIT $1 OFFSET $2
+        """,
+        limit,
+        offset,
+    )
+    return rows
 
 
 async def list_trending_public_videos(
