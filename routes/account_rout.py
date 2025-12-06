@@ -110,6 +110,8 @@ async def account_home(request: Request) -> Any:
             "brand_tagline": settings.BRAND_TAGLINE,
             "favicon_url": settings.FAVICON_URL,
             "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+            # pass public storage base for templates with fallbacks
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
     )
 
