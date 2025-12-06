@@ -105,6 +105,7 @@ async def trending(
             "last_page": last_page,
             "page_numbers": page_numbers,
             "days": bucket,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -120,7 +121,13 @@ async def subscriptions(
     if not user:
         return templates.TemplateResponse(
             "subscriptions.html",
-            {"request": request, "current_user": None, "channels": [], "need_login": True},
+            {
+                "request": request,
+                "current_user": None,
+                "channels": [],
+                "need_login": True,
+                "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+            },
         )
 
     conn = await get_conn()
@@ -138,7 +145,7 @@ async def subscriptions(
         "subscriptions.html",
         {
             "brand_logo_url": settings.BRAND_LOGO_URL,
-            "brand_tagline": settings.BRAND_TAGLINE,
+            "brand_tagline": settings.brand_tagline if hasattr(settings, "brand_tagline") else settings.BRAND_TAGLINE,
             "favicon_url": settings.FAVICON_URL,
             "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             "request": request,
@@ -147,6 +154,6 @@ async def subscriptions(
             "need_login": False,
             "page": page,
             "per_page": per_page,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
     )
-
