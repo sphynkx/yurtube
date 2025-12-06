@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: build_storage_url(
 ## SRTG_2MODIFY: storage/
 ## SRTG_2MODIFY: _path
@@ -157,7 +158,8 @@ async def watch_page(request: Request, v: str) -> Any:
         except Exception:
             pass
 
-        video_src = "/storage/" + video["storage_path"].strip("/").rstrip("/") + "/original.webm"
+        # Build web URL for video via abs path
+        video_src = build_storage_url(video["storage_path"].strip("/").rstrip("/") + "/original.webm")
         poster_url = build_storage_url(video["thumb_asset_path"]) if video.get("thumb_asset_path") else None
         thumb_anim_url = build_storage_url(video["thumb_anim_asset_path"]) if video.get("thumb_anim_asset_path") else None
         avatar_url = build_storage_url(video["avatar_asset_path"]) if video.get("avatar_asset_path") else None
@@ -256,7 +258,8 @@ async def embed_page(
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
 
-        video_src = "/storage/" + video["storage_path"].strip("/").rstrip("/") + "/original.webm"
+        # Build web URL for video via abs path
+        video_src = build_storage_url(video["storage_path"].strip("/").rstrip("/") + "/original.webm")
         poster_url = build_storage_url(video["thumb_asset_path"]) if video.get("thumb_asset_path") else None
 
         subtitles: List[Dict[str, Any]] = []
