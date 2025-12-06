@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: os.path.
 import os
@@ -11,7 +12,7 @@ from config.config import settings
 from routes import register_routes
 
 from services.storage import build_storage_client
-from config.storage.storage_cfg import STORAGE_BACKEND
+from config.storage.storage_cfg import STORAGE_BACKEND, APP_STORAGE_FS_ROOT
 
 from middlewares.csrf_mw import NewCSRFMiddleware
 
@@ -37,8 +38,11 @@ app.add_middleware(NewCSRFMiddleware, cookie_name=getattr(settings, "CSRF_COOKIE
 
 # Static and storage mounts
 app.mount("/static", StaticFiles(directory="static"), name="static")
-if os.path.isdir(settings.STORAGE_ROOT):
-    app.mount("/storage", StaticFiles(directory=settings.STORAGE_ROOT), name="storage")
+
+# Prefer configured APP_STORAGE_FS_ROOT for mount; fallback to settings.STORAGE_ROOT if present
+_storage_dir = (getattr(settings, "STORAGE_ROOT", None) or APP_STORAGE_FS_ROOT)
+if isinstance(_storage_dir, str) and os.path.isdir(_storage_dir):
+    app.mount("/storage", StaticFiles(directory=_storage_dir), name="storage")
 
 # Proxy / headers (behind reverse proxy)
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
