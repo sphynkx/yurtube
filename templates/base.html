@@ -1,4 +1,5 @@
 <!-- 
+## SRTG_DONE
 ## SRTG_2MODIFY: storage/
 -->
 <!doctype html>
@@ -139,7 +140,12 @@
         {% set local_name_raw = request.cookies.get('yt_lname') %}
         {% set local_name = local_name_raw.replace('+',' ') if local_name_raw else None %}
 
-        {% set avatar_src = '/storage/users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
+        {# Build avatar URL via backend helper (passed in context in most routes) #}
+        {% set avatar_src = '/static/img/avatar_default.svg' %}
+        {% if current_user['user_uid'] %}
+          {% set _avatar_rel = 'users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
+          {% set avatar_src = (storage_public_base_url ~ '/' ~ _avatar_rel) if storage_public_base_url else ('/storage/' ~ _avatar_rel) %}
+        {% endif %}
         {% if authp and authp != 'local' and sso_pic %}
           {% set avatar_src = sso_pic %}
         {% endif %}
