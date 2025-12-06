@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: build_storage_url(
 ## SRTG_2MODIFY: os.path.
@@ -18,6 +19,9 @@ from utils.security_ut import get_current_user
 from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
 from utils.url_ut import build_storage_url
 
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
+
 router = APIRouter(tags=["root"])
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
@@ -33,15 +37,14 @@ def _avatar_small_url(avatar_path: Optional[str]) -> str:
     return build_storage_url(small_rel)
 
 
-def _augment(vrow: Dict[str, Any]) -> Dict[str, Any]:
+def _augment(vrow: Dict[str, Any], storage_client: StorageClient) -> Dict[str, Any]:
     v = dict(vrow)
     thumb_path = v.get("thumb_asset_path")
     v["thumb_url"] = build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
 
     if thumb_path and "/" in thumb_path:
         anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
-        abs_anim = os.path.join(settings.STORAGE_ROOT, anim_rel)
-        v["thumb_anim_url"] = build_storage_url(anim_rel) if os.path.isfile(abs_anim) else None
+        v["thumb_anim_url"] = build_storage_url(anim_rel) if storage_client.exists(anim_rel) else None
     else:
         v["thumb_anim_url"] = None
 
@@ -139,7 +142,8 @@ async def index(
             })
 
     user: Optional[Dict[str, str]] = get_current_user(request)
-    videos = [_augment(dict(r)) for r in rows]
+    storage_client: StorageClient = request.app.state.storage  # mark: uses StorageClient for augment
+    videos = [_augment(dict(r), storage_client) for r in rows]
     return templates.TemplateResponse(
         "index.html",
         {
