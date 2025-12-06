@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: build_storage_url(
 ## SRTG_2MODIFY: os.path.
@@ -20,6 +21,9 @@ from db.videos_db import get_owned_video
 from db.assets_db import get_thumbs_vtt_asset
 from utils.url_ut import build_storage_url
 
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
+
 router = APIRouter(tags=["webvtt"])
 
 _VTT_NAME_RE = re.compile(r'^[A-Za-z0-9_\-./]+\.vtt$')
@@ -32,8 +36,11 @@ def _storage_root() -> str:
     return root.rstrip("/")
 
 
-def _safe_join_storage(*parts: str) -> str:
-    root = os.path.normpath(_storage_root())
+def _safe_join_storage_abs(abs_root: str, *parts: str) -> str:
+    """
+    Safe join based on absolute root (from StorageClient.to_abs("")) to prevent path traversal.
+    """
+    root = os.path.normpath(abs_root.rstrip("/"))
     joined = os.path.normpath(os.path.join(root, *parts))
     if not (joined == root or joined.startswith(root + os.sep)):
         raise HTTPException(status_code=400, detail="invalid_path")
@@ -88,14 +95,16 @@ async def webvtt_edit(
     if not _is_vtt_file(rel_vtt):
         raise HTTPException(status_code=400, detail="invalid_vtt_name")
 
-    abs_path = _safe_join_storage(storage_rel, rel_vtt)
-    if not os.path.isfile(abs_path):
+    storage_client: StorageClient = request.app.state.storage
+    abs_root = storage_client.to_abs("")  # absolute root
+    vtt_abs_path = _safe_join_storage_abs(abs_root, storage_rel, rel_vtt)
+    if not os.path.isfile(vtt_abs_path):
         raise HTTPException(status_code=404, detail="vtt_not_found")
 
     # video src (original.webm)
-    abs_video = _safe_join_storage(storage_rel, "original.webm")
+    original_abs = _safe_join_storage_abs(abs_root, storage_rel, "original.webm")
     video_src_url = None
-    if os.path.isfile(abs_video):
+    if os.path.isfile(original_abs):
         video_src_url = _build_storage_url(os.path.join(storage_rel, "original.webm"))
 
     # sprites vtt for thumbnails preview (if any)
@@ -126,7 +135,7 @@ async def webvtt_edit(
     player_options = {"autoplay": False, "muted": False, "loop": False, "start": max(0, int(t or 0))}
 
     try:
-        with open(abs_path, "r", encoding="utf-8") as f:
+        with open(vtt_abs_path, "r", encoding="utf-8") as f:
             content = f.read()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"read_failed: {e}")
@@ -175,15 +184,17 @@ async def webvtt_save(
     if not _is_vtt_file(rel_vtt):
         raise HTTPException(status_code=400, detail="invalid_vtt_name")
 
-    abs_path = _safe_join_storage(storage_rel, rel_vtt)
-    if not os.path.isfile(abs_path):
+    storage_client: StorageClient = request.app.state.storage
+    abs_root = storage_client.to_abs("")  # absolute root
+    vtt_abs_path = _safe_join_storage_abs(abs_root, storage_rel, rel_vtt)
+    if not os.path.isfile(vtt_abs_path):
         raise HTTPException(status_code=404, detail="vtt_not_found")
 
     if content is None:
         raise HTTPException(status_code=400, detail="empty_content")
 
     try:
-        with open(abs_path, "w", encoding="utf-8") as f:
+        with open(vtt_abs_path, "w", encoding="utf-8") as f:
             f.write(content)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"write_failed: {e}")
@@ -208,12 +219,14 @@ async def webvtt_download(request: Request, video_id: str, rel_vtt: str):
     if not _is_vtt_file(rel_vtt):
         raise HTTPException(status_code=400, detail="invalid_vtt_name")
 
-    abs_path = _safe_join_storage(storage_rel, rel_vtt)
-    if not os.path.isfile(abs_path):
+    storage_client: StorageClient = request.app.state.storage
+    abs_root = storage_client.to_abs("")  # absolute root
+    vtt_abs_path = _safe_join_storage_abs(abs_root, storage_rel, rel_vtt)
+    if not os.path.isfile(vtt_abs_path):
         raise HTTPException(status_code=404, detail="vtt_not_found")
 
     try:
-        with open(abs_path, "rb") as f:
+        with open(vtt_abs_path, "rb") as f:
             data = f.read()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"read_failed: {e}")
