@@ -117,7 +117,15 @@ async def list_comments(
         try:
             for au in author_uids:
                 p = await get_user_avatar_path(conn, au)
-                author_avatars[au] = build_storage_url(p) if p else "/static/img/avatar_default.svg"
+                if p:
+                    # Prefer small avatar if original path returned
+                    if p.endswith("avatar.png"):
+                        small_rel = p[: -len("avatar.png")] + "avatar_small.png"
+                        author_avatars[au] = build_storage_url(small_rel)
+                    else:
+                        author_avatars[au] = build_storage_url(p)
+                else:
+                    author_avatars[au] = "/static/img/avatar_default.svg"
         finally:
             await release_conn(conn)
 
