@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: build_storage_url(
 ## SRTG_2MODIFY: os.path.
@@ -25,6 +26,9 @@ from db.account_profile_db import (
     remove_user_avatar_record,
     unlink_google_identity_if_possible,
 )
+
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -128,11 +132,16 @@ async def account_profile_update(request: Request, avatar: Optional[UploadFile] 
     if not avatar.content_type or not avatar.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid avatar file")
 
-    user_dir = build_user_storage_dir(settings.STORAGE_ROOT, user["user_uid"])
-    os.makedirs(user_dir, exist_ok=True)
+    # STORAGE: use StorageClient and relative paths
+    storage_client: StorageClient = request.app.state.storage
+    # build relative user dir: {prefix}/{user_uid}
+    prefix = (user["user_uid"] or "")[:2]
+    user_dir_rel = f"{prefix}/{user['user_uid']}"
+    user_dir_abs = storage_client.to_abs(user_dir_rel)
+    os.makedirs(user_dir_abs, exist_ok=True)
 
-    original_abs = os.path.join(user_dir, "avatar.png")
-    small_abs = os.path.join(user_dir, "avatar_small.png")
+    original_abs = os.path.join(user_dir_abs, "avatar.png")
+    small_abs = os.path.join(user_dir_abs, "avatar_small.png")
 
     with open(original_abs, "wb") as f:
         while True:
@@ -144,7 +153,8 @@ async def account_profile_update(request: Request, avatar: Optional[UploadFile] 
     generate_image_thumbnail(original_abs, original_abs, 512)
     generate_image_thumbnail(original_abs, small_abs, 96)
 
-    rel_path = os.path.relpath(original_abs, settings.STORAGE_ROOT)
+    # relative path for DB (no direct STORAGE_ROOT usage)
+    rel_path = os.path.relpath(original_abs, storage_client.to_abs(""))
 
     await save_user_avatar_path(user["user_uid"], rel_path)
 
@@ -164,9 +174,13 @@ async def account_avatar_delete(request: Request) -> Any:
 
     await remove_user_avatar_record(user["user_uid"])
 
-    user_dir_abs = build_user_storage_dir(settings.STORAGE_ROOT, user["user_uid"])
-    rel_user_dir = os.path.relpath(user_dir_abs, settings.STORAGE_ROOT)
-    safe_remove_storage_relpath(settings.STORAGE_ROOT, rel_user_dir)
+    # Use StorageClient for absolute root and relative user dir
+    storage_client: StorageClient = request.app.state.storage
+    prefix = (user["user_uid"] or "")[:2]
+    rel_user_dir = f"{prefix}/{user['user_uid']}"
+    # safe_remove_storage_relpath expects absolute root + relative path
+    abs_root = storage_client.to_abs("")
+    safe_remove_storage_relpath(abs_root, rel_user_dir)
 
     return RedirectResponse("/account", status_code=status.HTTP_302_FOUND)
 
