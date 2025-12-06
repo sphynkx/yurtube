@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: os.path.
 ## SRTG_2MODIFY: abs_
@@ -20,6 +21,9 @@ from db.captions_db import set_video_captions, reset_video_captions, get_video_c
 from utils.security_ut import get_current_user
 from services.ytcms.captions_generation import generate_captions
 from services.ffmpeg_srv import async_probe_duration_seconds
+
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
 
 router = APIRouter(tags=["captions"])
 
@@ -115,8 +119,8 @@ async def captions_process(
     finally:
         await release_conn(conn)
 
-    abs_root = getattr(settings, "STORAGE_ROOT", "/var/www/storage")
-    original_abs = os.path.join(abs_root, storage_rel, "original.webm")
+    storage_client: StorageClient = request.app.state.storage
+    original_abs = storage_client.to_abs(os.path.join(storage_rel, "original.webm"))
     if not os.path.exists(original_abs):
         try:
             dsec = await async_probe_duration_seconds(original_abs)
@@ -289,8 +293,8 @@ async def captions_retry(
     finally:
         await release_conn(conn)
 
-    abs_root = getattr(settings, "STORAGE_ROOT", "/var/www/storage")
-    original_abs = os.path.join(abs_root, storage_rel, "original.webm")
+    storage_client: StorageClient = request.app.state.storage
+    original_abs = storage_client.to_abs(os.path.join(storage_rel, "original.webm"))
     if not os.path.exists(original_abs):
         print(f"[YTCMS] retry original missing video_id={video_id} path={original_abs}")
         raise HTTPException(status_code=404, detail="original_missing")
@@ -339,11 +343,12 @@ async def captions_delete(
     finally:
         await release_conn(conn)
 
-    abs_root = getattr(settings, "STORAGE_ROOT", "/var/www/storage")
-    captions_dir = os.path.join(abs_root, storage_rel, "captions")
+    storage_client: StorageClient = request.app.state.storage
+    captions_rel_dir = os.path.join(storage_rel, "captions")
+    captions_abs_dir = storage_client.to_abs(captions_rel_dir)
     try:
-        if os.path.isdir(captions_dir):
-            for root, dirs, files in os.walk(captions_dir, topdown=False):
+        if os.path.isdir(captions_abs_dir):
+            for root, dirs, files in os.walk(captions_abs_dir, topdown=False):
                 for name in files:
                     try:
                         os.remove(os.path.join(root, name))
@@ -355,7 +360,7 @@ async def captions_delete(
                     except Exception:
                         pass
             try:
-                os.rmdir(captions_dir)
+                os.rmdir(captions_abs_dir)
             except Exception:
                 pass
     except Exception as e:
