@@ -23,7 +23,7 @@ from config.ytcms_cfg import (
 async def generate_captions(
     video_id: str,
     storage_rel: str,
-    src_path: str,
+    src_path: str,  # absolute path to original.webm (or prepared audio), passed by caller
     lang: str = "auto",
     on_status: Optional[Callable[[str, str, str, int, float], None]] = None,
 ) -> Tuple[str, Dict]:
@@ -35,8 +35,9 @@ async def generate_captions(
     audio_ch = int(YTCMS_AUDIO_CHANNELS)
     audio_br = str(YTCMS_AUDIO_BITRATE or "48k")
 
-    root = os.getenv("STORAGE_ROOT", "/var/www/storage")
-    base_abs = os.path.join(root, storage_rel)
+    # Derive base directory from the absolute source path instead of STORAGE_ROOT
+    # src_path is expected to be .../{storage_rel}/original.webm
+    base_abs = os.path.dirname(src_path)
     captions_dir = os.path.join(base_abs, "captions")
     os.makedirs(captions_dir, exist_ok=True)
 
