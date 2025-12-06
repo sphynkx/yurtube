@@ -69,6 +69,7 @@ async def comments_admin_page(request: Request, v: str = Query(..., min_length=1
             "request": request,
             "current_user": user,
             "video_id": video_id,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -203,7 +204,15 @@ async def api_comments_users_get(request: Request, v: str = Query(..., min_lengt
             names = await get_usernames_by_uids(conn, uids)
             for au in uids:
                 p = await get_user_avatar_path(conn, au)
-                avatars[au] = build_storage_url(p) if p else "/static/img/avatar_default.svg"
+                if p:
+                    # Prefer small avatar if original path returned
+                    if p.endswith("avatar.png"):
+                        small_rel = p[: -len("avatar.png")] + "avatar_small.png"
+                        avatars[au] = build_storage_url(small_rel)
+                    else:
+                        avatars[au] = build_storage_url(p)
+                else:
+                    avatars[au] = "/static/img/avatar_default.svg"
     finally:
         await release_conn(conn)
 
