@@ -1,4 +1,5 @@
 <!-- 
+## SRTG_DONE
 ## SRTG_2MODIFY: storage/
 -->
 <!-- 
@@ -27,10 +28,12 @@
       </div>
 
       {# Watch-like player container using the configured player (fallback to 'yurtube') #}
+      {% set _video_rel = v['storage_path'] ~ '/original.webm' %}
+      {% set _video_src = (storage_public_base_url ~ '/' ~ _video_rel) if storage_public_base_url else ('/storage/' ~ _video_rel) %}
       <div class="player-wrap" id="edit-player-wrap" style="position:relative; max-width:960px; margin-top:8px;">
         {{ pm.render_player(
              player_name=(player_name if player_name else 'yurtube'),
-             video_src=('/storage/' ~ v['storage_path'] ~ '/original.webm'),
+             video_src=_video_src,
              poster_url=(v['thumb_url'] if v.get('thumb_url') else ''),
              video_id=v['video_id'],
              subtitles=[],
