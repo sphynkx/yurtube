@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: build_storage_url(
 ## SRTG_2MODIFY: os.path.
@@ -43,6 +44,9 @@ from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from utils.ytsprites.ytsprites_ut import prefix_sprite_paths, normalize_vtt
 
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
+
 router = APIRouter(tags=["ytsprites"])
 templates = Jinja2Templates(directory="templates")
 
@@ -73,7 +77,7 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
 
 
 ## not called - deprecated??
-def _fs_to_web_path(abs_path: str) -> str:
+def _fs_to_web_path_2DEL(abs_path: str) -> str:
     root_norm = (APP_STORAGE_FS_ROOT or "/var/www/yurtube/storage").rstrip("/")
     if abs_path.startswith(root_norm):
         rel = abs_path[len(root_norm):]
@@ -115,12 +119,13 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             captions_vtt_url = build_storage_url(captions_primary_rel)
             captions_lang = captions_status.get("captions_lang")
 
-        # Gather all captions/*.vtt for video
-        abs_root = getattr(settings, "STORAGE_ROOT", APP_STORAGE_FS_ROOT)
-        captions_dir = os.path.join(abs_root, storage_rel, "captions")
+        # Gather all captions/*.vtt for video via StorageClient - recheck!!
+        storage_client: StorageClient = request.app.state.storage
+        captions_rel_dir = os.path.join(storage_rel, "captions")
+        captions_abs_dir = storage_client.to_abs(captions_rel_dir)
         captions_files: List[Dict[str, Optional[str]]] = []
-        if os.path.isdir(captions_dir):
-            for name in sorted(os.listdir(captions_dir)):
+        if os.path.isdir(captions_abs_dir):
+            for name in sorted(os.listdir(captions_abs_dir)):
                 if not name.lower().endswith(".vtt"):
                     continue
                 rel_path = f"captions/{name}"
@@ -198,10 +203,6 @@ async def start_media_process(
             return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
 
         storage_rel = owned["storage_path"].rstrip("/")
-        abs_root = getattr(settings, "STORAGE_ROOT", APP_STORAGE_FS_ROOT)
-        src_path = os.path.join(abs_root, storage_rel, "original.webm")
-        if not os.path.exists(src_path):
-            return JSONResponse({"ok": False, "error": "original_missing"}, status_code=404)
 
         # Reset thumbnails/VTT state in DB
         await reset_thumbnails_state(conn, video_id)
@@ -210,9 +211,12 @@ async def start_media_process(
 
     # ytsprites flow: submit -> wait -> save -> DB update
     try:
-        video_id2, sprites, vtt_text = submit_and_wait(video_id, src_path, (YTSPRITES_DEFAULT_MIME or "video/webm"))
+        storage_client: StorageClient = request.app.state.storage
+        original_abs = storage_client.to_abs(os.path.join(storage_rel, "original.webm"))
+        if not os.path.exists(original_abs):
+            return JSONResponse({"ok": False, "error": "original_missing"}, status_code=404)
 
-        abs_root = getattr(settings, "STORAGE_ROOT", APP_STORAGE_FS_ROOT)
+        video_id2, sprites, vtt_text = submit_and_wait(video_id, original_abs, (YTSPRITES_DEFAULT_MIME or "video/webm"))
 
         # bugfix - if subdir "sprites/" is lost
         vtt_patched = prefix_sprite_paths(vtt_text, prefix="sprites/")
@@ -220,7 +224,7 @@ async def start_media_process(
 
         # Save VTT
         rel_vtt = os.path.join(storage_rel, "sprites.vtt")
-        abs_vtt = os.path.join(abs_root, rel_vtt)
+        abs_vtt = storage_client.to_abs(rel_vtt)
         try:
             with open(abs_vtt, "w", encoding="utf-8") as f:
                 f.write(vtt_final or "")
@@ -233,7 +237,7 @@ async def start_media_process(
 
         # Save sprites
         rel_sprite_dir = os.path.join(storage_rel, "sprites")
-        abs_sprite_dir = os.path.join(abs_root, rel_sprite_dir)
+        abs_sprite_dir = storage_client.to_abs(rel_sprite_dir)
         try:
             os.makedirs(abs_sprite_dir, exist_ok=True)
         except Exception:
@@ -242,7 +246,7 @@ async def start_media_process(
         rel_sprite_paths: List[str] = []
         for idx, (name, data) in enumerate(sprites, start=1):
             rel_sprite = os.path.join(rel_sprite_dir, name)
-            abs_sprite = os.path.join(abs_root, rel_sprite)
+            abs_sprite = storage_client.to_abs(rel_sprite)
             try:
                 with open(abs_sprite, "wb") as f:
                     f.write(data or b"")
@@ -299,48 +303,50 @@ async def ytsprites_thumbnails_retry(
     finally:
         await release_conn(conn)
 
-    abs_root = getattr(settings, "STORAGE_ROOT", APP_STORAGE_FS_ROOT)
-    original_path = os.path.join(abs_root, storage_base, "original.webm")
-    if not os.path.exists(original_path):
+    storage_client: StorageClient = request.app.state.storage
+    original_abs = storage_client.to_abs(os.path.join(storage_base, "original.webm"))
+    if not os.path.exists(original_abs):
         raise HTTPException(status_code=404, detail="original_missing")
 
     # delete old files
-    sprites_dir = os.path.join(abs_root, storage_base, "sprites")
-    vtt_file = os.path.join(abs_root, storage_base, "sprites.vtt")
-    if os.path.isdir(sprites_dir):
-        for name in os.listdir(sprites_dir):
+    sprites_rel_dir = os.path.join(storage_base, "sprites")
+    vtt_rel_path = os.path.join(storage_base, "sprites.vtt")
+    sprites_abs_dir = storage_client.to_abs(sprites_rel_dir)
+    vtt_abs_path = storage_client.to_abs(vtt_rel_path)
+
+    if os.path.isdir(sprites_abs_dir):
+        for name in os.listdir(sprites_abs_dir):
             try:
-                os.remove(os.path.join(sprites_dir, name))
+                os.remove(os.path.join(sprites_abs_dir, name))
             except Exception:
                 pass
         try:
-            os.rmdir(sprites_dir)
+            os.rmdir(sprites_abs_dir)
         except Exception:
             pass
-    if os.path.exists(vtt_file):
+    if os.path.exists(vtt_abs_path):
         try:
-            os.remove(vtt_file)
+            os.remove(vtt_abs_path)
         except Exception:
             pass
 
     # run gRPC flow and persist results
-    video_id2, sprites, vtt_text = submit_and_wait(video_id, original_path, (YTSPRITES_DEFAULT_MIME or "video/webm"))
+    video_id2, sprites, vtt_text = submit_and_wait(video_id, original_abs, (YTSPRITES_DEFAULT_MIME or "video/webm"))
 
     # bugfix - if subdir "sprites/" is lost
     vtt_patched = prefix_sprite_paths(vtt_text, prefix="sprites/")
     vtt_final = normalize_vtt(vtt_patched)
 
-
     # save files
-    target_dir_rel = os.path.join(storage_base, "sprites")
-    target_dir_abs = os.path.join(abs_root, target_dir_rel)
+    target_dir_rel = sprites_rel_dir
+    target_dir_abs = storage_client.to_abs(target_dir_rel)
     try:
         os.makedirs(target_dir_abs, exist_ok=True)
     except Exception:
         pass
 
-    rel_vtt = os.path.join(storage_base, "sprites.vtt")
-    abs_vtt = os.path.join(abs_root, rel_vtt)
+    rel_vtt = vtt_rel_path
+    abs_vtt = vtt_abs_path
     try:
         with open(abs_vtt, "w", encoding="utf-8") as f:
             f.write(vtt_final or "")
@@ -354,7 +360,7 @@ async def ytsprites_thumbnails_retry(
     rel_sprite_paths: List[str] = []
     for idx, (name, data) in enumerate(sprites, start=1):
         rel_sprite = os.path.join(target_dir_rel, name)
-        abs_sprite = os.path.join(abs_root, rel_sprite)
+        abs_sprite = storage_client.to_abs(rel_sprite)
         try:
             with open(abs_sprite, "wb") as f:
                 f.write(data or b"")
@@ -403,7 +409,7 @@ async def ytsprites_thumbnails_status(video_id: str):
 
 
 @router.post("/internal/ytsprites/thumbnails/backfill")
-async def ytsprites_thumbnails_backfill(limit: int = 50):
+async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
     """
     Schedules regeneration via ytsprites for videos missing thumbnails.
     """
@@ -413,28 +419,28 @@ async def ytsprites_thumbnails_backfill(limit: int = 50):
     finally:
         await release_conn(conn)
 
-    abs_root = getattr(settings, "STORAGE_ROOT", APP_STORAGE_FS_ROOT)
+    storage_client: StorageClient = request.app.state.storage
     results = []
     for r in rows:
         vid = r["video_id"]
         base = r["storage_path"]
-        original_path = os.path.join(abs_root, base, "original.webm")
-        if not os.path.exists(original_path):
+        original_abs = storage_client.to_abs(os.path.join(base, "original.webm"))
+        if not os.path.exists(original_abs):
             continue
 
         try:
-            video_id2, sprites, vtt_text = submit_and_wait(vid, original_path, (YTSPRITES_DEFAULT_MIME or "video/webm"))
+            video_id2, sprites, vtt_text = submit_and_wait(vid, original_abs, (YTSPRITES_DEFAULT_MIME or "video/webm"))
 
             # save files
             target_dir_rel = os.path.join(base, "sprites")
-            target_dir_abs = os.path.join(abs_root, target_dir_rel)
+            target_dir_abs = storage_client.to_abs(target_dir_rel)
             try:
                 os.makedirs(target_dir_abs, exist_ok=True)
             except Exception:
                 pass
 
             rel_vtt = os.path.join(base, "sprites.vtt")
-            abs_vtt = os.path.join(abs_root, rel_vtt)
+            abs_vtt = storage_client.to_abs(rel_vtt)
             try:
                 with open(abs_vtt, "w", encoding="utf-8") as f:
                     f.write(vtt_text or "")
@@ -448,7 +454,7 @@ async def ytsprites_thumbnails_backfill(limit: int = 50):
             rel_sprite_paths: List[str] = []
             for idx, (name, data) in enumerate(sprites, start=1):
                 rel_sprite = os.path.join(target_dir_rel, name)
-                abs_sprite = os.path.join(abs_root, rel_sprite)
+                abs_sprite = storage_client.to_abs(rel_sprite)
                 try:
                     with open(abs_sprite, "wb") as f:
                         f.write(data or b"")
