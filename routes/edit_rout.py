@@ -188,6 +188,8 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
             "presets": presets,
             "renditions": renditions,
             "csrf_token": csrf_token,
+            # For templates/macros fallbacks (player, comments, etc.)
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -426,6 +428,7 @@ async def pick_thumb_page(request: Request, v: str = Query(..., min_length=12, m
             "video": video,
             "candidates": items,
             "csrf_token": csrf_token,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
     )
     resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
