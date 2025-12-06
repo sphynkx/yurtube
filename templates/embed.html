@@ -1,10 +1,11 @@
 <!-- 
+## SRTG_DONE
 ## SRTG_2MODIFY: storage/
 -->
 <!DOCTYPE html>
 <!-- Expects:
      player_name, video_src, poster_url, video_id, subtitles, player_options, sprites_vtt_url,
-     caption_vtt, caption_lang
+     caption_vtt, caption_lang, storage_public_base_url (optional)
 -->
 <html lang="en">
 <head>
@@ -37,7 +38,12 @@
              data-subtitles='{{ subtitles|tojson }}'
              data-options='{{ player_options|tojson }}'
              {% if sprites_vtt_url %} data-sprites-vtt="{{ sprites_vtt_url }}" {% endif %}
-             {% if caption_vtt %} data-caption-vtt="/storage/{{ caption_vtt }}" {% endif %}
+             {% if caption_vtt_url %}
+               data-caption-vtt="{{ caption_vtt_url }}"
+             {% elif caption_vtt %}
+               {% set _cap_url = (storage_public_base_url ~ '/' ~ caption_vtt) if storage_public_base_url else ('/storage/' ~ caption_vtt) %}
+               data-caption-vtt="{{ _cap_url }}"
+             {% endif %}
              {% if caption_lang %} data-caption-lang="{{ caption_lang }}" {% endif %}>
         </div>
       </div>
