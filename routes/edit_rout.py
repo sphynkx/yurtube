@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: build_storage_url(
 ## SRTG_2MODIFY: os.path.
@@ -36,6 +37,9 @@ from services.ffmpeg_srv import (
 from services.search.indexer_srch import fire_and_forget_reindex, reindex_video
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
+
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -274,15 +278,21 @@ async def regen_thumbs(
             raise HTTPException(status_code=404, detail="Video not found")
 
         rel_storage = owned["storage_path"]
-        storage_dir = os.path.join(settings.STORAGE_ROOT, rel_storage)
-        original_path = os.path.join(storage_dir, "original.webm")
-        thumbs_dir = os.path.join(storage_dir, "thumbs")
-        os.makedirs(thumbs_dir, exist_ok=True)
 
-        tmp = await async_generate_thumbnails(original_path, thumbs_dir, [max(0, int(offset_sec))])
+        # StorageClient paths
+        storage_client: StorageClient = request.app.state.storage
+        original_rel = f"{rel_storage.strip('/')}/original.webm"
+        thumbs_rel_dir = f"{rel_storage.strip('/')}/thumbs"
+
+        # ffmpeg expects absolute paths
+        original_abs = storage_client.to_abs(original_rel)
+        thumbs_abs_dir = storage_client.to_abs(thumbs_rel_dir)
+        os.makedirs(thumbs_abs_dir, exist_ok=True)
+
+        tmp = await async_generate_thumbnails(original_abs, thumbs_abs_dir, [max(0, int(offset_sec))])
         if tmp:
             gen_path = tmp[0]
-            out_static = os.path.join(thumbs_dir, "thumb_custom.jpg")
+            out_static = os.path.join(thumbs_abs_dir, "thumb_custom.jpg")
             if os.path.abspath(gen_path) != os.path.abspath(out_static):
                 try:
                     if os.path.exists(out_static):
@@ -290,20 +300,21 @@ async def regen_thumbs(
                 except Exception:
                     pass
                 os.replace(gen_path, out_static)
-            rel_static = os.path.relpath(out_static, settings.STORAGE_ROOT)
+            # compute relative for DB
+            rel_static = os.path.relpath(out_static, storage_client.to_abs(""))
             await upsert_video_asset(conn, video_id, "thumbnail_default", rel_static)
 
         if _bool_from_form(animate):
-            anim_path = os.path.join(thumbs_dir, "thumb_anim.webp")
+            anim_abs = os.path.join(thumbs_abs_dir, "thumb_anim.webp")
             ok_anim = await async_generate_animated_preview(
-                original_path,
-                anim_path,
+                original_abs,
+                anim_abs,
                 start_sec=max(0, int(offset_sec)),
                 duration_sec=3,
                 fps=12,
             )
-            if ok_anim and os.path.exists(anim_path):
-                rel_anim = os.path.relpath(anim_path, settings.STORAGE_ROOT)
+            if ok_anim and os.path.exists(anim_abs):
+                rel_anim = os.path.relpath(anim_abs, storage_client.to_abs(""))
                 await upsert_video_asset(conn, video_id, "thumbnail_anim", rel_anim)
 
         await db_update_thumb_pref_offset(conn, video_id, max(0, int(offset_sec)))
@@ -339,30 +350,31 @@ async def upload_thumbs(
             raise HTTPException(status_code=404, detail="Video not found")
 
         rel_storage = owned["storage_path"]
-        storage_dir = os.path.join(settings.STORAGE_ROOT, rel_storage)
-        thumbs_dir = os.path.join(storage_dir, "thumbs")
-        os.makedirs(thumbs_dir, exist_ok=True)
+        storage_client: StorageClient = request.app.state.storage
+        thumbs_rel_dir = f"{rel_storage.strip('/')}/thumbs"
+        thumbs_abs_dir = storage_client.to_abs(thumbs_rel_dir)
+        os.makedirs(thumbs_abs_dir, exist_ok=True)
 
         if thumb_static:
-            out_static = os.path.join(thumbs_dir, "thumb_custom.jpg")
+            out_static = os.path.join(thumbs_abs_dir, "thumb_custom.jpg")
             with open(out_static, "wb") as f:
                 while True:
                     chunk = await thumb_static.read(1024 * 1024)
                     if not chunk:
                         break
                     f.write(chunk)
-            rel = os.path.relpath(out_static, settings.STORAGE_ROOT)
+            rel = os.path.relpath(out_static, storage_client.to_abs(""))
             await upsert_video_asset(conn, video_id, "thumbnail_default", rel)
 
         if thumb_anim:
-            out_anim = os.path.join(thumbs_dir, "thumb_anim.webp")
+            out_anim = os.path.join(thumbs_abs_dir, "thumb_anim.webp")
             with open(out_anim, "wb") as f:
                 while True:
                     chunk = await thumb_anim.read(1024 * 1024)
                     if not chunk:
                         break
                     f.write(chunk)
-            rel = os.path.relpath(out_anim, settings.STORAGE_ROOT)
+            rel = os.path.relpath(out_anim, storage_client.to_abs(""))
             await upsert_video_asset(conn, video_id, "thumbnail_anim", rel)
     finally:
         await release_conn(conn)
@@ -383,13 +395,19 @@ async def pick_thumb_page(request: Request, v: str = Query(..., min_length=12, m
             raise HTTPException(status_code=404, detail="Video not found")
 
         rel_storage = owned["storage_path"]
-        thumbs_dir = os.path.join(settings.STORAGE_ROOT, rel_storage, "thumbs")
+        thumbs_rel_dir = f"{rel_storage.strip('/')}/thumbs"
+        storage_client: StorageClient = request.app.state.storage
+
         items: List[Dict[str, str]] = []
-        if os.path.isdir(thumbs_dir):
-            for name in sorted(os.listdir(thumbs_dir)):
-                if re.match(r"^thumb_.*\.jpg$", name):
-                    rel = os.path.join(rel_storage, "thumbs", name).replace("\\", "/")
-                    items.append({"rel": rel, "url": build_storage_url(rel)})
+        # list via StorageClient; build relative URLs for template
+        if storage_client.exists(thumbs_rel_dir):
+            abs_root = storage_client.to_abs("")
+            abs_dir = storage_client.to_abs(thumbs_rel_dir)
+            if os.path.isdir(abs_dir):
+                for name in sorted(os.listdir(abs_dir)):
+                    if re.match(r"^thumb_.*\.jpg$", name):
+                        rel = f"{rel_storage.strip('/')}/thumbs/{name}".replace("\\", "/")
+                        items.append({"rel": rel, "url": build_storage_url(rel)})
         video = dict(owned)
     finally:
         await release_conn(conn)
