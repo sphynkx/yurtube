@@ -1,3 +1,4 @@
+## SRTG_DONE
 ## SRTG_2MODIFY: STORAGE_
 ## SRTG_2MODIFY: build_storage_url(
 ## SRTG_2MODIFY: os.path.
@@ -46,13 +47,16 @@ from services.ffmpeg_srv import (
 )
 from services.search.indexer_srch import fire_and_forget_reindex, delete_from_index
 from utils.idgen_ut import gen_id
-from utils.path_ut import build_video_storage_dir
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from db.comments.root_db import delete_all_comments_for_video
 
 from services.ytcms.captions_generation import generate_captions
 from db.captions_db import set_video_captions
+
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
+from utils.storage.path_ut import build_video_storage_rel
 
 
 router = APIRouter()
@@ -127,9 +131,14 @@ def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
     except Exception:
         pass
 
-def _bg_cleanup_after_delete_sync(storage_root: str, storage_rel: str, video_id: str) -> None:
+def _bg_cleanup_after_delete_sync(storage_client: StorageClient, storage_rel: str, video_id: str) -> None:
+    """
+    remove dir via StorageClient.
+    Rename it, then remove in background.
+    """
     try:
-        storage_abs = os.path.join(storage_root, storage_rel)
+        # Abs path to video dir - need for `rm -rf`
+        storage_abs = storage_client.to_abs(storage_rel)
         deleting_path = storage_abs
         if os.path.exists(storage_abs):
             ts = int(time.time())
@@ -214,9 +223,10 @@ async def manage_delete(
     finally:
         await release_conn(conn)
 
+    storage_client: StorageClient = request.app.state.storage
     background_tasks.add_task(
         _bg_cleanup_after_delete_sync,
-        getattr(settings, "STORAGE_ROOT", "/var/www/storage"),
+        storage_client,
         rel_storage,
         video_id,
     )
@@ -312,26 +322,30 @@ async def upload_video(
             )
 
         video_id = gen_id(12)
-        storage_dir = build_video_storage_dir(settings.STORAGE_ROOT, video_id)
-        os.makedirs(storage_dir, exist_ok=True)
+
+        # STORAGE: build relative dir and write via StorageClient
+        storage_client: StorageClient = request.app.state.storage  # mark: uses StorageClient
+        storage_rel = build_video_storage_rel(video_id)
+        storage_client.mkdirs(storage_rel, exist_ok=True)
 
         original_name = "original.webm"
-        original_path = os.path.join(storage_dir, original_name)
+        original_rel_path = storage_client.join(storage_rel, original_name)
 
-        with open(original_path, "wb") as out:
+        # stream write to storage
+        with storage_client.open_writer(original_rel_path, overwrite=True) as out:
             while True:
                 chunk = await file.read(1024 * 1024)
                 if not chunk:
                     break
                 out.write(chunk)
 
-        meta_path = os.path.join(storage_dir, "meta.json")
-        if not os.path.exists(meta_path):
-            with open(meta_path, "w", encoding="utf-8") as f:
-                f.write('{"processing":"uploaded"}')
+        # meta.json
+        meta_rel_path = storage_client.join(storage_rel, "meta.json")
+        if not storage_client.exists(meta_rel_path):
+            with storage_client.open_writer(meta_rel_path, overwrite=True) as f:
+                f.write(b'{"processing":"uploaded"}')
 
-        rel_storage = os.path.relpath(storage_dir, settings.STORAGE_ROOT)
-
+        # DB record uses relative storage path!!
         await create_video(
             conn=conn,
             video_id=video_id,
@@ -339,31 +353,39 @@ async def upload_video(
             title=title_final,
             description=description,
             status=status,
-            storage_path=rel_storage,
+            storage_path=storage_rel,
             category_id=cat_id,
             is_age_restricted=is_age_restricted,
             is_made_for_kids=is_made_for_kids,
         )
 
-        duration = await async_probe_duration_seconds(original_path)
+        original_abs_path = storage_client.to_abs(original_rel_path)  # mark: ABS required for ffmpeg
+
+        duration = await async_probe_duration_seconds(original_abs_path)
         offsets = pick_thumbnail_offsets(duration)
-        thumbs_dir = os.path.join(storage_dir, "thumbs")
-        candidates_abs = await async_generate_thumbnails(original_path, thumbs_dir, offsets)
+
+        thumbs_rel_dir = storage_client.join(storage_rel, "thumbs")
+        thumbs_abs_dir = storage_client.to_abs(thumbs_rel_dir)  # mark: ABS required for ffmpeg output
+        # Ensure directory exists for ffmpeg outputs
+        os.makedirs(thumbs_abs_dir, exist_ok=True)
+
+        candidates_abs = await async_generate_thumbnails(original_abs_path, thumbs_abs_dir, offsets)
 
         selected_abs: Optional[str] = candidates_abs[0] if candidates_abs else None
+        storage_abs_root = storage_client.to_abs("")
         selected_rel: Optional[str] = (
-            os.path.relpath(selected_abs, settings.STORAGE_ROOT) if selected_abs else None
+            os.path.relpath(selected_abs, storage_abs_root) if selected_abs else None
         )
         if selected_rel:
             await upsert_video_asset(conn, video_id, "thumbnail_default", selected_rel)
 
-        anim_abs = os.path.join(thumbs_dir, "thumb_anim.webp")
+        anim_abs = os.path.join(thumbs_abs_dir, "thumb_anim.webp")
         start_sec = offsets[0] if offsets else 1
         ok_anim = await async_generate_animated_preview(
-            original_path, anim_abs, start_sec=start_sec, duration_sec=3, fps=12
+            original_abs_path, anim_abs, start_sec=start_sec, duration_sec=3, fps=12
         )
         if ok_anim and os.path.exists(anim_abs):
-            anim_rel = os.path.relpath(anim_abs, settings.STORAGE_ROOT)
+            anim_rel = os.path.relpath(anim_abs, storage_abs_root)
             await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel)
 
         await set_video_ready(conn, video_id, duration)
@@ -373,10 +395,11 @@ async def upload_video(
         lang_req = (captions_lang or "auto").strip().lower()
         if want_caps:
             try:
+                # Pass absolute path for external tool compatibility
                 rel_vtt, meta = await generate_captions(
                     video_id=video_id,
-                    storage_rel=rel_storage,
-                    src_path=original_path,
+                    storage_rel=storage_rel,
+                    src_path=original_abs_path,
                     lang=lang_req or "auto",
                 )
                 await set_video_captions(conn, video_id, rel_vtt, meta.get("lang") or lang_req, meta)
@@ -390,15 +413,15 @@ async def upload_video(
             min_dur = getattr(settings, "AUTO_SPRITES_MIN_DURATION", 3)
             auto_enabled = getattr(settings, "AUTO_SPRITES_ENABLED", True)
             if auto_enabled and (isinstance(duration, (int, float)) and duration >= min_dur):
-                storage_rel = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
-                if storage_rel:
-                    abs_root = getattr(settings, "STORAGE_ROOT", "/var/www/storage")
-                    original_abs = os.path.join(abs_root, storage_rel, "original.webm")
+                storage_rel_db = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
+                if storage_rel_db:
+                    original_abs = storage_client.to_abs(storage_client.join(storage_rel_db, "original.webm"))
+                    out_base_abs = storage_client.to_abs(storage_rel_db)
                     if os.path.exists(original_abs):
                         job = await create_thumbnails_job(
                             video_id=video_id,
                             src_path=original_abs,
-                            out_base_path=os.path.join(abs_root, storage_rel),
+                            out_base_path=out_base_abs,
                             extra=None,
                         )
                         print(f"[AUTOSPRITES] queued video_id={video_id} job={job.get('job_id')}")
@@ -413,7 +436,7 @@ async def upload_video(
 
         candidates: List[Dict[str, str]] = []
         for p_abs in candidates_abs:
-            rel = os.path.relpath(p_abs, settings.STORAGE_ROOT)
+            rel = os.path.relpath(p_abs, storage_abs_root)
             candidates.append(
                 {"rel": rel, "url": build_storage_url(rel), "sel": "1" if selected_rel == rel else "0"}
             )
@@ -532,8 +555,8 @@ async def select_thumbnail(request: Request) -> Any:
         if not sel.startswith(expected_prefix):
             raise HTTPException(status_code=400, detail="Invalid thumbnail path")
 
-        abs_path = os.path.join(settings.STORAGE_ROOT, sel)
-        if not os.path.isfile(abs_path):
+        storage_client: StorageClient = request.app.state.storage
+        if not storage_client.exists(sel):
             raise HTTPException(status_code=400, detail="Thumbnail not found on disk")
 
         await upsert_video_asset(conn, form_video_id, "thumbnail_default", sel)
