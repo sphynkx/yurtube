@@ -1,3 +1,10 @@
+## SRTG_2MODIFY: os.path.
+## SRTG_2MODIFY: os.makedirs(
+## SRTG_2MODIFY: open(
+## SRTG_2MODIFY: pathlib
+## SRTG_2MODIFY: abs_
+## SRTG_2MODIFY: _path
+## SRTG_2MODIFY: _dir
 import os
 import sys
 import time

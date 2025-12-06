@@ -1,3 +1,4 @@
+## SRTG_2MODIFY: STORAGE_
 # For client side which working with external ytsprites service
 import os
 

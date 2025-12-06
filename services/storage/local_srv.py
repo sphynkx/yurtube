@@ -1,0 +1,82 @@
+from __future__ import annotations
+from typing import Iterable, BinaryIO, Tuple
+import os
+
+from services.storage.base_srv import StorageClient, StorageError, ensure_rel_path
+
+
+class LocalStorageClient(StorageClient):
+    """
+    Local realization above posix FS.
+    abs_root currently is /var/www/yurtube/storage.
+    """
+
+    def __init__(self, abs_root: str) -> None:
+        self.abs_root = os.path.abspath(abs_root)
+
+    def join(self, *parts: str) -> str:
+        return "/".join(ensure_rel_path(p).strip("/") for p in parts if p)
+
+    def norm(self, rel_path: str) -> str:
+        return ensure_rel_path(rel_path)
+
+    def _abs(self, rel_path: str) -> str:
+        p = self.norm(rel_path)
+        return os.path.join(self.abs_root, p)
+
+    def to_abs(self, rel_path: str) -> str:
+        return self._abs(rel_path)
+
+    def exists(self, rel_path: str) -> bool:
+        return os.path.exists(self._abs(rel_path))
+
+    def stat(self, rel_path: str) -> Tuple[int, float]:
+        ap = self._abs(rel_path)
+        st = os.stat(ap)
+        return int(st.st_size), float(st.st_mtime)
+
+    def listdir(self, rel_dir: str) -> Iterable[str]:
+        ap = self._abs(rel_dir)
+        if not os.path.isdir(ap):
+            return []
+        return sorted(os.listdir(ap))
+
+    def mkdirs(self, rel_dir: str, exist_ok: bool = True) -> None:
+        ap = self._abs(rel_dir)
+        os.makedirs(ap, exist_ok=exist_ok)
+
+    def remove(self, rel_path: str) -> None:
+        ap = self._abs(rel_path)
+        try:
+            if os.path.isdir(ap):
+                # Removes empty dirs only!! Need to add recurse removing.
+                os.rmdir(ap)
+            else:
+                os.remove(ap)
+        except FileNotFoundError:
+            pass
+
+    def rename(self, rel_src: str, rel_dst: str) -> None:
+        os.replace(self._abs(rel_src), self._abs(rel_dst))
+
+    def read_bytes(self, rel_path: str) -> bytes:
+        with open(self._abs(rel_path), "rb") as f:
+            return f.read()
+
+    def write_bytes(self, rel_path: str, data: bytes, overwrite: bool = True) -> None:
+        ap = self._abs(rel_path)
+        os.makedirs(os.path.dirname(ap), exist_ok=True)
+        if not overwrite and os.path.exists(ap):
+            raise StorageError(f"File exists: {rel_path}")
+        with open(ap, "wb") as f:
+            f.write(data or b"")
+
+    def open_reader(self, rel_path: str) -> BinaryIO:
+        return open(self._abs(rel_path), "rb")
+
+    def open_writer(self, rel_path: str, overwrite: bool = True) -> BinaryIO:
+        ap = self._abs(rel_path)
+        os.makedirs(os.path.dirname(ap), exist_ok=True)
+        if not overwrite and os.path.exists(ap):
+            raise StorageError(f"File exists: {rel_path}")
+        return open(ap, "wb")

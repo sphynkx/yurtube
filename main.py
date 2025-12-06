@@ -1,3 +1,5 @@
+## SRTG_2MODIFY: STORAGE_
+## SRTG_2MODIFY: os.path.
 import os
 
 from fastapi import FastAPI
@@ -7,6 +9,9 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from config.config import settings
 from routes import register_routes
+
+from services.storage import build_storage_client
+from config.storage.storage_cfg import STORAGE_BACKEND
 
 from middlewares.csrf_mw import NewCSRFMiddleware
 
@@ -22,6 +27,11 @@ app = FastAPI(
     redoc_url=redoc_url,
     openapi_url=openapi_url,
 )
+
+@app.on_event("startup")
+async def on_startup():
+    app.state.storage = build_storage_client(kind=STORAGE_BACKEND)
+
 
 app.add_middleware(NewCSRFMiddleware, cookie_name=getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"))
 
