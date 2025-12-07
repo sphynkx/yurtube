@@ -146,6 +146,8 @@ async def watch_page(request: Request, v: str) -> Any:
                 "sprites_vtt_url": None,
                 "caption_vtt": caption_vtt,
                 "caption_lang": caption_lang,
+                "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+                "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
             }
             return templates.TemplateResponse("watch.html", context, headers={"Cache-Control": "no-store"})
 
@@ -201,6 +203,8 @@ async def watch_page(request: Request, v: str) -> Any:
             "sprites_vtt_url": sprites_vtt_url,
             "caption_vtt": caption_vtt,
             "caption_lang": caption_lang,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+            "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
         }
         return templates.TemplateResponse("watch.html", context, headers={"Cache-Control": "no-store"})
     finally:
@@ -251,6 +255,8 @@ async def embed_page(
                 "sprites_vtt_url": None,
                 "caption_vtt": caption_vtt,
                 "caption_lang": caption_lang,
+                "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+                "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
             }
             return templates.TemplateResponse("embed.html", context, headers={"Cache-Control": "no-store"})
 
@@ -289,6 +295,8 @@ async def embed_page(
             "sprites_vtt_url": sprites_vtt_url,
             "caption_vtt": caption_vtt,
             "caption_lang": caption_lang,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+            "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
         }
         return templates.TemplateResponse("embed.html", context, headers={"Cache-Control": "no-store"})
     finally:
