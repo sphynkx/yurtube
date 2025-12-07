@@ -7,7 +7,7 @@ Local storage configuration.
 import os
 
 # Preferred local storage root (used by LocalStorageClient)
-APP_STORAGE_FS_ROOT = os.getenv("APP_STORAGE_FS_ROOT", "/var/www/yurtube/storage")
+APP_STORAGE_FS_ROOT: str = os.getenv("APP_STORAGE_FS_ROOT", "/var/www/yurtube/storage").strip()
 
-# Optional public URL base (e.g., when served via nginx)
-STORAGE_PUBLIC_BASE_URL = os.getenv("STORAGE_PUBLIC_BASE_URL", "")
+# Optional public URL base
+STORAGE_PUBLIC_BASE_URL: str = os.getenv("STORAGE_PUBLIC_BASE_URL", "").strip()

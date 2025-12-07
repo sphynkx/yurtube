@@ -22,6 +22,9 @@ from utils.security_ut import get_current_user
 from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
 from utils.url_ut import build_storage_url
 
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
+
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
@@ -58,13 +61,15 @@ def _avatar_small_url(avatar_path: Optional[str]) -> str:
         small_rel = avatar_path
     return build_storage_url(small_rel)
 
-def _augment(vrow: Dict[str, Any]) -> Dict[str, Any]:
+def _augment(request: Request, vrow: Dict[str, Any]) -> Dict[str, Any]:
     v = dict(vrow)
     thumb_path = v.get("thumb_asset_path")
     v["thumb_url"] = build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
     if thumb_path and "/" in thumb_path:
         anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
-        abs_anim = os.path.join(settings.STORAGE_ROOT, anim_rel)
+        # Use StorageClient absolute root for existence check
+        storage_client: StorageClient = request.app.state.storage
+        abs_anim = os.path.join(storage_client.to_abs(""), anim_rel)
         v["thumb_anim_url"] = build_storage_url(anim_rel) if os.path.isfile(abs_anim) else None
     else:
         v["thumb_anim_url"] = None
@@ -108,7 +113,7 @@ async def _render_channel(request: Request, owner: Optional[Dict[str, Any]]) -> 
         if user_uid:
             subd = await is_subscribed(conn, user_uid, owner["user_uid"])
         rows = await list_author_public_videos(conn, owner["user_uid"], limit=100, offset=0)
-        videos = [_augment(dict(r)) for r in rows]
+        videos = [_augment(request, dict(r)) for r in rows]
     finally:
         await release_conn(conn)
 

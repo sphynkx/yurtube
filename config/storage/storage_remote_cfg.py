@@ -1,8 +1,6 @@
 """
-TODO: rework to dotenv
-
 Remote storage configuration.
-- STORAGE_PROVIDER: "local" | "remote" (preferred selector)
+- STORAGE_PROVIDER: "local" | "remote"
 - STORAGE_REMOTE_ADDRESS: gRPC server address
 - STORAGE_REMOTE_TLS: enable TLS for gRPC channel
 - STORAGE_REMOTE_TOKEN: bearer token passed in gRPC metadata
@@ -10,12 +8,16 @@ Remote storage configuration.
 - STORAGE_GRPC_MAX_MSG_MB: gRPC max message size in MB
 """
 
-# Backend selector
-STORAGE_PROVIDER = ""  # set to "remote" to use gRPC 
+import os
 
-# Remote client settings
-STORAGE_REMOTE_ADDRESS = "127.0.0.1:50070"
-STORAGE_REMOTE_TLS = False
-STORAGE_REMOTE_TOKEN = ""
-STORAGE_REMOTE_BASE_PREFIX = ""
-STORAGE_GRPC_MAX_MSG_MB = 64
+STORAGE_PROVIDER: str = os.getenv("STORAGE_PROVIDER", "local").strip()
+
+STORAGE_REMOTE_ADDRESS: str = os.getenv("STORAGE_REMOTE_ADDRESS", "127.0.0.1:50070").strip()
+STORAGE_REMOTE_TLS: bool = (os.getenv("STORAGE_REMOTE_TLS", "").strip().lower() in ("1", "true", "yes", "on"))
+STORAGE_REMOTE_TOKEN: str = os.getenv("STORAGE_REMOTE_TOKEN", "").strip()
+STORAGE_REMOTE_BASE_PREFIX: str = os.getenv("STORAGE_REMOTE_BASE_PREFIX", "").strip()
+# Max message size (MB)
+try:
+    STORAGE_GRPC_MAX_MSG_MB: int = int(os.getenv("STORAGE_GRPC_MAX_MSG_MB", "64").strip())
+except Exception:
+    STORAGE_GRPC_MAX_MSG_MB = 64

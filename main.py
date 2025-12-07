@@ -6,6 +6,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from config.config import settings
+from config.storage.storage_remote_cfg import STORAGE_PROVIDER
+from config.storage.storage_cfg import APP_STORAGE_FS_ROOT
+
 from routes import register_routes
 from services.storage.build_client_srv import build_storage_client
 
@@ -30,7 +33,7 @@ from config.config import settings
 
 @app.on_event("startup")
 async def on_startup():
-    app.state.storage = build_storage_client(kind=getattr(settings, "STORAGE_PROVIDER", ""))
+    app.state.storage = build_storage_client(kind=STORAGE_PROVIDER)
 
 
 app.add_middleware(NewCSRFMiddleware, cookie_name=getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"))
@@ -39,10 +42,11 @@ app.add_middleware(NewCSRFMiddleware, cookie_name=getattr(settings, "CSRF_COOKIE
 # Static and storage mounts
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-
-_storage_dir = getattr(settings, "APP_STORAGE_FS_ROOT", None)
-if isinstance(_storage_dir, str) and os.path.isdir(_storage_dir):
-    app.mount("/storage", StaticFiles(directory=_storage_dir), name="storage")
+# Mount local /storage only for local provider
+_provider = (STORAGE_PROVIDER or "").strip().lower()
+if _provider == "local":
+    if isinstance(APP_STORAGE_FS_ROOT, str) and os.path.isdir(APP_STORAGE_FS_ROOT):
+        app.mount("/storage", StaticFiles(directory=APP_STORAGE_FS_ROOT), name="storage")
 
 
 # Proxy / headers (behind reverse proxy)

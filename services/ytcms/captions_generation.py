@@ -29,7 +29,6 @@ async def generate_captions(
     audio_ch = int(YTCMS_AUDIO_CHANNELS)
     audio_br = str(YTCMS_AUDIO_BITRATE or "48k")
 
-    # Derive base directory from the absolute source path instead of STORAGE_ROOT
     # src_path is expected to be .../{storage_rel}/original.webm
     base_abs = os.path.dirname(src_path)
     captions_dir = os.path.join(base_abs, "captions")

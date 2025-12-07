@@ -18,6 +18,9 @@ from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
 from utils.url_ut import build_storage_url
 from services.feed.trending_srv import fetch_trending, fetch_recent_public, fetch_trending_page
 
+# --- Storage abstraction ---
+from services.storage.base_srv import StorageClient
+
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
@@ -37,10 +40,12 @@ def _thumb_url(thumb_path: Optional[str]) -> str:
     return build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
 
 
-def _anim_url_existing(thumb_path: Optional[str]) -> Optional[str]:
+def _anim_url_existing(request: Request, thumb_path: Optional[str]) -> Optional[str]:
     if thumb_path and "/" in thumb_path:
         anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
-        abs_anim = os.path.join(settings.STORAGE_ROOT, anim_rel)
+        # Use StorageClient absolute path for existence check
+        storage_client: StorageClient = request.app.state.storage
+        abs_anim = os.path.join(storage_client.to_abs(""), anim_rel)
         if os.path.isfile(abs_anim):
             return build_storage_url(anim_rel)
     return None

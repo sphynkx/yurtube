@@ -21,13 +21,6 @@ router = APIRouter(tags=["webvtt"])
 _VTT_NAME_RE = re.compile(r'^[A-Za-z0-9_\-./]+\.vtt$')
 
 
-def _storage_root() -> str:
-    root = getattr(settings, "STORAGE_ROOT", None)
-    if not root:
-        root = STORAGE_FS_ROOT
-    return root.rstrip("/")
-
-
 def _safe_join_storage_abs(abs_root: str, *parts: str) -> str:
     """
     Safe join based on absolute root (from StorageClient.to_abs("")) to prevent path traversal.
