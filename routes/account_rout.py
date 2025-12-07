@@ -147,7 +147,7 @@ async def account_profile_update(request: Request, avatar: Optional[UploadFile] 
     generate_image_thumbnail(original_abs, original_abs, 512)
     generate_image_thumbnail(original_abs, small_abs, 96)
 
-    # relative path for DB (no direct STORAGE_ROOT usage)
+    # relative path for DB
     rel_path = os.path.relpath(original_abs, storage_client.to_abs(""))
 
     await save_user_avatar_path(user["user_uid"], rel_path)
