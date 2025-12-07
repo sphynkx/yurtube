@@ -7,9 +7,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from config.config import settings
 from routes import register_routes
-
-from services.storage import build_storage_client
-from config.storage.storage_cfg import STORAGE_BACKEND, APP_STORAGE_FS_ROOT
+from services.storage.build_client_srv import build_storage_client
 
 from middlewares.csrf_mw import NewCSRFMiddleware
 
@@ -26,26 +24,34 @@ app = FastAPI(
     openapi_url=openapi_url,
 )
 
+from services.storage.build_client_srv import build_storage_client
+from config.config import settings
+
+
 @app.on_event("startup")
 async def on_startup():
-    app.state.storage = build_storage_client(kind=STORAGE_BACKEND)
+    app.state.storage = build_storage_client(kind=getattr(settings, "STORAGE_PROVIDER", ""))
 
 
 app.add_middleware(NewCSRFMiddleware, cookie_name=getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"))
 
+
 # Static and storage mounts
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Prefer configured APP_STORAGE_FS_ROOT for mount; fallback to settings.STORAGE_ROOT if present
-_storage_dir = (getattr(settings, "STORAGE_ROOT", None) or APP_STORAGE_FS_ROOT)
+
+_storage_dir = getattr(settings, "APP_STORAGE_FS_ROOT", None)
 if isinstance(_storage_dir, str) and os.path.isdir(_storage_dir):
     app.mount("/storage", StaticFiles(directory=_storage_dir), name="storage")
+
 
 # Proxy / headers (behind reverse proxy)
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["127.0.0.1", "::1"])
 
+
 # Minimal cookie session middleware
 app.add_middleware(SessionMiddleware, secret_key=settings.SECRET_KEY)
+
 
 # Register routes
 register_routes(app)

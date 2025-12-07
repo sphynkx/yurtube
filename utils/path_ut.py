@@ -24,7 +24,7 @@ def build_user_storage_dir(root: str, user_uid: str) -> str:
 
 def safe_remove_storage_relpath(root: str, rel_path: str) -> bool:
     """
-    Remove directory at STORAGE_ROOT/rel_path safely if it exists.
+    Remove directory at APP_STORAGE_FS_ROOT/rel_path safely if it exists.
     Ensures we do not traverse outside storage root.
     Returns True if removed, False otherwise.
 

@@ -4,7 +4,6 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
 
@@ -56,7 +55,7 @@ class Settings:
     GOOGLE_OAUTH_REDIRECT_URL = os.getenv("GOOGLE_OAUTH_REDIRECT_URL", "")
     GOOGLE_ALLOWED_DOMAINS = os.getenv("GOOGLE_ALLOWED_DOMAINS", "")
 
-    STORAGE_ROOT: str = _getenv_required("STORAGE_ROOT")
+    APP_STORAGE_FS_ROOT: str = _getenv_required("APP_STORAGE_FS_ROOT")
     STORAGE_PUBLIC_BASE_URL: Optional[str] = os.getenv("STORAGE_PUBLIC_BASE_URL", None)
 
     BASE_URL: Optional[str] = os.getenv("BASE_URL", None)

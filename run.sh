@@ -12,7 +12,7 @@ Commands:
   serve            Start the app with uvicorn (default)
 
 Environment:
-  Reads .env automatically if present (DATABASE_URL, SECRET_KEY, STORAGE_ROOT, etc.).
+  Reads .env automatically if present
 EOF
 }
 

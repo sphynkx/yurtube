@@ -164,7 +164,7 @@ cp install/.env-sample .env
 ```conf
 DATABASE_URL=postgresql://yt_user:SECRET@127.0.0.1:5432/yt_db
 SECRET_KEY=replace-with-strong-secret
-STORAGE_ROOT=/var/www/yurtube/storage
+APP_STORAGE_FS_ROOT=/var/www/yurtube/storage
 SESSION_COOKIE_SECURE=true
 ```
 
