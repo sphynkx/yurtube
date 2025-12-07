@@ -1,6 +1,3 @@
-## SRTG_DONE
-## SRTG_2MODIFY: STORAGE_
-## SRTG_2MODIFY: os.path.
 import os
 
 from fastapi import FastAPI

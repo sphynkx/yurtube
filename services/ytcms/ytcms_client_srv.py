@@ -1,8 +1,3 @@
-## SRTG_DONE - no need.
-## SRTG_2MODIFY: os.path.
-## SRTG_2MODIFY: open(
-## SRTG_2MODIFY: pathlib
-## SRTG_2MODIFY: _path
 import os
 import time
 import uuid

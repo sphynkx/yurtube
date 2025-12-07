@@ -1,5 +1,3 @@
-## SRTG_DONE - no need
-## SRTG_2MODIFY: _path
 # Client utils for ytsprites service
 
 

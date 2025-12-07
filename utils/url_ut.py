@@ -1,9 +1,3 @@
-## SRTG_DONE
-## SRTG_2MODIFY: STORAGE_
-## SRTG_2MODIFY: build_storage_url(
-## SRTG_2MODIFY: storage/
-## SRTG_2MODIFY: _path
-## May be deprecated in future
 from typing import Optional
 
 from config.config import settings

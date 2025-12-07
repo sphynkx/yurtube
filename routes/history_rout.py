@@ -1,9 +1,3 @@
-## SRTG_DONE
-## SRTG_2MODIFY: STORAGE_
-## SRTG_2MODIFY: build_storage_url(
-## SRTG_2MODIFY: os.path.
-## SRTG_2MODIFY: abs_
-## SRTG_2MODIFY: _path
 import secrets
 from typing import Any, List, Optional
 import os

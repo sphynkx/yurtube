@@ -1,15 +1,3 @@
-## SRTG_DONE
-## SRTG_2MODIFY: STORAGE_
-## SRTG_2MODIFY: build_storage_url(
-## SRTG_2MODIFY: os.path.
-## SRTG_2MODIFY: os.listdir(
-## SRTG_2MODIFY: os.makedirs(
-## SRTG_2MODIFY: open(
-## SRTG_2MODIFY: abs_
-## SRTG_2MODIFY: _path
-## SRTG_2MODIFY: vtt_file
-## SRTG_2MODIFY: _dir
-## SRTG_2MODIFY: _fs_to_web_path(
 import hmac
 import hashlib
 import json

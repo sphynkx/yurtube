@@ -1,9 +1,3 @@
-## SRTG_2MODIFY: STORAGE_
-## SRTG_2MODIFY: os.path.
-## SRTG_2MODIFY: os.makedirs(
-## SRTG_2MODIFY: open(
-## SRTG_2MODIFY: _path
-## SRTG_2MODIFY: _dir
 import os
 import json
 import asyncio

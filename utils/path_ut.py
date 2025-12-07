@@ -1,11 +1,3 @@
-## SRTG_DONE
-## SRTG_2MODIFY: STORAGE_
-## SRTG_2MODIFY: os.path.
-## May be deprecated in future
-## SRTG_2MODIFY: shutil
-## SRTG_2MODIFY: _path
-## SRTG_2MODIFY: _dir
-## SRTG_2MODIFY: build_video_storage_dir(
 import os
 import shutil
 

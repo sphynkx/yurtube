@@ -1,9 +1,3 @@
-## SRTG_DONE - no need.
-## SRTG_2MODIFY: os.path.
-## SRTG_2MODIFY: os.makedirs(
-## SRTG_2MODIFY: shutil
-## SRTG_2MODIFY: _path
-## SRTG_2MODIFY: _dir
 import asyncio
 import os
 import subprocess

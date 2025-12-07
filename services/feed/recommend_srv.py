@@ -1,6 +1,3 @@
-## SRTG_DONE
-## SRTG_2MODIFY: build_storage_url(
-## SRTG_2MODIFY: _path
 import math
 import time
 import hashlib

@@ -1,5 +1,3 @@
-## SRTG_DONE
-## SRTG_2MODIFY: pathlib - no need to modify.
 from pathlib import Path
 from typing import Any
 
