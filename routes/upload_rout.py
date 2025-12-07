@@ -190,6 +190,7 @@ async def manage_home(request: Request) -> Any:
             "videos": videos,
             "subscribers_count": subs_count,
             "csrf_token": csrf_token,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -260,6 +261,7 @@ async def upload_page(request: Request) -> Any:
             "current_user": user,
             "categories": cats,
             "csrf_token": csrf_token,
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -316,6 +318,7 @@ async def upload_video(
                     "error": "Selected category does not exist.",
                     "form": form_data,
                     "csrf_token": _csrf_cookie(request),
+                    "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
                 },
                 status_code=400,
                 headers={"Cache-Control": "no-store"},
@@ -464,6 +467,7 @@ async def upload_video(
             "csrf_token": context_token,
             # mark tonen for debug (2DEL):
             "_csrf_debug": f"<!-- CSRF cookie={cookie_tok} form={context_token} -->",
+            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
         headers={"Cache-Control": "no-store"},
     )
