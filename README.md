@@ -23,6 +23,7 @@ Application is WIP now. Available base functional:
 * Two Search engines (Manticore and Postgres FTS)
 * Comments
 * Notifications system
+* Unified extendable storage system
 
 Design notes
 * Modular by default: swap or externalize services through config without code changes
