@@ -41,11 +41,17 @@ These could be installed and configured separately. About this see below in the 
 __Note__: This installation is designed for the Fedora distribution, but with appropriate modifications, it can be used on other distributions as well. However, some issues have been noted, such as the fact that FFMpeg is supplied in a stripped-down form in Debian-based distributions and requires a special build. This issue primarily affects external services and can be resolved through dockerization.
 
 
-## Download repo
+## Download and install app
 ```bash
 cd /var/www
 git clone https://github.com/sphynkx/yurtube
 cd yurtube
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r install/requirements.txt
+deactivate
+chmod a+x run.sh
 ```
 
 
@@ -153,7 +159,7 @@ redis-cli ping
 ```
 Expect: `PONG`
 
-Also see `config/notifications_cfg.py` - it consists default params for localhost. You may redefin them in `.env`.
+Also see `config/notifications_cfg.py` - it consists default params for localhost. You may redefine them in `.env`.
 
 
 ## Configure application .env
@@ -252,6 +258,8 @@ After install need to configure ytstorage params:
 - `STORAGE_REMOTE_ADDRESS` - remote host and port
 - `STORAGE_REMOTE_TLS` - set true to use auth
 - `STORAGE_REMOTE_TOKEN` - set token same as on service side
+
+Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one in `ytstorage` installation. Otherwise you need regenerate proto files.. Just run `gen_proto.sh` in the same dir.
 
 
 ### Sprites preview service (external)
