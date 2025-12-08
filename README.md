@@ -4,10 +4,10 @@ Highlights
 * Accounts and authentication: local sign‑in and SSO (Google, X)
 * Two video players: a custom YouTube‑style player and a simple HTML5 player
 * Uploading and editing videos with automatic thumbnails, animated previews
-* Sprites generation (by [separate microservice](https://github.com/sphynkx/ytsprites))
-* Generation and display captions (by [separate microservice](https://github.com/sphynkx/ytcms))
+* Sprites generation
+* Generation and display captions
 * Watch and embed videos
-* Search powered by [Manticore](https://manticoresearch.com/) and PostgreSQL FTS
+* Search by two search engines
 * Comments with like/dislike and persistent user votes
 * Channels and subscriptions, user avatars, responsive UI
 
@@ -18,12 +18,12 @@ Application is WIP now. Available base functional:
 * View and embed videos
 * Upload and edit videos:
   * generation of animated previews
-  * Sprites generation
-  * Captions generation
-* Two Search engines (Manticore and Postgres FTS)
+  * Sprites generation (by [separate microservice](https://github.com/sphynkx/ytsprites))
+  * Captions generation (by [separate microservice](https://github.com/sphynkx/ytcms))
+* Two Search engines ([Manticore](https://manticoresearch.com/) and Postgres FTS)
 * Comments
 * Notifications system
-* Unified extendable storage system
+* Unified extendable storage system (by [separate microservice](https://github.com/sphynkx/ytstorage))
 
 Design notes
 * Modular by default: swap or externalize services through config without code changes
@@ -36,9 +36,10 @@ For a minimal version with limited functionality, installing this app is suffici
 * [ytsprites](https://github.com/sphynkx/ytsprites) - service for WebVTT sprites generation
 * [ytcms](https://github.com/sphynkx/ytcms) - service for captions generation
 
-These must be installed and configured separately. About this see below in the appropriate sections.
+These could be installed and configured separately. About this see below in the appropriate sections.
 
 __Note__: This installation is designed for the Fedora distribution, but with appropriate modifications, it can be used on other distributions as well. However, some issues have been noted, such as the fact that FFMpeg is supplied in a stripped-down form in Debian-based distributions and requires a special build. This issue primarily affects external services and can be resolved through dockerization.
+
 
 ## Download repo
 ```bash
@@ -241,6 +242,17 @@ python3 reindex_all.py
 deactivate
 ```
 
+### Storage system (external)
+This step is optional - by default app uses local `storage/` dir.
+
+App supports storage layer abstraction and allow to use local directory and/or remote service as storage. See details in [ytstorage repository](https://github.com/sphynkx/ytstorage).
+
+After install need to configure ytstorage params:
+- `STORAGE_PROVIDER` - switch to remote service: set it from "local" to "remote" 
+- `STORAGE_REMOTE_ADDRESS` - remote host and port
+- `STORAGE_REMOTE_TLS` - set true to use auth
+- `STORAGE_REMOTE_TOKEN` - set token same as on service side
+
 
 ### Sprites preview service (external)
 This is separate service for generation sprites preview, based on gRPC+protobuf. It could be installed locally or on some other server. Download it from [this repository](https://github.com/sphynkx/ytsprites), follow [instructions](https://github.com/sphynkx/ytsprites/README.md) for install, configure and run. 
@@ -252,7 +264,6 @@ Also make sure that file `services/ytsprites/ytsprites_proto/ytsprites.proto` is
 cd services/ytsprites/ytsprites_proto
 ./gen_proto.sh
 ```
-
 
 
 ### Caption generation service (external)
