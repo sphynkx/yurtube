@@ -1,5 +1,7 @@
 from typing import Any, Dict, Optional, List, Tuple
 import os
+import asyncio
+import inspect
 
 from fastapi import APIRouter, Request, Query
 from fastapi.responses import HTMLResponse
@@ -31,14 +33,33 @@ def _avatar_small_url(avatar_path: Optional[str]) -> str:
     return build_storage_url(small_rel)
 
 
-def _augment(vrow: Dict[str, Any], storage_client: StorageClient) -> Dict[str, Any]:
+async def _storage_exists(storage_client: StorageClient, rel: str) -> bool:
+    """
+    Safe exists check supporting both async and sync implementations.
+    """
+    fn = getattr(storage_client, "exists", None)
+    if not callable(fn):
+        return False
+    res = fn(rel)
+    if inspect.isawaitable(res):
+        try:
+            return bool(await res)
+        except Exception:
+            return False
+    try:
+        return bool(res)
+    except Exception:
+        return False
+
+
+async def _augment(vrow: Dict[str, Any], storage_client: StorageClient) -> Dict[str, Any]:
     v = dict(vrow)
     thumb_path = v.get("thumb_asset_path")
     v["thumb_url"] = build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
 
     if thumb_path and "/" in thumb_path:
         anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
-        v["thumb_anim_url"] = build_storage_url(anim_rel) if storage_client.exists(anim_rel) else None
+        v["thumb_anim_url"] = build_storage_url(anim_rel) if await _storage_exists(storage_client, anim_rel) else None
     else:
         v["thumb_anim_url"] = None
 

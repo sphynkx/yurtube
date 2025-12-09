@@ -137,14 +137,21 @@
         {% set local_name = local_name_raw.replace('+',' ') if local_name_raw else None %}
 
         {# Build avatar URL via backend helper (passed in context in most routes) #}
-        {% set avatar_src = '/static/img/avatar_default.svg' %}
-        {% if current_user['user_uid'] %}
-          {% set _avatar_rel = 'users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
-          {% set avatar_src = (storage_public_base_url ~ '/' ~ _avatar_rel) if storage_public_base_url else ('/storage/' ~ _avatar_rel) %}
-        {% endif %}
-        {% if authp and authp != 'local' and sso_pic %}
-          {% set avatar_src = sso_pic %}
-        {% endif %}
+		{# Build avatar URL: prefer SSO picture; otherwise resolve storage-relative path #}
+		{% set avatar_src = '/static/img/avatar_default.svg' %}
+		{% if current_user['user_uid'] %}
+		  {% set _avatar_rel = 'users/' ~ current_user['user_uid'] ~ '/avatar_small.png' %}
+		  {# If there is a public base (local mode or external CDN), use it; else use internal proxy path-form #}
+		  {% if storage_public_base_url %}
+			{% set avatar_src = storage_public_base_url ~ '/' ~ _avatar_rel %}
+		  {% else %}
+			{# Remote mode: use internal proxy path-form so VTT/relative paths resolve properly #}
+			{% set avatar_src = '/internal/storage/file/' ~ _avatar_rel %}
+		  {% endif %}
+		{% endif %}
+		{% if authp and authp != 'local' and sso_pic %}
+		  {% set avatar_src = sso_pic %}
+		{% endif %}
 
         {% set display_name = current_user['username'] %}
         {% if authp == 'local' and local_name %}

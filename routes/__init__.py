@@ -34,6 +34,7 @@ from .ytcms_captions_rout import router as ytcms_captions_router
 from .webvtt_editor_rout import router as webvtt_editor_router
 
 from .storage.storage_rout import router as storage_router
+from routes.storage.storage_proxy_rout import router as storage_proxy_router
 
 
 def register_routes(app: FastAPI) -> None:
@@ -73,3 +74,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(webvtt_editor_router)
     
     app.include_router(storage_router)
+    app.include_router(storage_proxy_router)
