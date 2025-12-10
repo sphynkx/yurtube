@@ -5,21 +5,21 @@ import asyncio
 import inspect
 import tempfile
 import shutil
-from typing import Optional, Any, Dict, Tuple
+from typing import Optional, Any, Dict, Tuple, Iterable
 
 from fastapi import APIRouter, Request, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from config.config import settings
 from db import get_conn, release_conn
-from db.videos_db import get_owned_video, set_video_ready
-from db.ytsprites.ytsprites_db  import fetch_video_storage_path
+from db.videos_db import get_owned_video
+from db.ytsprites.ytsprites_db import fetch_video_storage_path
 from db.captions_db import set_video_captions, reset_video_captions, get_video_captions_status
 from utils.security_ut import get_current_user
 from services.ytcms.captions_generation import generate_captions
 from services.ffmpeg_srv import async_probe_duration_seconds
 
-# --- Storage abstraction ---
+# Storage abstraction
 from services.storage.base_srv import StorageClient
 
 router = APIRouter(tags=["captions"])
@@ -31,8 +31,9 @@ _JOB_TTL_SEC = 6 * 3600
 LAST_ACTIVE_GRACE_SEC = 10.0
 
 # Gisteresis params to endless status "blink"
-PERCENT_ACTIVE_GRACE_SEC = 12.0  # for recent 1..99% assume that "processing"
-PREV_STATUS_GRACE_SEC = 12.0     # for recent start/wait/process — keep wait (not idle) - BUGGY!!
+PERCENT_ACTIVE_GRACE_SEC = 12.0
+PREV_STATUS_GRACE_SEC = 12.0
+
 
 def _set_job_state(video_id: str, status: str, percent: int = -1, job_id: Optional[str] = None) -> None:
     now = time.time()
@@ -42,13 +43,12 @@ def _set_job_state(video_id: str, status: str, percent: int = -1, job_id: Option
         "percent": int(percent if isinstance(percent, (int, float)) else -1),
         "job_id": job_id if job_id is not None else prev.get("job_id"),
         "ts": now,
-        # store last % if in 1..99
         "last_active_percent": int(percent) if isinstance(percent, (int, float)) and 0 < int(percent) < 100 else (prev.get("last_active_percent", -1)),
         "last_active_percent_ts": now if isinstance(percent, (int, float)) and 0 < int(percent) < 100 else (prev.get("last_active_percent_ts", 0.0)),
-        # store last status if in 1..99
         "last_process_status": status if status in ("start", "wait", "process") else (prev.get("last_process_status", None)),
         "last_process_status_ts": now if status in ("start", "wait", "process") else (prev.get("last_process_status_ts", 0.0)),
     }
+
 
 def _get_job_state(video_id: str) -> Optional[Dict[str, Any]]:
     row = _JOB_STATE.get(video_id)
@@ -62,13 +62,15 @@ def _get_job_state(video_id: str) -> Optional[Dict[str, Any]]:
         return None
     return row
 
+
 def _clear_job_state(video_id: str) -> None:
     try:
         del _JOB_STATE[video_id]
     except Exception:
         pass
 
-# Callback for call from gRPC client on every status tick
+
+# Status callback for generator
 def _on_status_callback(video_id: str, job_id: str, status: str, percent: int, progress: float) -> None:
     st = (status or "").strip().lower()
     if st in ("queued", "start", "wait"):
@@ -80,10 +82,8 @@ def _on_status_callback(video_id: str, job_id: str, status: str, percent: int, p
     elif st in ("error", "fail", "failed"):
         st_norm = "fail"
     else:
-        # unknown status assume as wait
         st_norm = "wait"
 
-    # if percent undef - try progress
     p = -1
     try:
         if isinstance(percent, (int, float)) and int(percent) >= 0:
@@ -98,16 +98,14 @@ def _on_status_callback(video_id: str, job_id: str, status: str, percent: int, p
 
 async def _ensure_local_original(storage: StorageClient, original_rel: str) -> Tuple[str, Optional[str]]:
     """
-    Ensure we have a local file path for the original video:
-    - If storage.to_abs(original_rel) exists locally, return it and tmp_dir=None.
-    - Otherwise, download from storage into a temp dir and return (tmp_abs, tmp_dir).
-    Caller must cleanup tmp_dir if not None.
+    Ensure a local path to the original asset:
+    - If storage.to_abs(original_rel) exists locally -> return (abs_path, None)
+    - Else download to a temporary directory and return (tmp_abs_path, tmp_dir)
     """
     original_abs_storage = storage.to_abs(original_rel)
     if os.path.exists(original_abs_storage):
         return original_abs_storage, None
 
-    # Remote mode: download to tmp
     tmp_dir = tempfile.mkdtemp(prefix="ytcms_")
     tmp_original_abs = os.path.join(tmp_dir, os.path.basename(original_rel) or "original.webm")
 
@@ -130,7 +128,6 @@ async def _ensure_local_original(storage: StorageClient, original_rel: str) -> T
                         lf.write(chunk)
                         wrote_any = True
     except Exception as e:
-        # Cleanup on failure
         try:
             shutil.rmtree(tmp_dir)
         except Exception:
@@ -171,13 +168,11 @@ async def captions_process(
     storage_client: StorageClient = request.app.state.storage
     original_rel = os.path.join(storage_rel, "original.webm")
 
-    # Ensure local source path (works for local and remote)
     try:
         original_abs, tmp_dir = await _ensure_local_original(storage_client, original_rel)
     except HTTPException as e:
         return JSONResponse({"ok": False, "error": e.detail}, status_code=e.status_code)
 
-    # Try to probe duration (non-critical)
     try:
         dsec = await async_probe_duration_seconds(original_abs)
         if dsec and dsec > 0:
@@ -194,6 +189,7 @@ async def captions_process(
                 src_path=original_abs,
                 lang=lang,
                 on_status=_on_status_callback,
+                storage_client=storage_client,
             )
             c = await get_conn()
             try:
@@ -206,7 +202,6 @@ async def captions_process(
             print(f"[YTCMS] captions failed video_id={video_id}: {e}")
             _set_job_state(video_id, status="fail", percent=-1, job_id=None)
         finally:
-            # Cleanup tmp if used
             if tmp_dir and os.path.isdir(tmp_dir):
                 try:
                     shutil.rmtree(tmp_dir)
@@ -222,17 +217,12 @@ async def captions_status(video_id: str = Query(...)):
     """
     Normalized status for UI:
     status: idle | wait | process | done | fail
-    percent: -1 if unknown (otherwise 0..100)
+    percent: -1 if unknown
     has_vtt / rel_vtt / lang / job_id
-
-    Anti-blinking:
-    - If the recent percentage (<= PERCENT_ACTIVE_GRACE_SEC) was 1..99, keep "process", even if the current entry is temporarily hidden.
-    - If the recent status (<= PREV_STATUS_GRACE_SEC) was wait/process, keep "wait" instead of "idle".
     """
     conn = await get_conn()
     try:
         row = await get_video_captions_status(conn, video_id)
-        ##print(f"STATUSES from YTCMS: {row}")
     finally:
         await release_conn(conn)
 
@@ -272,7 +262,6 @@ async def captions_status(video_id: str = Query(...)):
             "job_id": job_id or (js.get("job_id") if js else None),
         }
 
-    # if we have in-memory status - use it
     if js:
         js_status = js.get("status")
         js_percent = js.get("percent", -1)
@@ -287,7 +276,6 @@ async def captions_status(video_id: str = Query(...)):
             "job_id": job_id or js.get("job_id"),
         }
 
-    # gisteresis on last active process (1..99)
     prev = _JOB_STATE.get(video_id) or {}
     last_pct = int(prev.get("last_active_percent", -1)) if isinstance(prev.get("last_active_percent", -1), (int, float)) else -1
     last_pct_ts = float(prev.get("last_active_percent_ts", 0.0))
@@ -303,7 +291,6 @@ async def captions_status(video_id: str = Query(...)):
             "job_id": job_id or prev.get("job_id"),
         }
 
-    # gisteresis by last process status - return "wait" (not idle) - BUGGY
     last_st = prev.get("last_process_status")
     last_st_ts = float(prev.get("last_process_status_ts", 0.0))
     if last_st in ("wait", "process") and (now - last_st_ts) <= PREV_STATUS_GRACE_SEC:
@@ -318,7 +305,6 @@ async def captions_status(video_id: str = Query(...)):
             "job_id": job_id or prev.get("job_id"),
         }
 
-    # else - idle
     return {
         "ok": True,
         "video_id": video_id,
@@ -358,9 +344,6 @@ async def captions_retry(
     storage_client: StorageClient = request.app.state.storage
     original_rel = os.path.join(storage_rel, "original.webm")
 
-    # Ensure local source path (works for local and remote)
-    original_abs = None
-    tmp_dir = None
     try:
         original_abs, tmp_dir = await _ensure_local_original(storage_client, original_rel)
     except HTTPException as e:
@@ -375,6 +358,7 @@ async def captions_retry(
                 src_path=original_abs,
                 lang=lang,
                 on_status=_on_status_callback,
+                storage_client=storage_client,
             )
             c = await get_conn()
             try:
@@ -397,6 +381,131 @@ async def captions_retry(
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
 
 
+async def _storage_rmtree(storage: StorageClient, rel_dir: str) -> None:
+    """
+    Recursively remove a directory and its contents via StorageClient.
+    Strategy:
+    1) Prefer server-side recursive remove: storage.remove(rel_dir, recursive=True) if supported.
+    2) Fallback: list children and remove them individually, handling both async and sync APIs,
+       and both 'list of names' and 'protobuf response with entries'.
+    3) Final local fallback via storage.to_abs for locally-backed storage.
+    """
+    # Try server-side recursive remove first
+    try:
+        rm = None
+        try:
+            rm = storage.remove(rel_dir, recursive=True)
+        except TypeError:
+            rm = storage.remove(rel_dir)
+        except Exception:
+            rm = None
+        if rm is not None:
+            if inspect.isawaitable(rm):
+                await rm
+            return
+    except Exception:
+        pass
+
+    # Fallback: list children
+    names_or_resp = None
+    try:
+        names_or_resp = storage.listdir(rel_dir)
+        if inspect.isawaitable(names_or_resp):
+            names_or_resp = await names_or_resp
+    except Exception:
+        names_or_resp = None
+
+    # Normalize entries
+    entries: Iterable[str] = []
+    try:
+        if isinstance(names_or_resp, (list, tuple)):
+            entries = [str(x) for x in names_or_resp]
+        elif names_or_resp is not None:
+            resp = names_or_resp
+            ent = getattr(resp, "entries", None)
+            if ent and isinstance(ent, (list, tuple)):
+                tmp = []
+                for e in ent:
+                    rp = getattr(e, "rel_path", None)
+                    nm = getattr(e, "name", None)
+                    if isinstance(rp, str) and rp:
+                        tmp.append(rp)
+                    elif isinstance(nm, str) and nm:
+                        tmp.append(os.path.join(rel_dir, nm))
+                entries = tmp
+    except Exception:
+        entries = []
+
+    # Remove children
+    for child in list(entries):
+        child_rel = child if child.startswith(rel_dir) else os.path.join(rel_dir, child)
+        try:
+            rm = None
+            try:
+                rm = storage.remove(child_rel)
+            except Exception:
+                rm = None
+            if rm is not None and inspect.isawaitable(rm):
+                await rm
+        except Exception:
+            try:
+                await _storage_rmtree(storage, child_rel)
+            except Exception:
+                # Local fallback
+                try:
+                    abs_child = storage.to_abs(child_rel)
+                    if os.path.isdir(abs_child):
+                        for root, dirs, files in os.walk(abs_child, topdown=False):
+                            for f in files:
+                                try:
+                                    os.remove(os.path.join(root, f))
+                                except Exception:
+                                    pass
+                            for d in dirs:
+                                try:
+                                    os.rmdir(os.path.join(root, d))
+                                except Exception:
+                                    pass
+                        try:
+                            os.rmdir(abs_child)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+    # Try removing dir itself again
+    try:
+        rm2 = None
+        try:
+            rm2 = storage.remove(rel_dir)
+        except Exception:
+            rm2 = None
+        if rm2 is not None and inspect.isawaitable(rm2):
+            await rm2
+    except Exception:
+        # Local fallback
+        try:
+            abs_dir = storage.to_abs(rel_dir)
+            if os.path.isdir(abs_dir):
+                for root, dirs, files in os.walk(abs_dir, topdown=False):
+                    for f in files:
+                        try:
+                            os.remove(os.path.join(root, f))
+                        except Exception:
+                            pass
+                    for d in dirs:
+                        try:
+                            os.rmdir(os.path.join(root, d))
+                        except Exception:
+                            pass
+                try:
+                    os.rmdir(abs_dir)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
 @router.post("/internal/ytcms/captions/delete")
 async def captions_delete(
     request: Request,
@@ -412,32 +521,16 @@ async def captions_delete(
         storage_rel = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
         if not storage_rel:
             raise HTTPException(status_code=404, detail="video_not_ready")
+        # Reset DB state first so UI reflects deletion immediately
         await reset_video_captions(conn, video_id)
         _clear_job_state(video_id)
     finally:
         await release_conn(conn)
 
     storage_client: StorageClient = request.app.state.storage
-    captions_rel_dir = os.path.join(storage_rel, "captions")
-    captions_abs_dir = storage_client.to_abs(captions_rel_dir)
-    try:
-        if os.path.isdir(captions_abs_dir):
-            for root, dirs, files in os.walk(captions_abs_dir, topdown=False):
-                for name in files:
-                    try:
-                        os.remove(os.path.join(root, name))
-                    except Exception:
-                        pass
-                for name in dirs:
-                    try:
-                        os.rmdir(os.path.join(root, name))
-                    except Exception:
-                        pass
-            try:
-                os.rmdir(captions_abs_dir)
-            except Exception:
-                pass
-    except Exception as e:
-        print(f"[YTCMS] captions delete fs error video_id={video_id}: {e}")
+    captions_rel_dir = storage_client.join(storage_rel, "captions")
+
+    # Remove directory tree
+    await _storage_rmtree(storage_client, captions_rel_dir)
 
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
