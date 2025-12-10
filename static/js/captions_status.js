@@ -70,14 +70,19 @@
     el.style.color = mapped.color;
   }
 
-  function findCaptionsSectionRoot() {
+  // Robust section detection: prefer the status element's closest section, fallback to h2 "Captions"
+  function findCaptionsSectionRoot(statusEl) {
+    if (statusEl) {
+      var sec = statusEl.closest("section");
+      if (sec) return sec;
+    }
     var headers = document.querySelectorAll("h2");
     for (var i = 0; i < headers.length; i++) {
       var h = headers[i];
       var txt = (h.textContent || "").trim().toLowerCase();
       if (txt === "captions") {
-        var sec = h.closest("section");
-        if (sec) return sec;
+        var sec2 = h.closest("section");
+        if (sec2) return sec2;
         return h.parentElement || h;
       }
     }
@@ -91,6 +96,7 @@
       list.style.listStyle = "none";
       list.style.paddingLeft = "0";
       list.style.margin = "0 0 18px";
+      // Insert after the h2 if present
       var h2 = section.querySelector("h2");
       if (h2 && h2.nextSibling) {
         section.insertBefore(list, h2.nextSibling);
@@ -122,17 +128,18 @@
         var dlHref   = "/manage/video/" + encodeURIComponent(videoId) + "/vtt/download?rel_vtt=" + encodeURIComponent(relVtt);
         var edit = items[i].querySelector("a[href*='/vtt/edit']");
         var dl   = items[i].querySelector("a[href*='/vtt/download']");
-        if (edit) edit.href = editHref; else {
+        if (edit) { edit.href = editHref; } else {
           var e = document.createElement("a");
           e.href = editHref; e.style.marginLeft = "8px"; e.textContent = "Edit";
           items[i].appendChild(e);
         }
-        if (dl) dl.href = dlHref; else {
+        if (dl) { dl.href = dlHref; } else {
           var d = document.createElement("a");
           d.href = dlHref; d.style.marginLeft = "8px"; d.textContent = "Download";
           items[i].appendChild(d);
         }
         if (codeEl) codeEl.textContent = relVtt;
+        // Remove duplicates
         for (var k = items.length - 1; k >= 0; k--) {
           if (items[k] !== items[i]) {
             var ce = items[k].querySelector("code");
@@ -188,9 +195,9 @@
     }
   }
 
-  function updateCaptionsList(videoId, rawRelVtt) {
+  function updateCaptionsList(statusEl, videoId, rawRelVtt) {
     try {
-      var section = findCaptionsSectionRoot();
+      var section = findCaptionsSectionRoot(statusEl);
       if (!section) return;
       var relVtt = normalizeRelVtt(rawRelVtt, videoId);
       if (relVtt) {
@@ -203,7 +210,7 @@
     } catch (_) {}
   }
 
-  // Add some gisteresis for  UI
+  // Add some hysteresis for UI
   function stabilizeStatus(incomingStatus, incomingPercent) {
     var now = Date.now();
     if (typeof incomingPercent === "number" && incomingPercent > 0 && incomingPercent < 100) {
@@ -243,7 +250,7 @@
         var s = stabilizeStatus(sRaw, pctRaw);
 
         renderStatusText(el, s, hasVtt, pctRaw);
-        updateCaptionsList(videoId, hasVtt ? d.rel_vtt : null);
+        updateCaptionsList(el, videoId, hasVtt ? d.rel_vtt : null);
       });
     }
 
@@ -253,7 +260,7 @@
     window.addEventListener("beforeunload", function () { try { clearInterval(timer); } catch (_) {} });
   }
 
-  // DirtyHack: set `processing (0%)` just button pressed
+  // Public API
   function setImmediateProcessing(el) {
     if (!el) return;
     var now = Date.now();
@@ -264,6 +271,16 @@
     renderStatusText(el, "process", false, 0);
   }
 
+  // Auto init if the element exists
+  function autoInit() {
+    var el = document.getElementById('captions-status');
+    if (!el) return;
+    var vid = el.getAttribute('data-video-id');
+    var intervalMs = 6000;
+    start(el, vid, intervalMs);
+  }
+
+  // expose
   window.CaptionsStatus = {
     init: function (opts) {
       opts = opts || {};
@@ -271,4 +288,10 @@
     },
     setImmediateProcessing: setImmediateProcessing
   };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", autoInit);
+  } else {
+    autoInit();
+  }
 })();

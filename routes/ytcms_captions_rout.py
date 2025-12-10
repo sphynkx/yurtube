@@ -2,7 +2,10 @@ import os
 import json
 import time
 import asyncio
-from typing import Optional, Any, Dict
+import inspect
+import tempfile
+import shutil
+from typing import Optional, Any, Dict, Tuple
 
 from fastapi import APIRouter, Request, Form, HTTPException, Query
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -27,8 +30,8 @@ _JOB_STATE: Dict[str, Dict[str, Any]] = {}
 _JOB_TTL_SEC = 6 * 3600
 LAST_ACTIVE_GRACE_SEC = 10.0
 
-# Gisteresis params to enless status "blink"
-PERCENT_ACTIVE_GRACE_SEC = 12.0  # for recent 1..99% assume that "processing
+# Gisteresis params to endless status "blink"
+PERCENT_ACTIVE_GRACE_SEC = 12.0  # for recent 1..99% assume that "processing"
 PREV_STATUS_GRACE_SEC = 12.0     # for recent start/wait/process — keep wait (not idle) - BUGGY!!
 
 def _set_job_state(video_id: str, status: str, percent: int = -1, job_id: Optional[str] = None) -> None:
@@ -65,7 +68,7 @@ def _clear_job_state(video_id: str) -> None:
     except Exception:
         pass
 
-# Callback fro call from gRPC client on every status tick
+# Callback for call from gRPC client on every status tick
 def _on_status_callback(video_id: str, job_id: str, status: str, percent: int, progress: float) -> None:
     st = (status or "").strip().lower()
     if st in ("queued", "start", "wait"):
@@ -92,6 +95,58 @@ def _on_status_callback(video_id: str, job_id: str, status: str, percent: int, p
 
     _set_job_state(video_id, status=st_norm, percent=p, job_id=job_id)
 
+
+async def _ensure_local_original(storage: StorageClient, original_rel: str) -> Tuple[str, Optional[str]]:
+    """
+    Ensure we have a local file path for the original video:
+    - If storage.to_abs(original_rel) exists locally, return it and tmp_dir=None.
+    - Otherwise, download from storage into a temp dir and return (tmp_abs, tmp_dir).
+    Caller must cleanup tmp_dir if not None.
+    """
+    original_abs_storage = storage.to_abs(original_rel)
+    if os.path.exists(original_abs_storage):
+        return original_abs_storage, None
+
+    # Remote mode: download to tmp
+    tmp_dir = tempfile.mkdtemp(prefix="ytcms_")
+    tmp_original_abs = os.path.join(tmp_dir, os.path.basename(original_rel) or "original.webm")
+
+    reader_ctx = storage.open_reader(original_rel)
+    if inspect.isawaitable(reader_ctx):
+        reader_ctx = await reader_ctx
+
+    wrote_any = False
+    try:
+        if hasattr(reader_ctx, "__aiter__") or hasattr(reader_ctx, "__anext__"):
+            async for chunk in reader_ctx:
+                if chunk:
+                    with open(tmp_original_abs, "ab") as lf:
+                        lf.write(chunk)
+                        wrote_any = True
+        else:
+            for chunk in reader_ctx:
+                if chunk:
+                    with open(tmp_original_abs, "ab") as lf:
+                        lf.write(chunk)
+                        wrote_any = True
+    except Exception as e:
+        # Cleanup on failure
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"download_failed: {e}")
+
+    if not wrote_any or not os.path.exists(tmp_original_abs):
+        try:
+            shutil.rmtree(tmp_dir)
+        except Exception:
+            pass
+        raise HTTPException(status_code=404, detail="original_missing")
+
+    return tmp_original_abs, tmp_dir
+
+
 @router.post("/manage/video/{video_id}/captions/process")
 async def captions_process(
     request: Request,
@@ -114,19 +169,23 @@ async def captions_process(
         await release_conn(conn)
 
     storage_client: StorageClient = request.app.state.storage
-    original_abs = storage_client.to_abs(os.path.join(storage_rel, "original.webm"))
-    if not os.path.exists(original_abs):
-        try:
-            dsec = await async_probe_duration_seconds(original_abs)
-            if dsec and dsec > 0:
-                duration = int(dsec)
-        except Exception:
-            pass
-        if not os.path.exists(original_abs):
-            return JSONResponse({"ok": False, "error": "original_missing"}, status_code=404)
+    original_rel = os.path.join(storage_rel, "original.webm")
+
+    # Ensure local source path (works for local and remote)
+    try:
+        original_abs, tmp_dir = await _ensure_local_original(storage_client, original_rel)
+    except HTTPException as e:
+        return JSONResponse({"ok": False, "error": e.detail}, status_code=e.status_code)
+
+    # Try to probe duration (non-critical)
+    try:
+        dsec = await async_probe_duration_seconds(original_abs)
+        if dsec and dsec > 0:
+            duration = int(dsec)
+    except Exception:
+        pass
 
     async def _bg_worker():
-        # start: write "wait" (BUGGY!!)
         _set_job_state(video_id, status="wait", percent=-1, job_id=None)
         try:
             rel_vtt, meta = await generate_captions(
@@ -146,9 +205,17 @@ async def captions_process(
         except Exception as e:
             print(f"[YTCMS] captions failed video_id={video_id}: {e}")
             _set_job_state(video_id, status="fail", percent=-1, job_id=None)
+        finally:
+            # Cleanup tmp if used
+            if tmp_dir and os.path.isdir(tmp_dir):
+                try:
+                    shutil.rmtree(tmp_dir)
+                except Exception:
+                    pass
 
     asyncio.create_task(_bg_worker())
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
+
 
 @router.get("/internal/ytcms/captions/status")
 async def captions_status(video_id: str = Query(...)):
@@ -263,6 +330,7 @@ async def captions_status(video_id: str = Query(...)):
         "job_id": job_id or prev.get("job_id"),
     }
 
+
 @router.post("/internal/ytcms/captions/retry")
 async def captions_retry(
     request: Request,
@@ -288,10 +356,15 @@ async def captions_retry(
         await release_conn(conn)
 
     storage_client: StorageClient = request.app.state.storage
-    original_abs = storage_client.to_abs(os.path.join(storage_rel, "original.webm"))
-    if not os.path.exists(original_abs):
-        print(f"[YTCMS] retry original missing video_id={video_id} path={original_abs}")
-        raise HTTPException(status_code=404, detail="original_missing")
+    original_rel = os.path.join(storage_rel, "original.webm")
+
+    # Ensure local source path (works for local and remote)
+    original_abs = None
+    tmp_dir = None
+    try:
+        original_abs, tmp_dir = await _ensure_local_original(storage_client, original_rel)
+    except HTTPException as e:
+        raise HTTPException(status_code=e.status_code, detail=e.detail)
 
     async def _bg_worker():
         _set_job_state(video_id, status="wait", percent=-1, job_id=None)
@@ -313,9 +386,16 @@ async def captions_retry(
         except Exception as e:
             print(f"[YTCMS] captions retry failed video_id={video_id}: {e}")
             _set_job_state(video_id, status="fail", percent=-1, job_id=None)
+        finally:
+            if tmp_dir and os.path.isdir(tmp_dir):
+                try:
+                    shutil.rmtree(tmp_dir)
+                except Exception:
+                    pass
 
     asyncio.create_task(_bg_worker())
     return RedirectResponse(url=f"/manage/video/{video_id}/media", status_code=303)
+
 
 @router.post("/internal/ytcms/captions/delete")
 async def captions_delete(
