@@ -6,11 +6,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from config.config import settings
-from config.storage.storage_remote_cfg import STORAGE_PROVIDER
-from config.storage.storage_cfg import APP_STORAGE_FS_ROOT
+from config.ytstorage.ytstorage_remote_cfg import STORAGE_PROVIDER
+from config.ytstorage.ytstorage_cfg import APP_STORAGE_FS_ROOT
 
 from routes import register_routes
-from services.storage.build_client_srv import build_storage_client
+from services.ytstorage.build_client_srv import build_storage_client
 
 from middlewares.csrf_mw import NewCSRFMiddleware
 
@@ -27,7 +27,7 @@ app = FastAPI(
     openapi_url=openapi_url,
 )
 
-from services.storage.build_client_srv import build_storage_client
+from services.ytstorage.build_client_srv import build_storage_client
 from config.config import settings
 
 

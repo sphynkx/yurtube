@@ -8,11 +8,11 @@ from typing import AsyncIterator, List, Optional, Dict, Any
 import grpc
 
 from config.config import settings
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 # Generated stubs
-from services.storage.storage_proto import ytstorage_pb2 as pb
-from services.storage.storage_proto import ytstorage_pb2_grpc as pb_grpc
+from services.ytstorage.ytstorage_proto import ytstorage_pb2 as pb
+from services.ytstorage.ytstorage_proto import ytstorage_pb2_grpc as pb_grpc
 
 
 def _norm(rel: str) -> str:

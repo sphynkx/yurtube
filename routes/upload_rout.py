@@ -44,8 +44,8 @@ from services.ytcms.captions_generation import generate_captions
 from db.captions_db import set_video_captions
 
 # --- Storage abstraction ---
-from services.storage.base_srv import StorageClient
-from utils.storage.path_ut import build_video_storage_rel
+from services.ytstorage.base_srv import StorageClient
+from utils.ytstorage.path_ut import build_video_storage_rel
 
 
 router = APIRouter()

@@ -19,7 +19,7 @@ from utils.url_ut import build_storage_url
 from services.feed.trending_srv import fetch_trending, fetch_recent_public, fetch_trending_page
 
 # --- Storage abstraction ---
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")

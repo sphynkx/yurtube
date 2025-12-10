@@ -6,7 +6,7 @@ def build_video_storage_dir(root: str, video_id: str) -> str:
     """
     Returns absolute path like: {root}/ab/abc123456789/
     NOTE: Deprecated in routes after migration to StorageClient.
-    Prefer using utils.storage.path_ut.build_video_storage_rel(video_id)
+    Prefer using utils.ytstorage.path_ut.build_video_storage_rel(video_id)
     and StorageClient.join()/to_abs() for absolute paths.
     """
     prefix = video_id[:2]

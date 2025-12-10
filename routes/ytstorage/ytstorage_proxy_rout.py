@@ -4,7 +4,7 @@ from fastapi.responses import StreamingResponse
 import os
 import re
 
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter(prefix="/internal/storage", tags=["storage"])
 

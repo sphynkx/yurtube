@@ -16,7 +16,7 @@ from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
 from utils.format_ut import fmt_dt
 
 # --- Storage abstraction ---
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")

@@ -30,7 +30,7 @@ from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 
 # --- Storage abstraction ---
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")

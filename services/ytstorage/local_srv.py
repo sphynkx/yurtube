@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Iterable, BinaryIO, Tuple
 import os
 
-from services.storage.base_srv import StorageClient, StorageError, ensure_rel_path
+from services.ytstorage.base_srv import StorageClient, StorageError, ensure_rel_path
 
 
 class LocalStorageClient(StorageClient):

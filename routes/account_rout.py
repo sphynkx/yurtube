@@ -20,7 +20,7 @@ from db.account_profile_db import (
 )
 
 # --- Storage abstraction ---
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")

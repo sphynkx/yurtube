@@ -36,7 +36,7 @@ from utils.url_ut import build_storage_url
 from utils.ytsprites.ytsprites_ut import prefix_sprite_paths, normalize_vtt
 
 # --- Storage abstraction ---
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter(tags=["ytsprites"])
 templates = Jinja2Templates(directory="templates")

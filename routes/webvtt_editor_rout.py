@@ -13,7 +13,7 @@ from db.assets_db import get_thumbs_vtt_asset
 from utils.url_ut import build_storage_url
 
 # --- Storage abstraction ---
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter(tags=["webvtt"])
 

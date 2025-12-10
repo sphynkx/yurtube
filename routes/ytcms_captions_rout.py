@@ -20,7 +20,7 @@ from services.ytcms.captions_generation import generate_captions
 from services.ffmpeg_srv import async_probe_duration_seconds
 
 # Storage abstraction
-from services.storage.base_srv import StorageClient
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter(tags=["captions"])
 

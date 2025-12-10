@@ -1,6 +1,6 @@
 import urllib.parse
-from config.storage.storage_remote_cfg import STORAGE_PROVIDER
-from config.storage.storage_cfg import STORAGE_PUBLIC_BASE_URL
+from config.ytstorage.ytstorage_remote_cfg import STORAGE_PROVIDER
+from config.ytstorage.ytstorage_cfg import STORAGE_PUBLIC_BASE_URL
 
 def build_storage_url(rel_path: str | None) -> str | None:
     if not rel_path:
