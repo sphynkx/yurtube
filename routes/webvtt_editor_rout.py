@@ -6,7 +6,6 @@ from fastapi import APIRouter, Request, Form, HTTPException, Query
 from fastapi.responses import RedirectResponse, HTMLResponse, Response
 
 from config.config import settings
-from config.ytsprites.ytsprites_cfg import APP_STORAGE_FS_ROOT, APP_STORAGE_WEB_PREFIX
 from utils.security_ut import get_current_user
 from db import get_conn, release_conn
 from db.videos_db import get_owned_video
@@ -19,17 +18,6 @@ from services.storage.base_srv import StorageClient
 router = APIRouter(tags=["webvtt"])
 
 _VTT_NAME_RE = re.compile(r'^[A-Za-z0-9_\-./]+\.vtt$')
-
-
-def _safe_join_storage_abs(abs_root: str, *parts: str) -> str:
-    """
-    Safe join based on absolute root (from StorageClient.to_abs("")) to prevent path traversal.
-    """
-    root = os.path.normpath(abs_root.rstrip("/"))
-    joined = os.path.normpath(os.path.join(root, *parts))
-    if not (joined == root or joined.startswith(root + os.sep)):
-        raise HTTPException(status_code=400, detail="invalid_path")
-    return joined
 
 
 def _is_vtt_file(filename: str) -> bool:
@@ -55,11 +43,99 @@ async def _ensure_owned_storage_rel(request: Request, video_id: str) -> Optional
         await release_conn(conn)
 
 
-def _build_storage_url(rel_path: Optional[str]) -> Optional[str]:
-    if not rel_path:
-        return None
-    rel_path = rel_path.lstrip("/")
-    return APP_STORAGE_WEB_PREFIX.rstrip("/") + "/" + rel_path
+def _safe_join_rel(storage_rel: str, rel_path: str) -> str:
+    """
+    Safely generates a relative path within storage_rel (without escaping above).
+    Returns the normalized relative path "<storage_rel>/<...>".
+    """
+    base = storage_rel.strip().strip("/")
+
+    # Normaloize rel path
+    p = (rel_path or "").strip()
+    p = p.lstrip("/")  # permit abs
+    joined = os.path.normpath(os.path.join(base, p))
+
+    base_norm = os.path.normpath(base)
+    if not (joined == base_norm or joined.startswith(base_norm + os.sep)):
+        raise HTTPException(status_code=400, detail="invalid_path")
+
+    return joined
+
+
+async def _storage_read_text(storage: StorageClient, rel: str, encoding: str = "utf-8") -> str:
+    """
+    Reads text file from storage (local/remote).
+    """
+    reader_ctx = storage.open_reader(rel)
+    if hasattr(reader_ctx, "__await__"):
+        reader_ctx = await reader_ctx
+
+    # Try to get whole file
+    data = bytearray()
+    try:
+        if hasattr(reader_ctx, "__aiter__") or hasattr(reader_ctx, "__anext__"):
+            async for chunk in reader_ctx:
+                if chunk:
+                    data.extend(chunk)
+        else:
+            for chunk in reader_ctx:
+                if chunk:
+                    data.extend(chunk)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="vtt_not_found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"read_failed: {e}")
+
+    try:
+        return data.decode(encoding, errors="replace")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"decode_failed: {e}")
+
+
+async def _storage_read_bytes(storage: StorageClient, rel: str) -> bytes:
+    reader_ctx = storage.open_reader(rel)
+    if hasattr(reader_ctx, "__await__"):
+        reader_ctx = await reader_ctx
+
+    buf = bytearray()
+    try:
+        if hasattr(reader_ctx, "__aiter__") or hasattr(reader_ctx, "__anext__"):
+            async for chunk in reader_ctx:
+                if chunk:
+                    buf.extend(chunk)
+        else:
+            for chunk in reader_ctx:
+                if chunk:
+                    buf.extend(chunk)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="vtt_not_found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"read_failed: {e}")
+
+    return bytes(buf)
+
+
+async def _storage_write_text(storage: StorageClient, rel: str, content: str, encoding: str = "utf-8") -> None:
+    dir_rel = os.path.dirname(rel)
+    if dir_rel:
+        mkdirs_res = storage.mkdirs(dir_rel, exist_ok=True)
+        if hasattr(mkdirs_res, "__await__"):
+            await mkdirs_res
+
+    w = storage.open_writer(rel, overwrite=True)
+    if hasattr(w, "__await__"):
+        w = await w
+
+    data = content.encode(encoding)
+
+    if hasattr(w, "__aenter__"):
+        async with w as f:
+            wr = f.write(data)
+            if hasattr(wr, "__await__"):
+                await wr
+    else:
+        with w as f:
+            f.write(data)
 
 
 @router.get("/manage/video/{video_id}/vtt/edit")
@@ -81,16 +157,16 @@ async def webvtt_edit(
         raise HTTPException(status_code=400, detail="invalid_vtt_name")
 
     storage_client: StorageClient = request.app.state.storage
-    abs_root = storage_client.to_abs("")  # absolute root
-    vtt_abs_path = _safe_join_storage_abs(abs_root, storage_rel, rel_vtt)
-    if not os.path.isfile(vtt_abs_path):
-        raise HTTPException(status_code=404, detail="vtt_not_found")
 
-    # video src (original.webm)
-    original_abs = _safe_join_storage_abs(abs_root, storage_rel, "original.webm")
-    video_src_url = None
-    if os.path.isfile(original_abs):
-        video_src_url = _build_storage_url(os.path.join(storage_rel, "original.webm"))
+    # Safely build rel path in storage_rel
+    rel_path = _safe_join_rel(storage_rel, rel_vtt)
+
+    # Read file from storage (local/remote)
+    content = await _storage_read_text(storage_client, rel_path, encoding="utf-8")
+
+    # video src (original.webm) — give the URL w/o checking local file
+    original_rel = os.path.join(storage_rel, "original.webm")
+    video_src_url = build_storage_url(original_rel)
 
     # sprites vtt for thumbnails preview (if any)
     conn = await get_conn()
@@ -116,14 +192,7 @@ async def webvtt_edit(
             "default": True,
         })
 
-    # options: rely on player’s own resume mechanism; start=t is optional
     player_options = {"autoplay": False, "muted": False, "loop": False, "start": max(0, int(t or 0))}
-
-    try:
-        with open(vtt_abs_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"read_failed: {e}")
 
     from fastapi.templating import Jinja2Templates
     templates = Jinja2Templates(directory="templates")
@@ -170,20 +239,14 @@ async def webvtt_save(
     if not _is_vtt_file(rel_vtt):
         raise HTTPException(status_code=400, detail="invalid_vtt_name")
 
-    storage_client: StorageClient = request.app.state.storage
-    abs_root = storage_client.to_abs("")  # absolute root
-    vtt_abs_path = _safe_join_storage_abs(abs_root, storage_rel, rel_vtt)
-    if not os.path.isfile(vtt_abs_path):
-        raise HTTPException(status_code=404, detail="vtt_not_found")
-
     if content is None:
         raise HTTPException(status_code=400, detail="empty_content")
 
-    try:
-        with open(vtt_abs_path, "w", encoding="utf-8") as f:
-            f.write(content)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"write_failed: {e}")
+    storage_client: StorageClient = request.app.state.storage
+    rel_path = _safe_join_rel(storage_rel, rel_vtt)
+
+    # Write via StorageClient (fix for local/remote)
+    await _storage_write_text(storage_client, rel_path, content, encoding="utf-8")
 
     suffix = f"&t={int(t)}" if t is not None else ""
     return RedirectResponse(
@@ -206,16 +269,9 @@ async def webvtt_download(request: Request, video_id: str, rel_vtt: str):
         raise HTTPException(status_code=400, detail="invalid_vtt_name")
 
     storage_client: StorageClient = request.app.state.storage
-    abs_root = storage_client.to_abs("")  # absolute root
-    vtt_abs_path = _safe_join_storage_abs(abs_root, storage_rel, rel_vtt)
-    if not os.path.isfile(vtt_abs_path):
-        raise HTTPException(status_code=404, detail="vtt_not_found")
+    rel_path = _safe_join_rel(storage_rel, rel_vtt)
 
-    try:
-        with open(vtt_abs_path, "rb") as f:
-            data = f.read()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"read_failed: {e}")
+    data = await _storage_read_bytes(storage_client, rel_path)
 
     headers = {
         "Content-Type": "text/vtt; charset=utf-8",
