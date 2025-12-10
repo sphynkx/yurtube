@@ -1,7 +1,7 @@
-// WebVTT sync for the editor with "Follow player time" toggle.
-// - Auto-scrolls to active cue and highlights it when follow=true.
-// - User can scroll freely when follow=false (editor becomes leading).
-// - Click on a cue time line jumps the player to its start.
+// WebVTT editor sync with "Follow player time" toggle.
+// Rules:
+// - When Follow is ON: editor auto-scrolls and highlights active cue; clicking a cue seeks the player.
+// - When Follow is OFF: editor does NOT follow player; player time changes do NOT move editor; clicking in editor does NOT control player.
 
 (function () {
   function ready(fn) {
@@ -10,12 +10,17 @@
   }
 
   ready(function () {
-    var ta = document.getElementById("vtt-textarea");
-    var wrap = document.getElementById("vtt-editor-wrap");
-    var hi = document.getElementById("vtt-highlight");
-    var playerWrap = document.getElementById("editor-player-wrap");
-    var followChk = document.getElementById("vtt-follow-chk");
+    function qs(id){ return document.getElementById(id); }
+
+    var ta = qs("vtt-textarea");
+    var wrap = qs("vtt-editor-wrap");
+    var hi = qs("vtt-highlight");
+    var playerWrap = qs("editor-player-wrap");
+    var followChk = qs("vtt-follow-chk");
+
     if (!ta || !wrap || !hi || !playerWrap || !followChk) return;
+
+    var followMode = !!followChk.checked;
 
     // line height detection
     var lh = parseFloat(getComputedStyle(ta).lineHeight || "0");
@@ -71,13 +76,8 @@
       return best;
     }
 
-    function firstVisibleLine() {
-      return Math.floor((ta.scrollTop || 0) / lh);
-    }
-
-    function visibleLineCount() {
-      return Math.max(1, Math.floor(ta.clientHeight / lh));
-    }
+    function firstVisibleLine() { return Math.floor((ta.scrollTop || 0) / lh); }
+    function visibleLineCount() { return Math.max(1, Math.floor(ta.clientHeight / lh)); }
 
     function caretPosForLine(text, lineIdx) {
       var pos = 0, count = 0;
@@ -113,33 +113,34 @@
     var parsed = findCueRanges(ta.value);
     var lastIdx = -1;
 
-    // Follow toggle: checked by default (controlled in template)
-    function followEnabled() {
-      return !!followChk.checked;
-    }
-
-    // Detect native <video> if present
+    // Time sources
     var nativeVideo = playerWrap.querySelector("video");
+    var bridgeLastTime = 0;
+    var BRIDGE_TAG = "yrp-time";
 
     function getCurrentTime() {
       if (nativeVideo && !isNaN(nativeVideo.currentTime)) return nativeVideo.currentTime || 0;
       try {
         if (window.player && typeof window.player.currentTime === "function") {
-          return window.player.currentTime() || 0;
+          var ct = window.player.currentTime();
+          if (typeof ct === "number") return ct || 0;
         }
       } catch (e) {}
-      return 0;
+      return bridgeLastTime || 0;
     }
 
-    function syncEditorToPlayer(force) {
+    function syncEditorToPlayer(forceScroll) {
+      // If follow is OFF and we didn't explicitly request to force scroll (user action), do nothing at all.
+      if (!followMode && !forceScroll) return;
+
       var t = getCurrentTime();
       var idx = nearestCueIndex(parsed.ranges, t);
       if (idx === -1) return;
 
       var r = parsed.ranges[idx];
 
-      // Only auto-scroll when follow=true or force requested
-      if (force || followEnabled()) {
+      // Only scroll when followMode is ON or explicitly forced (user clicked)
+      if (forceScroll || followMode) {
         var first = firstVisibleLine();
         var last = first + visibleLineCount() - 1;
         if (r.lineStartIdx < first || r.lineStartIdx > last) {
@@ -150,30 +151,57 @@
       lastIdx = idx;
     }
 
-    // Attach native events
+    // Checkbox control — update internal flag
+    followChk.addEventListener("change", function () {
+      followMode = !!followChk.checked;
+      // When turning OFF, leave current highlight but stop any automatic sync
+      if (!followMode) return;
+      // When turning ON, resync immediately
+      syncEditorToPlayer(true);
+    });
+
+    // Native events — never force scroll; they will be ignored when followMode=false
     if (nativeVideo) {
       nativeVideo.addEventListener("timeupdate", function () { syncEditorToPlayer(false); });
-      nativeVideo.addEventListener("seeked", function () { syncEditorToPlayer(true); });
-      nativeVideo.addEventListener("loadeddata", function () { syncEditorToPlayer(true); });
-      nativeVideo.addEventListener("play", function () { syncEditorToPlayer(true); });
-      nativeVideo.addEventListener("pause", function () { syncEditorToPlayer(true); });
+      nativeVideo.addEventListener("seeked", function () { syncEditorToPlayer(false); });
+      nativeVideo.addEventListener("loadeddata", function () { syncEditorToPlayer(false); });
+      nativeVideo.addEventListener("play", function () { syncEditorToPlayer(false); });
+      nativeVideo.addEventListener("pause", function () { syncEditorToPlayer(false); });
     }
 
     // Custom player events
     try {
       if (window.player && typeof window.player.on === "function") {
         window.player.on("timeupdate", function () { syncEditorToPlayer(false); });
-        window.player.on("seeked", function () { syncEditorToPlayer(true); });
-        window.player.on("loadeddata", function () { syncEditorToPlayer(true); });
-        window.player.on("play", function () { syncEditorToPlayer(true); });
-        window.player.on("pause", function () { syncEditorToPlayer(true); });
+        window.player.on("seeked", function () { syncEditorToPlayer(false); });
+        window.player.on("loadeddata", function () { syncEditorToPlayer(false); });
+        window.player.on("play", function () { syncEditorToPlayer(false); });
+        window.player.on("pause", function () { syncEditorToPlayer(false); });
       }
     } catch (e) {}
 
-    // Polling fallback
-    var pollTimer = setInterval(function () { syncEditorToPlayer(false); }, 150);
+    // PostMessage bridge
+    window.addEventListener("message", function (ev) {
+      try {
+        var data = ev && ev.data;
+        if (!data) return;
+        if (typeof data === "string") {
+          try { data = JSON.parse(data); } catch (_) {}
+        }
+        if (data && (data.type === BRIDGE_TAG || data.event === BRIDGE_TAG)) {
+          var ct = data.currentTime;
+          if (typeof ct === "number") {
+            bridgeLastTime = ct;
+            syncEditorToPlayer(false); // ignored when followMode=false
+          }
+        }
+      } catch (e) {}
+    });
 
-    // User scroll: do not fight; highlight still updates on next sync
+    // Polling fallback — respect followMode; ignored when followMode=false
+    var pollTimer = setInterval(function () { syncEditorToPlayer(false); }, 200);
+
+    // User scroll: keep highlight consistent
     ta.addEventListener("scroll", function () {
       if (lastIdx >= 0 && parsed.ranges[lastIdx]) {
         var r = parsed.ranges[lastIdx];
@@ -193,10 +221,11 @@
     ta.addEventListener("input", function () {
       parsed = findCueRanges(ta.value);
       lastIdx = -1;
-      syncEditorToPlayer(true);
+      // Do not force scroll on typing; if followMode=true, highlight will update in next tick
+      syncEditorToPlayer(false);
     });
 
-    // Click to jump player when clicking a time range line (editor leads)
+    // Click in editor — only control player when followMode=true
     ta.addEventListener("click", function () {
       var text = ta.value;
       var pos = ta.selectionStart || 0;
@@ -213,25 +242,35 @@
         var startStr = seg[0].trim().split(" ")[0];
         var start = parseTimeToSeconds(startStr);
 
-        if (nativeVideo) {
-          try { nativeVideo.currentTime = start; nativeVideo.pause(); } catch (e) {}
-        }
-        try {
-          if (window.player && typeof window.player.currentTime === "function") {
-            window.player.currentTime(start);
+        if (followMode) {
+          if (nativeVideo) {
+            try { nativeVideo.currentTime = start; nativeVideo.pause(); } catch (e) {}
           }
-        } catch (e) {}
+          try {
+            if (window.player && typeof window.player.currentTime === "function") {
+              window.player.currentTime(start);
+            }
+          } catch (e) {}
+        }
 
-        // Keep viewport around the clicked cue regardless of follow toggle
+        // Keep viewport around the clicked cue; force scroll only if followMode=true
         var caretPos = caretPosForLine(text, lineIdx);
         try { ta.setSelectionRange(caretPos, caretPos); } catch (e) {}
-        scrollToLine(lineIdx);
-        syncEditorToPlayer(true);
+        if (followMode) {
+          scrollToLine(lineIdx);
+          syncEditorToPlayer(true);
+        } else {
+          // Just highlight clicked cue without moving player
+          var r = parsed.ranges[lineIdx] || parsed.ranges[nearestCueIndex(parsed.ranges, start)];
+          if (r) updateHighlight(r.lineStartIdx, r.lineEndIdx);
+        }
       }
     });
 
-    // Initial sync
-    setTimeout(function () { syncEditorToPlayer(true); }, 250);
+    // Initial sync — if followMode=true, sync; else do nothing
+    setTimeout(function () {
+      if (followMode) syncEditorToPlayer(true);
+    }, 250);
 
     // Cleanup
     window.addEventListener("beforeunload", function () {
