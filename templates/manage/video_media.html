@@ -18,19 +18,15 @@
         {% if assets.thumb_url %}
         <li>Thumbnail: <img src="{{ assets.thumb_url }}" alt="thumb" style="height:60px; vertical-align:middle;"></li>
         {% endif %}
-        {% if assets.thumbs_vtt %}
-        <li>Thumbs VTT: <a href="{{ assets.thumbs_vtt }}" target="_blank"><code>{{ assets.thumbs_vtt }}</code></a></li>
+
+        {% if assets.thumbs_vtt_url %}
+        <li>Thumbs VTT: <a href="{{ assets.thumbs_vtt_url }}" target="_blank"><code>{{ assets.thumbs_vtt_url }}</code></a></li>
         {% endif %}
-        {% if assets.captions_vtt %}
-        {% set rel_vtt = assets.captions_vtt %}
-        {% if assets.storage_path %}
-          {% set prefix = '/storage/' ~ assets.storage_path ~ '/' %}
-          {% if rel_vtt.startswith(prefix) %}
-            {% set rel_vtt = rel_vtt[prefix|length:] %}
-          {% endif %}
+
+        {% if assets.captions_vtt_url %}
+        <li>Captions VTT (primary): <code>{{ assets.captions_vtt_url }}</code></li>
         {% endif %}
-        <li>Captions VTT (primary): <code>{{ assets.captions_vtt }}</code></li>
-        {% endif %}
+
         {% if assets.sprites and assets.sprites|length > 0 %}
         <li>Sprites:
           <div class="sprite-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px;">
@@ -46,39 +42,40 @@
         {% endif %}
       </ul>
 
-	{% if assets.thumbs_vtt %}
-	<form id="ytms-retry-form"
-		  action="/internal/ytsprites/thumbnails/retry"
-		  method="post"
-		  data-video-id="{{ video_id }}"
-		  style="margin-bottom:4px;">
-	  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-	  <input type="hidden" name="video_id" value="{{ video_id }}">
-	  <button id="ytms-retry" type="submit">Regenerate thumbnails</button>
-	  <span id="ytms-retry-status" style="margin-left:12px; font-size:13px;"></span>
-	</form>
-	{% else %}
-	<form id="ytsprites-start-form"
-		  action="/internal/ytsprites/thumbnails/retry"
-		  method="post"
-		  data-video-id="{{ video_id }}"
-		  style="margin-bottom:4px;">
-	  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-	  <input type="hidden" name="video_id" value="{{ video_id }}">
-	  <button id="ytsprites-start" type="submit">Generate sprites & subtitles</button>
-	  <span id="ytsprites-start-status" style="margin-left:12px; font-size:13px;"></span>
-	</form>
-	{% endif %}
+      {% if assets.thumbs_vtt_url %}
+      <form id="ytms-retry-form"
+            action="/internal/ytsprites/thumbnails/retry"
+            method="post"
+            data-video-id="{{ video_id }}"
+            style="margin-bottom:4px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="video_id" value="{{ video_id }}">
+        <button id="ytms-retry" type="submit">Regenerate thumbnails</button>
+        <span id="ytms-retry-status" style="margin-left:12px; font-size:13px;"></span>
+      </form>
+      {% else %}
+      <form id="ytsprites-start-form"
+            action="/internal/ytsprites/thumbnails/retry"
+            method="post"
+            data-video-id="{{ video_id }}"
+            style="margin-bottom:4px;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="video_id" value="{{ video_id }}">
+        <button id="ytsprites-start" type="submit">Generate sprites & subtitles</button>
+        <span id="ytsprites-start-status" style="margin-left:12px; font-size:13px;"></span>
+      </form>
+      {% endif %}
 
       <div id="ytms-result" style="margin-top:16px; font-size:13px;"></div>
     </section>
 
-    {% if assets.thumbs_vtt and assets.sprites and assets.sprites|length > 0 %}
+    {# Preview shows when VTT exists; sprite images are resolved from VTT #}
+    {% if assets.thumbs_vtt_url %}
     <section style="margin-top:24px;">
       <h2>Preview test</h2>
       <p>Hover the area below to see sprite preview extracted from VTT.</p>
       <div id="preview-area"
-           data-vtt="{{ assets.thumbs_vtt }}"
+           data-vtt="{{ assets.thumbs_vtt_url }}"
            style="width:600px;height:80px;border:1px dashed #999;position:relative;background:#fafafa;">
         <div id="preview-pop"
              style="display:none;position:absolute;top:-110px;left:0;width:160px;height:90px;border:1px solid #333;background:#000;color:#fff;font-size:11px;align-items:center;justify-content:center;overflow:hidden;">
@@ -87,8 +84,8 @@
     </section>
     {% endif %}
 
-	<section style="margin-top:24px;">
-	  <h2>Captions</h2>
+    <section style="margin-top:24px;">
+      <h2>Captions</h2>
 
       <div class="alert" style="font-size:13px; white-space:pre-line; margin-bottom:10px;">
 Set lang code in ISO format (2 symbols), or
@@ -97,66 +94,39 @@ mixed - if you sure that video with voice on several langs.
 NOTE: Captions generation may take a long time.
       </div>
 
-	  {% if assets.captions_vtt %}
-		<p>Primary captions track detected.</p>
-		<form id="form-retry-captions" action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;">
-		  <input type="hidden" name="video_id" value="{{ video_id }}">
-		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="{{ assets.captions_lang or 'auto' }}" style="width:90px;"></label>
-		  <button id="btn-generate-captions" type="submit">Regenerate captions</button>
+      {% if assets.captions_vtt_url %}
+        <p>Primary captions track detected.</p>
+        <form id="form-retry-captions" action="/internal/ytcms/captions/retry" method="post" style="margin-top:8px;">
+          <input type="hidden" name="video_id" value="{{ video_id }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="{{ assets.captions_lang or 'auto' }}" style="width:90px;"></label>
+          <button id="btn-generate-captions" type="submit">Regenerate captions</button>
           <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
-		</form>
+        </form>
         <form action="/internal/ytcms/captions/delete" method="post" style="margin-top:6px;">
           <input type="hidden" name="video_id" value="{{ video_id }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit">Delete captions</button>
         </form>
-	  {% else %}
-		<p>No primary captions track (generate first).</p>
-		<form id="form-start-captions" action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">
-		  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-		  <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>
-		  <button id="btn-generate-captions" type="submit">Generate captions</button>
+      {% else %}
+        <p>No primary captions track (generate first).</p>
+        <form id="form-start-captions" action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>
+          <button id="btn-generate-captions" type="submit">Generate captions</button>
           <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
-		</form>
+        </form>
         <form action="/internal/ytcms/captions/delete" method="post" style="margin-top:6px;">
           <input type="hidden" name="video_id" value="{{ video_id }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit">Delete captions</button>
         </form>
-	  {% endif %}
-	</section>
+      {% endif %}
+    </section>
   </main>
 </div>
 
 <script src="/static/js/ytsprites.js"></script>
 <script src="/static/js/sprite_preview.js"></script>
 <script src="/static/js/captions_status.js"></script>
-<script>
-(function(){
-  var el = document.getElementById('captions-status');
-  if (el && window.CaptionsStatus) {
-    // Set "processing (0%)" just button pressed
-    var formStart = document.getElementById('form-start-captions');
-    var formRetry = document.getElementById('form-retry-captions');
-    function setProcessingInstant(){
-      try {
-        window.CaptionsStatus.setImmediateProcessing(el);
-      } catch (_) {}
-    }
-    if (formStart) {
-      formStart.addEventListener('submit', setProcessingInstant);
-    }
-    if (formRetry) {
-      formRetry.addEventListener('submit', setProcessingInstant);
-    }
-
-    window.CaptionsStatus.init({
-      el: el,
-      videoId: el.getAttribute('data-video-id'),
-      intervalMs: 6000
-    });
-  }
-})();
-</script>
 {% endblock %}

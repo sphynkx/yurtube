@@ -158,7 +158,9 @@ async def index(
 
     user: Optional[Dict[str, str]] = get_current_user(request)
     storage_client: StorageClient = request.app.state.storage  # mark: uses StorageClient for augment
-    videos = [_augment(dict(r), storage_client) for r in rows]
+    #videos = [_augment(dict(r), storage_client) for r in rows]
+    videos = await asyncio.gather(*[_augment(dict(r), storage_client) for r in rows])
+
     return templates.TemplateResponse(
         "index.html",
         {

@@ -1,4 +1,5 @@
 import os
+import inspect
 import time
 import shutil
 import subprocess
@@ -254,6 +255,7 @@ async def upload_page(request: Request) -> Any:
         headers={"Cache-Control": "no-store"},
     )
 
+
 @router.post("/upload", response_class=HTMLResponse)
 async def upload_video(
     request: Request,
@@ -264,10 +266,14 @@ async def upload_video(
     category_id: Optional[str] = Form(None),
     is_age_restricted: bool = Form(False),
     is_made_for_kids: bool = Form(False),
-    generate_captions: Optional[int] = Form(0),
+    generate_captions_flag: Optional[int] = Form(0),  # rename to avoid shadowing the function generate_captions(...)
     captions_lang: str = Form("auto"),
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
+    import inspect
+    import tempfile
+    import shutil
+
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
@@ -317,24 +323,63 @@ async def upload_video(
         # STORAGE: build relative dir and write via StorageClient
         storage_client: StorageClient = request.app.state.storage  # mark: uses StorageClient
         storage_rel = build_video_storage_rel(video_id)
-        storage_client.mkdirs(storage_rel, exist_ok=True)
+
+        # mkdirs: support both async (remote) and sync (local)
+        mkdirs_res = storage_client.mkdirs(storage_rel, exist_ok=True)
+        if inspect.isawaitable(mkdirs_res):
+            await mkdirs_res
 
         original_name = "original.webm"
         original_rel_path = storage_client.join(storage_rel, original_name)
 
-        # stream write to storage
-        with storage_client.open_writer(original_rel_path, overwrite=True) as out:
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                out.write(chunk)
+        # stream write to storage: support async (remote) and sync (local) writer
+        writer_ctx = storage_client.open_writer(original_rel_path, overwrite=True)
+        if inspect.isawaitable(writer_ctx):
+            writer_ctx = await writer_ctx
+
+        if hasattr(writer_ctx, "__aenter__"):
+            # Async writer
+            async with writer_ctx as out:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    wr = out.write(chunk)
+                    if inspect.isawaitable(wr):
+                        await wr
+        else:
+            # Sync writer
+            with writer_ctx as out:
+                while True:
+                    chunk = await file.read(1024 * 1024)  # UploadFile.read — async
+                    if not chunk:
+                        break
+                    out.write(chunk)
 
         # meta.json
         meta_rel_path = storage_client.join(storage_rel, "meta.json")
-        if not storage_client.exists(meta_rel_path):
-            with storage_client.open_writer(meta_rel_path, overwrite=True) as f:
-                f.write(b'{"processing":"uploaded"}')
+
+        # exists: support async and sync
+        exists_res = storage_client.exists(meta_rel_path)
+        if inspect.isawaitable(exists_res):
+            meta_exists = bool(await exists_res)
+        else:
+            meta_exists = bool(exists_res)
+
+        if not meta_exists:
+            writer_ctx2 = storage_client.open_writer(meta_rel_path, overwrite=True)
+            if inspect.isawaitable(writer_ctx2):
+                writer_ctx2 = await writer_ctx2
+
+            payload = b'{"processing":"uploaded"}'
+            if hasattr(writer_ctx2, "__aenter__"):
+                async with writer_ctx2 as f:
+                    wr = f.write(payload)
+                    if inspect.isawaitable(wr):
+                        await wr
+            else:
+                with writer_ctx2 as f:
+                    f.write(payload)
 
         # DB record uses relative storage path!!
         await create_video(
@@ -350,43 +395,160 @@ async def upload_video(
             is_made_for_kids=is_made_for_kids,
         )
 
-        original_abs_path = storage_client.to_abs(original_rel_path)  # mark: ABS required for ffmpeg
+        # Sure all ffmpeg operations are performed on the local path:
+        # - for local: to_abs(...) points to the local root
+        # - for remote: download the original to tmp, generate thumbnails locally, then load them back into storage
+        storage_abs_root = storage_client.to_abs("")
+        original_abs_path_storage = storage_client.to_abs(original_rel_path)
 
+        # Determine the mode (by the presence of a local file by storage_abs_root)
+        is_local_mode = os.path.exists(original_abs_path_storage)
+
+        # Prepare a local absolute path to the source for ffmpeg
+        tmp_dir = None
+        original_abs_path = original_abs_path_storage
+
+        if not is_local_mode:
+            # remote: download orig to tmp
+            tmp_dir = tempfile.mkdtemp(prefix="yt_up_")
+            original_abs_path = os.path.join(tmp_dir, original_name)
+
+            # read stream from storage and write to tmp
+            reader_ctx = storage_client.open_reader(original_rel_path)
+            if inspect.isawaitable(reader_ctx):
+                reader_ctx = await reader_ctx
+
+            if hasattr(reader_ctx, "__aiter__") or hasattr(reader_ctx, "__anext__"):
+                # Async iterator
+                async for chunk in reader_ctx:
+                    if chunk:
+                        with open(original_abs_path, "ab") as lf:
+                            lf.write(chunk)
+            else:
+                # Sync iterator
+                for chunk in reader_ctx:
+                    if chunk:
+                        with open(original_abs_path, "ab") as lf:
+                            lf.write(chunk)
+
+        # Next ffmpeg operations are performed according to original_abs_path (local)
         duration = await async_probe_duration_seconds(original_abs_path)
         offsets = pick_thumbnail_offsets(duration)
 
-        thumbs_rel_dir = storage_client.join(storage_rel, "thumbs")
-        thumbs_abs_dir = storage_client.to_abs(thumbs_rel_dir)  # mark: ABS required for ffmpeg output
-        # Ensure directory exists for ffmpeg outputs
+        # Local dir for preview generation (use tmp for remote, storage_abs_dir for local)
+        if is_local_mode:
+            thumbs_rel_dir = storage_client.join(storage_rel, "thumbs")
+            thumbs_abs_dir = storage_client.to_abs(thumbs_rel_dir)  # ABS required for ffmpeg output
+        else:
+            thumbs_rel_dir = storage_client.join(storage_rel, "thumbs")
+            thumbs_abs_dir = os.path.join(tmp_dir or tempfile.gettempdir(), "thumbs")
         os.makedirs(thumbs_abs_dir, exist_ok=True)
 
-        candidates_abs = await async_generate_thumbnails(original_abs_path, thumbs_abs_dir, offsets)
+        # Generating previews locally (ABS paths for ffmpeg)
+        candidates_abs: List[str] = []
+        try:
+            candidates_abs = await async_generate_thumbnails(original_abs_path, thumbs_abs_dir, offsets)
+        except Exception as e:
+            print(f"[UPLOAD] thumbnails generation failed video_id={video_id}: {e}")
+            candidates_abs = []
 
-        selected_abs: Optional[str] = candidates_abs[0] if candidates_abs else None
-        storage_abs_root = storage_client.to_abs("")
-        selected_rel: Optional[str] = (
-            os.path.relpath(selected_abs, storage_abs_root) if selected_abs else None
-        )
-        if selected_rel:
-            await upsert_video_asset(conn, video_id, "thumbnail_default", selected_rel)
+        # Prepare a list of candidates (rel, url) - distinguishing between local and remote
+        candidates: List[Dict[str, str]] = []
+        selected_rel: Optional[str] = None
 
-        anim_abs = os.path.join(thumbs_abs_dir, "thumb_anim.webp")
+        if is_local_mode:
+            # local: previes are in storage_abs_dir already
+            selected_abs: Optional[str] = candidates_abs[0] if candidates_abs else None
+            selected_rel = (os.path.relpath(selected_abs, storage_abs_root) if selected_abs else None)
+            if selected_rel:
+                await upsert_video_asset(conn, video_id, "thumbnail_default", selected_rel)
+            for p_abs in candidates_abs:
+                rel = os.path.relpath(p_abs, storage_abs_root)
+                candidates.append({"rel": rel, "url": build_storage_url(rel), "sel": "1" if selected_rel == rel else "0"})
+        else:
+            # remote: upload the preview back to storage and collect the rel/URL
+            # Sure tha dir exists
+            mkdirs_res2 = storage_client.mkdirs(thumbs_rel_dir, exist_ok=True)
+            if inspect.isawaitable(mkdirs_res2):
+                await mkdirs_res2
+
+            uploaded_rels: List[str] = []
+            for p_abs in candidates_abs:
+                fname = os.path.basename(p_abs)
+                remote_rel = storage_client.join(thumbs_rel_dir, fname)
+                writer_ctx3 = storage_client.open_writer(remote_rel, overwrite=True)
+                if inspect.isawaitable(writer_ctx3):
+                    writer_ctx3 = await writer_ctx3
+                if hasattr(writer_ctx3, "__aenter__"):
+                    async with writer_ctx3 as f:
+                        with open(p_abs, "rb") as lf:
+                            while True:
+                                chunk = lf.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                wr = f.write(chunk)
+                                if inspect.isawaitable(wr):
+                                    await wr
+                else:
+                    with writer_ctx3 as f:
+                        with open(p_abs, "rb") as lf:
+                            while True:
+                                chunk = lf.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                uploaded_rels.append(remote_rel)
+
+            selected_rel = uploaded_rels[0] if uploaded_rels else None
+            if selected_rel:
+                await upsert_video_asset(conn, video_id, "thumbnail_default", selected_rel)
+            for remote_rel in uploaded_rels:
+                candidates.append({"rel": remote_rel, "url": build_storage_url(remote_rel), "sel": "1" if selected_rel == remote_rel else "0"})
+
+        # Animated preview: generate locally and (for remote) upload to storage
+        anim_abs_local = os.path.join(thumbs_abs_dir, "thumb_anim.webp")
         start_sec = offsets[0] if offsets else 1
         ok_anim = await async_generate_animated_preview(
-            original_abs_path, anim_abs, start_sec=start_sec, duration_sec=3, fps=12
+            original_abs_path, anim_abs_local, start_sec=start_sec, duration_sec=3, fps=12
         )
-        if ok_anim and os.path.exists(anim_abs):
-            anim_rel = os.path.relpath(anim_abs, storage_abs_root)
-            await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel)
+
+        if ok_anim and os.path.exists(anim_abs_local):
+            if is_local_mode:
+                anim_rel = os.path.relpath(anim_abs_local, storage_abs_root)
+                await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel)
+            else:
+                anim_rel_remote = storage_client.join(thumbs_rel_dir, "thumb_anim.webp")
+                writer_ctx_anim = storage_client.open_writer(anim_rel_remote, overwrite=True)
+                if inspect.isawaitable(writer_ctx_anim):
+                    writer_ctx_anim = await writer_ctx_anim
+                if hasattr(writer_ctx_anim, "__aenter__"):
+                    async with writer_ctx_anim as f:
+                        with open(anim_abs_local, "rb") as lf:
+                            while True:
+                                chunk = lf.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                wr = f.write(chunk)
+                                if inspect.isawaitable(wr):
+                                    await wr
+                else:
+                    with writer_ctx_anim as f:
+                        with open(anim_abs_local, "rb") as lf:
+                            while True:
+                                chunk = lf.read(1024 * 1024)
+                                if not chunk:
+                                    break
+                                f.write(chunk)
+                await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel_remote)
 
         await set_video_ready(conn, video_id, duration)
 
-        # --- Optional captions generation (local mock) ---
-        want_caps = bool(generate_captions)
+        # --- Optional captions generation ---
+        want_caps = bool(generate_captions_flag)
         lang_req = (captions_lang or "auto").strip().lower()
         if want_caps:
             try:
-                # Pass absolute path for external tool compatibility
+                # generation by local path to the original
                 rel_vtt, meta = await generate_captions(
                     video_id=video_id,
                     storage_rel=storage_rel,
@@ -406,12 +568,12 @@ async def upload_video(
             if auto_enabled and (isinstance(duration, (int, float)) and duration >= min_dur):
                 storage_rel_db = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
                 if storage_rel_db:
-                    original_abs = storage_client.to_abs(storage_client.join(storage_rel_db, "original.webm"))
+                    original_abs_for_job = storage_client.to_abs(storage_client.join(storage_rel_db, "original.webm"))
                     out_base_abs = storage_client.to_abs(storage_rel_db)
-                    if os.path.exists(original_abs):
+                    if os.path.exists(original_abs_for_job):
                         job = await create_thumbnails_job(
                             video_id=video_id,
-                            src_path=original_abs,
+                            src_path=original_abs_for_job,
                             out_base_path=out_base_abs,
                             extra=None,
                         )
@@ -425,12 +587,13 @@ async def upload_video(
         except Exception as e:
             print(f"[AUTOSPRITES] failed to enqueue video_id={video_id}: {e}")
 
-        candidates: List[Dict[str, str]] = []
-        for p_abs in candidates_abs:
-            rel = os.path.relpath(p_abs, storage_abs_root)
-            candidates.append(
-                {"rel": rel, "url": build_storage_url(rel), "sel": "1" if selected_rel == rel else "0"}
-            )
+        # cleanup tmp dir if used
+        if not is_local_mode and tmp_dir and os.path.isdir(tmp_dir):
+            try:
+                shutil.rmtree(tmp_dir)
+            except Exception:
+                pass
+
     finally:
         await release_conn(conn)
 

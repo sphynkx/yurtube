@@ -1,18 +1,30 @@
 (function(){
   const area = document.getElementById("preview-area");
-  if(!area) return;
+  if(!area){ return; }
 
   const vttUrl = area.dataset.vtt;
-  if(!vttUrl) return;
-
   const pop = document.getElementById("preview-pop");
-  if(!pop) return;
+  const dbg = document.getElementById("preview-debug");
+
+  function log(msg){
+    if (dbg) dbg.textContent = String(msg || "");
+    try { console.log("[sprite_preview]", msg); } catch(_) {}
+  }
+
+  if(!vttUrl){
+    log("No VTT URL in data-vtt");
+    return;
+  }
+  if(!pop){
+    log("No preview pop element");
+    return;
+  }
 
   let cues = [];
   let durationApprox = 0;
 
   function parseTimestamp(ts){
-    const m = ts.match(/^(\d{2}):(\d{2}):(\d{2}\.\d{3})$/);
+    const m = String(ts||"").trim().match(/^(\d{2}):(\d{2}):(\d{2}\.\d{3})$/);
     if(!m) return 0;
     const h = parseInt(m[1],10);
     const mm = parseInt(m[2],10);
@@ -20,32 +32,50 @@
     return h*3600 + mm*60 + ss;
   }
 
+  function normalizeSpriteRel(rel){
+    let s = String(rel||"").trim();
+    s = s.replace(/^\//,""); // strip leading slash
+    if(!s) return s;
+    if(!s.startsWith("sprites/")){
+      s = "sprites/" + s;
+    }
+    return s;
+  }
+
   function buildAbsolute(rel){
-    if(!rel) return "";
-    if(rel.startsWith("/") || /^https?:\/\//i.test(rel)) return rel;
+    const norm = normalizeSpriteRel(rel);
+    if(!norm) return "";
     try {
       const u = new URL(vttUrl, window.location.origin);
       const baseDir = u.pathname.replace(/\/sprites\.vtt$/, "");
-      return baseDir + "/" + rel.replace(/^\/+/,"");
+      const absPath = baseDir + "/" + norm.replace(/^\/+/,"");
+      return absPath;
     } catch(e){
-      return rel;
+      return norm;
     }
   }
 
   function loadVTT(){
+    log("Loading VTT: " + vttUrl);
     fetch(vttUrl, { credentials: "same-origin" })
-      .then(r => r.text())
+      .then(r => {
+        if(!r.ok){
+          throw new Error("HTTP " + r.status);
+        }
+        return r.text();
+      })
       .then(text => {
         const lines = text.split(/\r?\n/);
+        let found = 0;
         for(let i=0;i<lines.length;i++){
-          const line = lines[i].trim();
+          const line = String(lines[i]||"").trim();
           if(!line) continue;
           if(line.includes("-->")){
             const parts = line.split("-->").map(s=>s.trim());
             if(parts.length < 2) continue;
             const start = parseTimestamp(parts[0]);
             const end = parseTimestamp(parts[1]);
-            const ref = (lines[i+1]||"").trim();
+            const ref = String(lines[i+1]||"").trim();
             let spriteRel = "";
             let x=0,y=0,w=0,h=0;
             const hashIdx = ref.indexOf("#xywh=");
@@ -58,16 +88,24 @@
                 w = parseInt(xywh[2],10);
                 h = parseInt(xywh[3],10);
               }
+            } else {
+              spriteRel = ref; // no hash line
             }
             const absUrl = buildAbsolute(spriteRel);
             cues.push({start,end,spriteUrl: absUrl,x,y,w,h});
             if(end > durationApprox) durationApprox = end;
+            found++;
             i++;
           }
         }
-        console.log("[sprite_preview] cues:", cues.length, "durationApprox:", durationApprox);
+        log("Loaded VTT: cues=" + cues.length + " durationApprox=" + durationApprox);
+        if(found === 0){
+          log("No cues found in VTT");
+        }
       })
-      .catch(err => console.error("[sprite_preview] VTT load failed", err));
+      .catch(err => {
+        log("VTT load failed: " + (err && err.message ? err.message : err));
+      });
   }
 
   loadVTT();

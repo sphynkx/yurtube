@@ -117,7 +117,7 @@
     };
   }
 
-  var FALLBACK_SRC = "/static/img/fallback_video_notfound.webm";
+  var FALLBACK_SRC = "/static/img/fallback_video_notfound.gif";
 
   function installFallbackGuards(video, sourceEl, onDebug) {
     var applied = false, watchdog = null;
