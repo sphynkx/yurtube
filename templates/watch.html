@@ -316,11 +316,13 @@ body[data-debug="1"] .watch-layout * { outline:1px dashed rgba(0, 100, 255, .15)
         {% endif %}
 
         <!-- (1.1.1) Comments placeholder -->
-        <div id="comments-mount-wide">
-          <div class="comments-placeholder">
-            {% include "comments/block.html" %}
-          </div>
-        </div>
+		{% if allow_comments %}
+				<div id="comments-mount-wide">
+				  <div class="comments-placeholder">
+					{% include "comments/block.html" %}
+				  </div>
+				</div>
+		{% endif %}
 
         <!-- Tabs under player -->
         <section class="watch-tabs" id="watch-tabs" data-active="upnext">

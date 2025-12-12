@@ -95,6 +95,7 @@ async def fetch_watch_video_full(conn, video_id: str) -> Optional[Dict[str, Any]
           v.views_count,
           v.likes_count,
           v.allow_embed,
+          v.allow_comments,
           v.embed_params,
        v.captions_vtt, 
        v.captions_lang,

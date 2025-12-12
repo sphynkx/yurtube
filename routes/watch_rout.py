@@ -144,6 +144,7 @@ async def watch_page(request: Request, v: str) -> Any:
                 "caption_lang": caption_lang,
                 "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
                 "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
+                "allow_comments": False,
             }
             return templates.TemplateResponse("watch.html", context, headers={"Cache-Control": "no-store"})
 
@@ -196,6 +197,8 @@ async def watch_page(request: Request, v: str) -> Any:
         except Exception:
             recommended_videos = []
 
+        allow_comments = video.get("allow_comments", True)
+
         context = {
             "brand_logo_url": settings.BRAND_LOGO_URL,
             "brand_tagline": settings.BRAND_TAGLINE,
@@ -219,6 +222,7 @@ async def watch_page(request: Request, v: str) -> Any:
             "caption_lang": caption_lang,
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
             "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
+            "allow_comments": allow_comments,
         }
         return templates.TemplateResponse("watch.html", context, headers={"Cache-Control": "no-store"})
     finally:
