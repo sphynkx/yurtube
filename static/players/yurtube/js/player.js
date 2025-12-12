@@ -379,14 +379,24 @@
     var startAt = 0;
     if (typeof opts.start === "number" && opts.start > 0) startAt = Math.max(0, opts.start);
 
+    // Honor URL param `t` on watch page; take max between existing startAt and URL t
+    try {
+      var uWatch = new URL(window.location.href);
+      var tParam = uWatch.searchParams.get("t");
+      if (tParam != null) {
+        var tNum = parseInt(String(tParam).trim(), 10);
+        if (isFinite(tNum) && tNum > 0) startAt = Math.max(startAt, tNum);
+      }
+    } catch(_){}
+
     wire(root, startAt, DEBUG, {
       overlay: overlay,
       textBox: textBox,
       autoAdjust: adjustOverlayAuto
-    });
+    }, startAt);
   }
 
-  function wire(root, startAt, DEBUG, hooks) {
+  function wire(root, startAt, DEBUG, hooks, startFromUrl) {
     function d() {
       if (!DEBUG) return;
       try {
@@ -851,6 +861,19 @@
     (function resumePosition() {
       var vid = root.getAttribute("data-video-id") || "";
       if (!vid) return;
+
+      // Skip resume logic entirely when explicit start is requested via URL (`t`)
+      if (startFromUrl > 0) {
+        try {
+          var s0 = load("resume", {});
+          if (s0 && s0[vid]) {
+            delete s0[vid];
+            save("resume", s0);
+          }
+        } catch(_){}
+        return;
+      }
+
       var map = load("resume", {}), rec = map[vid], now = Date.now();
 
       function applyResume(t) {
