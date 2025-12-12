@@ -163,10 +163,28 @@ async def watch_page(request: Request, v: str) -> Any:
         avatar_url = build_storage_url(video["avatar_asset_path"]) if video.get("avatar_asset_path") else None
         video["avatar_url"] = avatar_url
 
+        # Options for embed player
+        opts = _embed_defaults_from_row(video)
+
         subtitles: List[Dict[str, Any]] = []
-        player_options: Dict[str, Any] = {"autoplay": False, "muted": False, "loop": False, "start": 0}
+        # Options for base player
+        player_options: Dict[str, Any] = {
+            "autoplay": False,
+            "muted": False,
+            "loop": False,
+            "start": 0,
+        }
+
         allow_embed = bool(video.get("allow_embed"))
-        embed_url = f"{_base_url(request)}/embed?v={video['video_id']}"
+        base = _base_url(request)
+        embed_url = (
+            f"{base}/embed?"
+            f"v={video['video_id']}"
+            f"&autoplay={opts['autoplay']}"
+            f"&muted={opts['mute']}"
+            f"&loop={opts['loop']}"
+            f"&t={opts['start']}"
+        )
         sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
         sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
 
