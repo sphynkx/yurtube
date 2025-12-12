@@ -122,6 +122,12 @@
     if (spritesVtt) root.setAttribute("data-sprites-vtt", spritesVtt);
     video.setAttribute("playsinline", "");
 
+    // Apply start/mute/loop early (DOM attributes above remain; runtime props below take effect)
+    var startOpt = 0;
+    try { startOpt = Math.max(0, parseInt((opts && opts.start) || 0, 10) || 0); } catch(_){ startOpt = 0; }
+    try { if (opts && typeof opts.muted !== "undefined") video.muted = !!opts.muted; } catch(_) {}
+    try { if (opts && typeof opts.loop  !== "undefined") video.loop  = !!opts.loop;  } catch(_) {}
+
     if (Array.isArray(subs)) {
       subs.forEach(function (t) {
         if (!t || !t.src) return;
@@ -187,10 +193,10 @@
     var centerLogo = root.querySelector(".yrp-center-logo");
     if (centerLogo) centerLogo.setAttribute("src", PLAYER_BASE + "/img/logo.png");
 
-    wireEmbed(root, wrap, video, controls, spritesVtt, DEBUG, ccBtn);
+    wireEmbed(root, wrap, video, controls, spritesVtt, DEBUG, ccBtn, startOpt, !!(opts && opts.autoplay));
   }
 
-  function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
+  function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn, startOpt, wantAutoplay) {
     function d() { if (!DEBUG) return; try { console.debug.apply(console, ["[YRP-EMBED]"].concat([].slice.call(arguments))); } catch (_) {} }
 
     var centerPlay = root.querySelector(".yrp-center-play");
@@ -585,6 +591,19 @@
     (function(){
       var vid = root.getAttribute("data-video-id") || "";
       if (!vid) return;
+      // Disable resume for embed mode; allow resume only when explicit startOpt == 0
+      var isEmbed = true; // this script is used only in embed player
+      if (isEmbed && startOpt > 0) {
+        try {
+          var m0 = localStorage.getItem("yrp:resume");
+          if (m0) {
+            var map0 = JSON.parse(m0);
+            if (map0 && typeof map0 === "object" && map0[vid]) { delete map0[vid]; localStorage.setItem("yrp:resume", JSON.stringify(map0)); }
+          }
+        } catch(_){}
+        return;
+      }
+
       function loadMap(){ try{ var s=localStorage.getItem("yrp:resume"); return s? JSON.parse(s): {}; }catch(_){ return {}; } }
       function saveMap(m){ try{ localStorage.setItem("yrp:resume", JSON.stringify(m)); }catch(_){ } }
       var map = loadMap(), rec = map[vid], now = Date.now();
@@ -592,7 +611,7 @@
         var d = isFinite(video.duration) ? video.duration : 0;
         if (d && t > 10 && t < d - 5) { try { video.currentTime = t; } catch(_){ } }
       }
-      if (rec && typeof rec.t === "number" && (now - (rec.ts || 0)) < 180*24*3600*1000) {
+      if (rec && typeof rec.t === "number" && (now - (rec.ts || 0)) < 180*24*3600*1000 && startOpt === 0) {
         var setAt = Math.max(0, rec.t|0);
         if (isFinite(video.duration) && video.duration > 0) applyResume(setAt);
         else video.addEventListener("loadedmetadata", function once(){ video.removeEventListener("loadedmetadata", once); applyResume(setAt); });
@@ -608,7 +627,7 @@
         }
         saveMap(m);
       }, 3000);
-      video.addEventListener("timeupdate", function(){ if (!video.paused && !video.seeking) savePos(); });
+      video.addEventListener("timeupdate", function(){ if (!video.paused && !video.seeking && startOpt === 0) savePos(); });
       video.addEventListener("ended", function(){ var m = loadMap(); delete m[vid]; saveMap(m); });
     })();
 
@@ -623,8 +642,19 @@
       var WANT = !!(opt && Object.prototype.hasOwnProperty.call(opt, "autoplay") && opt.autoplay);
       d("autoplay check (embed)", { WANT: WANT, opt: opt });
       if (!WANT) return;
+
+      // Apply start offset before attempting to play
+      var startSec = 0;
+      try { startSec = Math.max(0, parseInt((opt && opt.start) || 0, 10) || 0); } catch(_){ startSec = 0; }
+      function applyStartIfNeeded(){
+        if (startSec > 0) {
+          try { video.currentTime = startSec; } catch(_){}
+        }
+      }
+
       function tryPlaySequence(reason) {
         d("tryPlaySequence", { reason: reason, muted: video.muted, rs: video.readyState });
+        applyStartIfNeeded();
         var p = null;
         try { p = video.play(); } catch (e) { d("play() threw sync", e); p = null; }
         if (p && typeof p.then === "function") {
@@ -641,6 +671,7 @@
             if (video.paused) {
               video.muted = true;
               video.setAttribute("muted", "");
+              applyStartIfNeeded();
               try { video.play().catch(function(e3){ d("no-promise fallback rejected", e3); }); } catch(e3){ d("no-promise fallback threw", e3); }
             }
           }, 0);
@@ -654,6 +685,21 @@
         video.addEventListener(ev, once);
       });
       setTimeout(function(){ if (video.paused) tryPlaySequence("watchdog"); }, 1200);
+    })();
+
+    // Also apply start when metadata is ready, even without autoplay
+    (function(){
+      var host = root.closest(".player-host") || root;
+      var opt = parseJSONAttr(host, "data-options", null);
+      var startSec = 0;
+      try { startSec = Math.max(0, parseInt((opt && opt.start) || 0, 10) || 0); } catch(_){ startSec = 0; }
+      if (startSec > 0) {
+        var once = function(){
+          video.removeEventListener("loadedmetadata", once);
+          try { video.currentTime = startSec; } catch(_){}
+        };
+        video.addEventListener("loadedmetadata", once);
+      }
     })();
 
     if (centerPlay) centerPlay.addEventListener("click", function(){ playToggle(); });
