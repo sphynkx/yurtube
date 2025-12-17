@@ -28,32 +28,34 @@
   {% endfor %}
 </div>
 
-<nav class="pagination"
-     style="margin-top: 24px; margin-bottom: 36px; display:flex; gap:12px; align-items:center; justify-content:center;">
+<nav class="pagination" style="display:flex; align-items:center; gap:8px; justify-content:center; margin:24px 0;">
   {% if has_prev %}
-    <a class="btn" href="/?page={{ prev_page }}&page_size={{ page_size }}">« Previous</a>
+    <a class="btn" href="/?page={{ prev_page }}&page_size={{ page_size }}"
+       style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">« Previous</a>
   {% else %}
-    <span class="btn disabled" style="opacity:0.6; cursor:default;">« Previous</span>
+    <span class="btn disabled" style="padding:6px 12px; border:1px solid #eee; border-radius:6px; color:#aaa;">« Previous</span>
   {% endif %}
 
   <span style="display:flex; gap:8px; align-items:center;">
     {% for item in page_items %}
       {% if item.kind == 'ellipsis' %}
-        <span style="opacity:0.7;">…</span>
+        <span style="opacity:0.7; padding:6px 12px; border:1px solid #eee; border-radius:6px;">…</span>
       {% elif item.kind == 'number' %}
         {% if item.current %}
-          <span class="btn" style="font-weight:600; border-bottom:2px solid #444; cursor:default;">{{ item.num }}</span>
+          <span style="padding:6px 12px; border:1px solid #111; border-radius:6px; background:#111; color:#fff;">{{ item.num }}</span>
         {% else %}
-          <a class="btn" href="{{ item.url }}">{{ item.num }}</a>
+          <a href="{{ item.url }}"
+             style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">{{ item.num }}</a>
         {% endif %}
       {% endif %}
     {% endfor %}
   </span>
 
   {% if has_next %}
-    <a class="btn" href="/?page={{ next_page }}&page_size={{ page_size }}">Next »</a>
+    <a class="btn" href="/?page={{ next_page }}&page_size={{ page_size }}"
+       style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">Next »</a>
   {% else %}
-    <span class="btn disabled" style="opacity:0.6; cursor:default;">Next »</span>
+    <span class="btn disabled" style="padding:6px 12px; border:1px solid #eee; border-radius:6px; color:#aaa;">Next »</span>
   {% endif %}
 </nav>
 
