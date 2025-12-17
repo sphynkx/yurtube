@@ -24,6 +24,7 @@ from services.ytstorage.base_srv import StorageClient
 router = APIRouter(tags=["root"])
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
+templates.env.globals["sitename"] = settings.SITENAME
 
 
 def _avatar_small_url(avatar_path: Optional[str]) -> str:

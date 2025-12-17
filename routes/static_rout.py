@@ -7,6 +7,7 @@ from fastapi.templating import Jinja2Templates
 from config.config import settings
 
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["sitename"] = settings.SITENAME
 
 router = APIRouter()
 

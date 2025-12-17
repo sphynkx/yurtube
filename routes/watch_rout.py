@@ -26,6 +26,7 @@ templates.env.filters["dt"] = fmt_dt
 templates.env.globals["brand_logo_url"] = settings.BRAND_LOGO_URL
 templates.env.globals["favicon_url"] = settings.FAVICON_URL
 templates.env.globals["apple_touch_icon_url"] = settings.APPLE_TOUCH_ICON_URL
+templates.env.globals["sitename"] = settings.SITENAME
 
 
 def _avatar_small_url(avatar_path: Optional[str]) -> str:

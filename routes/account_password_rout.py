@@ -28,6 +28,7 @@ PASSWORD_MIN_SCORE = max(0, min(PASSWORD_MIN_SCORE, 4))  # clamp
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["sitename"] = settings.SITENAME
 
 # --- CSRF helpers ---
 

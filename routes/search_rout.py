@@ -15,6 +15,7 @@ from db.search_db import fetch_video_assets_by_ids
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
+templates.env.globals["sitename"] = settings.SITENAME
 
 
 def _page_args(page: int, per_page: int) -> Dict[str, int]:

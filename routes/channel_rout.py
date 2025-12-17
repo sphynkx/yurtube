@@ -28,6 +28,7 @@ from services.ytstorage.base_srv import StorageClient
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
+templates.env.globals["sitename"] = settings.SITENAME
 
 # --- CSRF helpers ---
 
