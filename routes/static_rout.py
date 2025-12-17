@@ -8,6 +8,7 @@ from config.config import settings
 
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["sitename"] = settings.SITENAME
+templates.env.globals["support_email"] = settings.SUPPORT_EMAIL
 
 router = APIRouter()
 

@@ -83,7 +83,8 @@ class Settings:
     FAVICON_URL: str = os.getenv("FAVICON_URL", "/static/img/YT_fav32.png")
     APPLE_TOUCH_ICON_URL: str = os.getenv("APPLE_TOUCH_ICON_URL", "/static/img/YT_fav128.png")
     BRAND_TAGLINE: str = os.getenv("BRAND_TAGLINE", "")
-    SITENAME: str = os.getenv("SITENAME", "Yurtube")
+    SITENAME: str = os.getenv("SITENAME", "Yurtube_DEV")
+    SUPPORT_EMAIL: str = os.getenv("SUPPORT_EMAIL", "support@example.com")
 
     # Right-bar recommendations (tunable; safe defaults)
     RIGHTBAR_ENABLED: bool = _getenv_bool("RIGHTBAR_ENABLED", True)

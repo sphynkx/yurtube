@@ -25,6 +25,7 @@ router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
 templates.env.globals["sitename"] = settings.SITENAME
+templates.env.globals["support_email"] = settings.SUPPORT_EMAIL
 
 
 def _avatar_small_url(avatar_path: Optional[str]) -> str:

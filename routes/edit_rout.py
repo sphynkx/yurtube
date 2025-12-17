@@ -35,6 +35,7 @@ from services.ytstorage.base_srv import StorageClient
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.globals["sitename"] = settings.SITENAME
+templates.env.globals["support_email"] = settings.SUPPORT_EMAIL
 
 
 def _bool_from_form(val: Optional[str]) -> bool:
