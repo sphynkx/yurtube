@@ -15,6 +15,9 @@ from utils.security_ut import get_current_user
 from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
 from utils.url_ut import build_storage_url
 
+# --- Pagination utilities ---
+from utils.pagination_ut import normalize_page, normalize_page_size, build_page_range
+
 # --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
 
@@ -68,65 +71,6 @@ async def _augment(vrow: Dict[str, Any], storage_client: StorageClient) -> Dict[
 
 
 
-# --- Pagination helpers ---
-## TODO: Utils are copied from root_rout.py Need to move them both from here and from there - to part. file `utils/pagination_ut.py`
-## Also imports: 
-## from typing import Tuple
-## from fastapi import Query
-## from db.videos_db import count_history_distinct_latest, list_history_distinct_latest
-def _normalize_page(page: Optional[int]) -> int:
-    try:
-        p = int(page or 1)
-    except Exception:
-        p = 1
-    return 1 if p < 1 else p
-
-
-def _normalize_page_size(ps: Optional[int]) -> int:
-    try:
-        v = int(ps or 24)
-    except Exception:
-        v = 24
-    if v < 6:
-        v = 6
-    if v > 96:
-        v = 96
-    return v
-
-
-def _build_page_range(current: int, total_pages: int, window: int = 2) -> List[Tuple[str, Optional[int]]]:
-    """
-    Returns the range of pages to display:
-    - Always show the first and last pages.
-    - Show the neighborhood around the current page: current-window .. current+window.
-    - Insert '...' (ellipsis) between non-consecutive segments.
-    Elements are returned as ("number", n) or ("ellipsis", None).
-    """
-    if total_pages <= 1:
-        return [("number", 1)]
-
-    pages: List[int] = []
-    pages.append(1)
-    start = max(2, current - window)
-    end = min(total_pages - 1, current + window)
-    for p in range(start, end + 1):
-        pages.append(p)
-    pages.append(total_pages)
-
-    # Remove dups, and sort
-    pages = sorted(set(pages))
-
-    # Build with ellipsis
-    result: List[Tuple[str, Optional[int]]] = []
-    prev = None
-    for p in pages:
-        if prev is not None and p != prev + 1:
-            result.append(("ellipsis", None))
-        result.append(("number", p))
-        prev = p
-    return result
-
-
 @router.get("/", response_class=HTMLResponse)
 async def index(
         request: Request,
@@ -134,8 +78,8 @@ async def index(
         page_size: Optional[int] = Query(default=24, ge=6, le=96),
     ) -> Any:
     # Pagination
-    page = _normalize_page(page)
-    page_size = _normalize_page_size(page_size)
+    page = normalize_page(page)
+    page_size = normalize_page_size(page_size)
     offset = (page - 1) * page_size
 
     conn = await get_conn()
@@ -150,7 +94,7 @@ async def index(
     has_prev = page > 1
     has_next = page < total_pages
     # Build pages range with ellipsises, curr page keeps at center
-    page_items_raw = _build_page_range(page, total_pages, window=2)
+    page_items_raw = build_page_range(page, total_pages, window=2)
     page_items: List[Dict[str, Any]] = []
     for kind, num in page_items_raw:
         if kind == "ellipsis":

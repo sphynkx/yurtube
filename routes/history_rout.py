@@ -1,6 +1,7 @@
 import secrets
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional
 import os
+import asyncio
 
 from fastapi import APIRouter, Form, Request, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -15,71 +16,15 @@ from utils.security_ut import get_current_user
 from utils.thumbs_ut import DEFAULT_THUMB_DATA_URI
 from utils.format_ut import fmt_dt
 
+# --- Pagination utilities ---
+from utils.pagination_ut import normalize_page, normalize_page_size, build_page_range
+
 # --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
-
-
-# --- Pagination helpers ---
-## TODO: Utils are copied from root_rout.py Need to move them both from here and from there - to part. file `utils/pagination_ut.py`
-## Also imports: 
-## from typing import Tuple
-## from fastapi import Query
-## from db.videos_db import count_history_distinct_latest, list_history_distinct_latest
-def _normalize_page(page: Optional[int]) -> int:
-    try:
-        p = int(page or 1)
-    except Exception:
-        p = 1
-    return 1 if p < 1 else p
-
-
-def _normalize_page_size(ps: Optional[int]) -> int:
-    try:
-        v = int(ps or 24)
-    except Exception:
-        v = 24
-    if v < 6:
-        v = 6
-    if v > 96:
-        v = 96
-    return v
-
-def _build_page_range(current: int, total_pages: int, window: int = 2) -> List[Tuple[str, Optional[int]]]:
-    """
-    Returns the range of pages to display:
-    - Always show the first and last pages.
-    - Show the neighborhood around the current page: current-window .. current+window.
-    - Insert '...' (ellipsis) between non-consecutive segments.
-    Elements are returned as ("number", n) or ("ellipsis", None).
-    """
-    if total_pages <= 1:
-        return [("number", 1)]
-
-    pages: List[int] = []
-    pages.append(1)
-    start = max(2, current - window)
-    end = min(total_pages - 1, current + window)
-    for p in range(start, end + 1):
-        pages.append(p)
-    pages.append(total_pages)
-
-    # Remove dups, and sort
-    pages = sorted(set(pages))
-
-    # Build with ellipsis
-    result: List[Tuple[str, Optional[int]]] = []
-    prev = None
-    for p in pages:
-        if prev is not None and p != prev + 1:
-            result.append(("ellipsis", None))
-        result.append(("number", p))
-        prev = p
-    return result
-
 
 
 # --- CSRF helpers ---
@@ -103,7 +48,6 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
     cookie_tok = _get_csrf_cookie(request)
     header_tok = (request.headers.get("X-CSRF-Token") or request.headers.get("x-csrf-token") or "").strip()
     form_tok = (form_token or "").strip() or header_tok
-    ##print("[HISTORY CSRF]", "cookie=", cookie_tok, "form=", form_tok, "hdr=", header_tok)
     if not cookie_tok or not form_tok:
         return False
     try:
@@ -112,18 +56,20 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
     except Exception:
         return False
 
+
 # --- Helpers ---
 
-def _augment(vrow: dict, storage_client: StorageClient) -> dict:
+async def _augment(vrow: dict, storage_client: StorageClient) -> dict:
     v = dict(vrow)
     tap = v.get("thumb_asset_path")
     v["thumb_url"] = build_storage_url(tap) if tap else DEFAULT_THUMB_DATA_URI
     if tap and "/" in tap:
         anim_rel = tap.rsplit("/", 1)[0] + "/thumb_anim.webp"
-        v["thumb_anim_url"] = build_storage_url(anim_rel) if storage_client.exists(anim_rel) else None
+        v["thumb_anim_url"] = build_storage_url(anim_rel) if await storage_client.exists(anim_rel) else None
     else:
         v["thumb_anim_url"] = None
     return v
+
 
 # --- GET /history ---
 
@@ -172,17 +118,16 @@ async def history_page(
             )
         return resp
 
-    page = _normalize_page(page)
-    page_size = _normalize_page_size(page_size)
+    page = normalize_page(page)
+    page_size = normalize_page_size(page_size)
     offset = (page - 1) * page_size
 
     conn = await get_conn()
     try:
-        # Use the new count function to get the total number of history entries
         total = await count_history_distinct_latest(conn, user["user_uid"])
         rows = await list_history_distinct_latest(conn, user["user_uid"], limit=page_size, offset=offset)
         storage_client: StorageClient = request.app.state.storage
-        videos: List[dict] = [_augment(dict(r), storage_client) for r in rows]
+        videos = await asyncio.gather(*[_augment(dict(r), storage_client) for r in rows])
     finally:
         await release_conn(conn)
 
@@ -192,7 +137,7 @@ async def history_page(
     has_next = page < total_pages
 
     # Build page items
-    page_items_raw = _build_page_range(page, total_pages, window=2)
+    page_items_raw = build_page_range(page, total_pages, window=2)
     page_items: List[Dict[str, Any]] = []
     for kind, num in page_items_raw:
         if kind == "ellipsis":
@@ -239,81 +184,3 @@ async def history_page(
             path="/",
         )
     return resp
-
-# --- POST clear ---
-
-@router.post("/history/clear")
-async def history_clear(
-    request: Request,
-    csrf_token: Optional[str] = Form(None),
-) -> Any:
-    if not _validate_csrf(request, csrf_token):
-        return HTMLResponse("<h1>CSRF failed</h1>", status_code=403)
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/auth/login", status_code=302)
-    conn = await get_conn()
-    try:
-        await clear_history(conn, user["user_uid"])
-    finally:
-        await release_conn(conn)
-    return RedirectResponse("/history", status_code=302)
-
-# --- POST remove item ---
-
-@router.post("/history/remove1")
-async def history_remove1(
-    request: Request,
-    video_id: str = Form(...),
-    csrf_token: Optional[str] = Form(None),
-) -> Any:
-    if not _validate_csrf(request, csrf_token):
-        return HTMLResponse("<h1>CSRF failed</h1>", status_code=403)
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/auth/login", status_code=302)
-    conn = await get_conn()
-    try:
-        await remove_history_item(conn, user["user_uid"], video_id)
-    finally:
-        await release_conn(conn)
-    ref = request.headers.get("referer") or "/history"
-    return RedirectResponse(ref, status_code=302)
-
-@router.post("/history/remove")
-async def history_remove(request: Request) -> Any:
-    user = get_current_user(request)
-    if not user:
-        return RedirectResponse("/auth/login", status_code=302)
-
-    ctype = (request.headers.get("content-type") or "").lower()
-    raw = await request.body()
-    ##print("[HISTORY RAW]", raw[:200])
-    ##print("[CSRF NAME]", settings.CSRF_COOKIE_NAME)
-    csrf_token = ""
-    video_id = None
-    if "application/x-www-form-urlencoded" in ctype:
-        from urllib.parse import parse_qs
-        parsed = parse_qs(raw.decode("utf-8", "ignore"), keep_blank_values=True)
-        csrf_token = (parsed.get("csrf_token", [""])[0] or "").strip()
-        video_id = (parsed.get("video_id", [""])[0] or "").strip() or None
-    else:
-        form = await request.form()
-        csrf_token = (form.get("csrf_token") or "").strip()
-        video_id = (form.get("video_id") or "").strip() or None
-
-    ##print("[HISTORY MANUAL]", "csrf=", csrf_token, "video_id=", video_id)
-
-    if not _validate_csrf(request, csrf_token):
-        return HTMLResponse("<h1>CSRF failed</h1>", status_code=403)
-
-    if not video_id:
-        return HTMLResponse("<h1>Missing video_id</h1>", status_code=400)
-
-    conn = await get_conn()
-    try:
-        await remove_history_item(conn, user["user_uid"], video_id)
-    finally:
-        await release_conn(conn)
-    ref = request.headers.get("referer") or "/history"
-    return RedirectResponse(ref, status_code=302)
