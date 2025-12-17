@@ -78,7 +78,7 @@ class Settings:
         "static/img/fallback_video_notfound.gif",
     )
 
-    # Brand/Sitename assets
+    # Brand/Sitename/Email assets
     BRAND_LOGO_URL: str = os.getenv("BRAND_LOGO_URL", "/static/img/YT_long.png")
     FAVICON_URL: str = os.getenv("FAVICON_URL", "/static/img/YT_fav32.png")
     APPLE_TOUCH_ICON_URL: str = os.getenv("APPLE_TOUCH_ICON_URL", "/static/img/YT_fav128.png")
@@ -116,5 +116,16 @@ class Settings:
     AUTO_CAPTIONS_MIN_DURATION = 3
     AUTO_CAPTIONS_ENABLED = False
     AUTO_CAPTIONS_LANG = "auto"
+
+    # Comments service integration
+    YTCOMMENTS_ENABLED: bool = _getenv_bool("YTCOMMENTS_ENABLED", False)
+    # transport: "local" (legacy direct DB), "grpc" (external service)
+    YTCOMMENTS_TRANSPORT: str = os.getenv("YTCOMMENTS_TRANSPORT", "local").strip() or "local"
+    # gRPC target (host:port)
+    YTCOMMENTS_ADDR: str = os.getenv("YTCOMMENTS_ADDR", "127.0.0.1:9093")
+    # optional TLS enablement for gRPC
+    YTCOMMENTS_TLS_ENABLED: bool = _getenv_bool("YTCOMMENTS_TLS_ENABLED", False)
+    # timeouts (ms)
+    YTCOMMENTS_TIMEOUT_MS: int = _getenv_int("YTCOMMENTS_TIMEOUT_MS", 3000)
 
 settings = Settings()
