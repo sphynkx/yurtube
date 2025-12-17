@@ -5,53 +5,84 @@
 <div class="manage-comments-layout">
   {% include "account/left.html" %}
   <main class="mc-main">
-<h1>History</h1>
-{% if need_login %}
-<p>Please <a href="/auth/login">log in</a> to see your history.</p>
-{% else %}
-  <form action="/history/clear" method="post" style="margin:8px 0;">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    <button type="submit">Clear all</button>
-  </form>
-  {% if videos|length == 0 %}
-  <p>No watch history yet.</p>
-  {% else %}
-  <div class="video-grid">
-    {% for v in videos %}
-    <div class="video-item" style="display:flex; flex-direction:column; gap:6px;">
-      <div class="video-card">
-        <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
-          <img class="thumb-img thumb-still" src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
-          {% if v['thumb_anim_url'] %}
-          <img class="thumb-img thumb-anim" src="{{ v['thumb_anim_url'] }}" alt="{{ v['title'] }}">
-          {% endif %}
-        </a>
-        <div class="meta">
-          <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
-          <div class="author author-line">
-            <img class="mini-avatar" src="{{ v['author_avatar_url_small'] }}" alt="avatar"
-                 onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
-            {% if v['username'] %}
-              <span><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></span>
-            {% else %}
-              <span><a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a></span>
-            {% endif %}
-          </div>
-          {% if v['last_watched_at'] %}
-          <div class="time">{{ v['last_watched_at']|dt }}</div>
-          {% endif %}
-        </div>
-      </div>
-      <form action="/history/remove" method="post" style="margin:0;">
+    <h1>History</h1>
+    {% if need_login %}
+    <p>Please <a href="/auth/login">log in</a> to see your history.</p>
+    {% else %}
+      <form action="/history/clear" method="post" style="margin:8px 0;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-        <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
-        <button type="submit">Remove</button>
+        <button type="submit">Clear all</button>
       </form>
-    </div>
-    {% endfor %}
-  </div>
-  {% endif %}
-{% endif %}
+      {% if videos|length == 0 %}
+      <p>No watch history yet.</p>
+      {% else %}
+      <div class="video-grid">
+        {% for v in videos %}
+        <div class="video-item" style="display:flex; flex-direction:column; gap:6px;">
+          <div class="video-card">
+            <a class="thumb-link" href="/watch?v={{ v['video_id'] }}">
+              <img class="thumb-img thumb-still" src="{{ v['thumb_url'] }}" alt="{{ v['title'] }}">
+              {% if v['thumb_anim_url'] %}
+              <img class="thumb-img thumb-anim" src="{{ v['thumb_anim_url'] }}" alt="{{ v['title'] }}">
+              {% endif %}
+            </a>
+            <div class="meta">
+              <div class="title"><a href="/watch?v={{ v['video_id'] }}">{{ v['title'] }}</a></div>
+              <div class="author author-line">
+                <img class="mini-avatar" src="{{ v['author_avatar_url_small'] }}" alt="avatar"
+                     onerror="this.onerror=null;this.src='/static/img/avatar_default.svg';">
+                {% if v['username'] %}
+                  <span><a href="/@{{ v['username'] }}">@{{ v['username'] }}</a></span>
+                {% else %}
+                  <span><a href="/c/{{ v['channel_id'] }}">{{ v['channel_id'] }}</a></span>
+                {% endif %}
+              </div>
+              {% if v['last_watched_at'] %}
+              <div class="time">{{ v['last_watched_at']|dt }}</div>
+              {% endif %}
+            </div>
+          </div>
+          <form action="/history/remove" method="post" style="margin:0;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <input type="hidden" name="video_id" value="{{ v['video_id'] }}">
+            <button type="submit">Remove</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+
+      <nav class="pagination" style="display:flex; align-items:center; gap:8px; justify-content:center; margin:24px 0;">
+        {% if has_prev %}
+          <a class="btn" href="/history?page={{ prev_page }}"
+             style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">« Previous</a>
+        {% else %}
+          <span class="btn disabled" style="padding:6px 12px; border:1px solid #eee; border-radius:6px; color:#aaa;">« Previous</span>
+        {% endif %}
+
+        <span style="display:flex; gap:8px; align-items:center;">
+          {% for item in page_items %}
+            {% if item.kind == 'ellipsis' %}
+              <span style="opacity:0.7; padding:6px 12px; border:1px solid #eee; border-radius:6px;">…</span>
+            {% elif item.kind == 'number' %}
+              {% if item.current %}
+                <span style="padding:6px 12px; border:1px solid #111; border-radius:6px; background:#111; color:#fff;">{{ item.num }}</span>
+              {% else %}
+                <a href="{{ item.url }}"
+                   style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">{{ item.num }}</a>
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        </span>
+
+        {% if has_next %}
+          <a class="btn" href="/history?page={{ next_page }}"
+             style="padding:6px 12px; border:1px solid #ddd; border-radius:6px; text-decoration:none; color:#111;">Next »</a>
+        {% else %}
+          <span class="btn disabled" style="padding:6px 12px; border:1px solid #eee; border-radius:6px; color:#aaa;">Next »</span>
+        {% endif %}
+      </nav>
+      {% endif %}
+    {% endif %}
   </main>
 </div>
 {% endblock %}

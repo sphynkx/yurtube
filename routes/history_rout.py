@@ -1,14 +1,14 @@
 import secrets
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Tuple
 import os
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Form, Request, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from config.config import settings
 from db import get_conn, release_conn
-from db.videos_db import list_history_distinct_latest
+from db.videos_db import count_history_distinct_latest, list_history_distinct_latest
 from db.history_db import clear_history, remove_history_item
 from utils.url_ut import build_storage_url
 from utils.security_ut import get_current_user
@@ -21,6 +21,66 @@ from services.ytstorage.base_srv import StorageClient
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
+
+
+# --- Pagination helpers ---
+## TODO: Utils are copied from root_rout.py Need to move them both from here and from there - to part. file `utils/pagination_ut.py`
+## Also imports: 
+## from typing import Tuple
+## from fastapi import Query
+## from db.videos_db import count_history_distinct_latest, list_history_distinct_latest
+def _normalize_page(page: Optional[int]) -> int:
+    try:
+        p = int(page or 1)
+    except Exception:
+        p = 1
+    return 1 if p < 1 else p
+
+
+def _normalize_page_size(ps: Optional[int]) -> int:
+    try:
+        v = int(ps or 24)
+    except Exception:
+        v = 24
+    if v < 6:
+        v = 6
+    if v > 96:
+        v = 96
+    return v
+
+def _build_page_range(current: int, total_pages: int, window: int = 2) -> List[Tuple[str, Optional[int]]]:
+    """
+    Returns the range of pages to display:
+    - Always show the first and last pages.
+    - Show the neighborhood around the current page: current-window .. current+window.
+    - Insert '...' (ellipsis) between non-consecutive segments.
+    Elements are returned as ("number", n) or ("ellipsis", None).
+    """
+    if total_pages <= 1:
+        return [("number", 1)]
+
+    pages: List[int] = []
+    pages.append(1)
+    start = max(2, current - window)
+    end = min(total_pages - 1, current + window)
+    for p in range(start, end + 1):
+        pages.append(p)
+    pages.append(total_pages)
+
+    # Remove dups, and sort
+    pages = sorted(set(pages))
+
+    # Build with ellipsis
+    result: List[Tuple[str, Optional[int]]] = []
+    prev = None
+    for p in pages:
+        if prev is not None and p != prev + 1:
+            result.append(("ellipsis", None))
+        result.append(("number", p))
+        prev = p
+    return result
+
+
 
 # --- CSRF helpers ---
 
@@ -68,10 +128,14 @@ def _augment(vrow: dict, storage_client: StorageClient) -> dict:
 # --- GET /history ---
 
 @router.get("/history", response_class=HTMLResponse)
-async def history_page(request: Request) -> Any:
+async def history_page(
+    request: Request,
+    page: Optional[int] = Query(default=1, ge=1),
+    page_size: Optional[int] = Query(default=24, ge=6, le=96),
+) -> Any:
     user = get_current_user(request)
     csrf_token = _get_csrf_cookie(request) or _gen_csrf_token()
-    ##print("[HISTORY GET] cookie=", _get_csrf_cookie(request), "ctx=", csrf_token)
+
     if not user:
         resp = templates.TemplateResponse(
             "history.html",
@@ -81,6 +145,15 @@ async def history_page(request: Request) -> Any:
                 "need_login": True,
                 "videos": [],
                 "csrf_token": csrf_token,
+                "page": 1,
+                "page_size": page_size,
+                "total": 0,
+                "total_pages": 0,
+                "has_prev": False,
+                "has_next": False,
+                "prev_page": None,
+                "next_page": None,
+                "page_items": [],
                 "brand_logo_url": settings.BRAND_LOGO_URL,
                 "brand_tagline": settings.BRAND_TAGLINE,
                 "favicon_url": settings.FAVICON_URL,
@@ -99,13 +172,38 @@ async def history_page(request: Request) -> Any:
             )
         return resp
 
+    page = _normalize_page(page)
+    page_size = _normalize_page_size(page_size)
+    offset = (page - 1) * page_size
+
     conn = await get_conn()
     try:
-        rows = await list_history_distinct_latest(conn, user["user_uid"], limit=200, offset=0)
+        # Use the new count function to get the total number of history entries
+        total = await count_history_distinct_latest(conn, user["user_uid"])
+        rows = await list_history_distinct_latest(conn, user["user_uid"], limit=page_size, offset=offset)
         storage_client: StorageClient = request.app.state.storage
         videos: List[dict] = [_augment(dict(r), storage_client) for r in rows]
     finally:
         await release_conn(conn)
+
+    # Compute pagination
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    has_prev = page > 1
+    has_next = page < total_pages
+
+    # Build page items
+    page_items_raw = _build_page_range(page, total_pages, window=2)
+    page_items: List[Dict[str, Any]] = []
+    for kind, num in page_items_raw:
+        if kind == "ellipsis":
+            page_items.append({"kind": "ellipsis"})
+        else:
+            page_items.append({
+                "kind": "number",
+                "num": num,
+                "current": (num == page),
+                "url": f"/history?page={num}&page_size={page_size}",
+            })
 
     resp = templates.TemplateResponse(
         "history.html",
@@ -115,6 +213,15 @@ async def history_page(request: Request) -> Any:
             "need_login": False,
             "videos": videos,
             "csrf_token": csrf_token,
+            "page": page,
+            "page_size": page_size,
+            "total": total,
+            "total_pages": total_pages,
+            "has_prev": has_prev,
+            "has_next": has_next,
+            "prev_page": (page - 1) if has_prev else None,
+            "next_page": (page + 1) if has_next else None,
+            "page_items": page_items,
             "brand_logo_url": settings.BRAND_LOGO_URL,
             "brand_tagline": settings.BRAND_TAGLINE,
             "favicon_url": settings.FAVICON_URL,

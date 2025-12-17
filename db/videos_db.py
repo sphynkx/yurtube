@@ -387,3 +387,55 @@ async def delete_video_by_owner(conn: Any, video_id: str, author_uid: str) -> st
         video_id,
         author_uid,
     )
+
+async def count_history_distinct_latest(conn: asyncpg.Connection, user_uid: str) -> int:
+    """
+    Counts the total number of distinct videos in user's history.
+    """
+    result = await conn.fetchval(
+        """
+        SELECT COUNT(*)
+        FROM (
+          SELECT DISTINCT video_id
+          FROM views
+          WHERE user_uid = $1
+        ) AS distinct_views
+        """,
+        user_uid,
+    )
+    return result
+
+
+async def list_history_distinct_latest(
+    conn: asyncpg.Connection,
+    user_uid: str,
+    limit: int,
+    offset: int,
+):
+    return await conn.fetch(
+        """
+        WITH last_view AS (
+          SELECT video_id, MAX(watched_at) AS last_watched_at
+          FROM views
+          WHERE user_uid = $1
+          GROUP BY video_id
+        )
+        SELECT v.*, u.username, u.channel_id,
+               a.path AS thumb_asset_path,
+               ua.path AS avatar_asset_path,
+               lv.last_watched_at
+        FROM last_view lv
+        JOIN videos v ON v.video_id = lv.video_id
+        JOIN users u ON u.user_uid = v.author_uid
+        LEFT JOIN video_assets a
+          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
+        LEFT JOIN user_assets ua
+          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
+        ORDER BY lv.last_watched_at DESC
+        LIMIT $2 OFFSET $3
+        """,
+        user_uid,
+        limit,
+        offset,
+    )
+

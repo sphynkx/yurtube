@@ -67,6 +67,13 @@ async def _augment(vrow: Dict[str, Any], storage_client: StorageClient) -> Dict[
     return v
 
 
+
+# --- Pagination helpers ---
+## TODO: Utils are copied from root_rout.py Need to move them both from here and from there - to part. file `utils/pagination_ut.py`
+## Also imports: 
+## from typing import Tuple
+## from fastapi import Query
+## from db.videos_db import count_history_distinct_latest, list_history_distinct_latest
 def _normalize_page(page: Optional[int]) -> int:
     try:
         p = int(page or 1)
