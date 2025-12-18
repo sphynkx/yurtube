@@ -1,6 +1,20 @@
 from fastapi import APIRouter, Query, Depends
 from typing import Dict, Any, Optional, List, Set
-from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
+##from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
+
+import logging
+log = logging.getLogger("comments_list")
+
+# Prefer external comments service adapter; fallback to legacy tree service if adapter fails to import
+try:
+    from services.ytcomments.ytcomments_adapter import fetch_root, build_tree_payload, fetch_texts_for_comments
+    log.info("comments_list: using ytcomments_adapter")
+    print("comments_list: using ytcomments_adapter")
+except Exception as e:
+    log.warning("comments_list: adapter import failed, using legacy: %s", e)
+    from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
+    print(f"comments_list: using legacy due to import error: {e}")
+
 from config.comments_cfg import comments_settings
 from utils.security_ut import get_current_user
 import json
@@ -14,8 +28,12 @@ async def list_comments(
     include_hidden: bool = Query(False),
     current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
 ) -> Dict[str, Any]:
+    log.info("comments_list: called video_id=%s include_hidden=%s", video_id, include_hidden)
+    print(f"comments_list: called video_id={video_id} include_hidden={include_hidden}")
     # Global toggle
     if not comments_settings.COMMENTS_ENABLED:
+        log.info("comments_list: early return — COMMENTS_ENABLED is False")
+        print("comments_list: early return — COMMENTS_ENABLED is False")
         return _empty(False)
 
     # Per-video flags
@@ -47,9 +65,15 @@ async def list_comments(
         pass
 
     if not video_allow:
+        log.info("comments_list: early return — video_allow is False for %s", video_id)
+        print(f"comments_list: early return — video_allow is False for {video_id}")
         return _empty(False)
 
+    log.info("comments_list: will call fetch_root for %s", video_id)
+    print(f"comments_list: will call fetch_root for {video_id}")
     root = await fetch_root(video_id)
+    log.info("comments_list: fetch_root returned; building payload")
+    print("comments_list: fetch_root returned")
     if not root:
         return _empty(True)
 
