@@ -21,7 +21,7 @@ Application is WIP now. Available base functional:
   * Sprites generation (by [separate microservice](https://github.com/sphynkx/ytsprites))
   * Captions generation (by [separate microservice](https://github.com/sphynkx/ytcms))
 * Two Search engines ([Manticore](https://manticoresearch.com/) and Postgres FTS)
-* Comments
+* Comments by [separate microservice](https://github.com/sphynkx/ytcomments)
 * Notifications system
 * Unified extendable storage system (by [separate microservice](https://github.com/sphynkx/ytstorage))
 
@@ -33,8 +33,10 @@ Design notes
 # Base install and config
 For a minimal version with limited functionality, installing this app is sufficient. However, for full functionality, there are separate services with separate repositories:
 
-* [ytsprites](https://github.com/sphynkx/ytsprites) - service for WebVTT sprites generation
 * [ytcms](https://github.com/sphynkx/ytcms) - service for captions generation
+* [ytcomments](https://github.com/sphynkx/ytcomments) - service for comments
+* [ytsprites](https://github.com/sphynkx/ytsprites) - service for WebVTT sprites generation
+* [ytstorage](https://github.com/sphynkx/ytstorage) - service for external storage systems
 
 These could be installed and configured separately. About this see below in the appropriate sections.
 
@@ -115,6 +117,8 @@ psql -U yt_user -h 127.0.0.1 -d yt_db -f install/seed.sql
 
 
 ## Configure DB for comments engine (MongoDB)
+__Note__: This section will be deprecated for app, due to implementation of new external [ytcomments](https://github.com/sphynkx/ytcomments) - see below. Local functional still works as legacy but may switched off.
+
 At the `.env` fill fields:
 ```conf
 # MongoDB
@@ -279,18 +283,32 @@ python3 reindex_all.py
 deactivate
 ```
 
-### Storage system (external)
-This step is optional - by default app uses local `storage/` dir.
 
-App supports storage layer abstraction and allow to use local directory and/or remote service as storage. See details in [ytstorage repository](https://github.com/sphynkx/ytstorage).
+### Caption generation service (external)
+This is separate service based on gRPC+protobuf and faster-whisper. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/ytcms) for details about it's install and configuration.
 
-After install need to configure ytstorage params:
-- `STORAGE_PROVIDER` - switch to remote service: set it from "local" to "remote" 
-- `STORAGE_REMOTE_ADDRESS` - remote host and port
-- `STORAGE_REMOTE_TLS` - set true to use auth
-- `STORAGE_REMOTE_TOKEN` - set token same as on service side
+At app config you need to set IP address (`YTCMS_HOST`) and port (`YTCMS_PORT`) of `ytcms` service, `YTCMS_TOKEN` same as on service side. Also make sure that file `services/ytcms/ytcms_proto/captions.proto` is identical with one at `ytcms` service. If not - you have to regenerate stubs:
+```bash
+cd services/ytcms_proto
+./gen_proto.sh
+```
 
-Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one in `ytstorage` installation. Otherwise you need regenerate proto files.. Just run `gen_proto.sh` in the same dir.
+
+### Comments service (external)
+This is separate microservice for work with client side comments service. It communicates with MongoDB and exchanges info with app's client side part. To install and configure - see [ytcomments repo](https://github.com/sphynkx/ytcomments))
+
+To configure app to work with service set options in the `.env`:
+```conf
+#YTCOMMENTS_ENABLED=false ## switch to legacy mech
+YTCOMMENTS_ENABLED=true
+YTCOMMENTS_TRANSPORT=grpc
+YTCOMMENTS_ADDR=127.0.0.1:9093
+YTCOMMENTS_TRANSPORT=grpc
+YTCOMMENTS_TLS_ENABLED=false
+YTCOMMENTS_TIMEOUT_MS=3000
+YTCOMMENTS_FORCE_SERVICE_READ=1
+```
+In case of MongoDB falling issues you may apply some tunings for it - see [ytcomments repo](https://github.com/sphynkx/ytcomments)) for details.
 
 
 ### Sprites preview service (external)
@@ -305,14 +323,18 @@ cd services/ytsprites/ytsprites_proto
 ```
 
 
-### Caption generation service (external)
-This is separate service based on gRPC+protobuf and faster-whisper. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/ytcms) for details about it's install and configuration.
+### Storage system (external)
+This step is optional - by default app uses local `storage/` dir.
 
-At app config you need to set IP address (`YTCMS_HOST`) and port (`YTCMS_PORT`) of `ytcms` service, `YTCMS_TOKEN` same as on service side. Also make sure that file `services/ytcms/ytcms_proto/captions.proto` is identical with one at `ytcms` service. If not - you have to regenerate stubs:
-```bash
-cd services/ytcms_proto
-./gen_proto.sh
-```
+App supports storage layer abstraction and allow to use local directory and/or remote service as storage. See details in [ytstorage repository](https://github.com/sphynkx/ytstorage).
+
+After install need to configure ytstorage params:
+- `STORAGE_PROVIDER` - switch to remote service: set it from "local" to "remote" 
+- `STORAGE_REMOTE_ADDRESS` - remote host and port
+- `STORAGE_REMOTE_TLS` - set true to use auth
+- `STORAGE_REMOTE_TOKEN` - set token same as on service side
+
+Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one in `ytstorage` installation. Otherwise you need regenerate proto files.. Just run `gen_proto.sh` in the same dir.
 
 
 ## Run the app
