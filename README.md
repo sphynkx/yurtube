@@ -72,7 +72,7 @@ Optionaly - swap ffmpeg-free to full ffmpeg if your system has ffmpeg-free prein
 sudo dnf -y swap ffmpeg-free ffmpeg --allowerasing
 ```
 
-Install ffmpeg (ffprobe comes with the same package)
+Install `ffmpeg` (`ffprobe` comes with the same package)
 ```bash
 sudo dnf install -y ffmpeg
 ```
@@ -126,11 +126,11 @@ MONGO_HOST=127.0.0.1
 MONGO_PORT=27017
 MONGO_DB_NAME=yt_comments
 MONGO_USER=yt_user
-MONGO_PASSWORD=*********
+MONGO_PASSWORD=SECRET
 ```
 according your configuration.
 
-Edit `/etc/mongod.conf` - temporarily disable "security" section, restart mongodb:
+Edit `/etc/mongod.conf` - temporarily disable `security` section, restart mongodb:
 ```bash
 systemctl restart mongod
 ```
@@ -142,15 +142,17 @@ Edit it - set password and apply:
 ```bash
 mongosh < install/mongo_setup.js
 ```
-Edit `/etc/mongod.conf` again - enable "security" section, restart mongodb:
+Edit `/etc/mongod.conf` again - enable `security` section, restart mongodb:
 ```bash
 service mongod restart
 ```
+Dont forget to remove `install/mongo_setup.js`.
+
 
 ### MongoDB tuning
 Optional recommendations in case then service periodically falls down. 
 
-Modify `/etc/mongod.conf`, set "storage" section so:
+Modify `/etc/mongod.conf`, set `storage` section so:
 ```conf
 storage:
   dbPath: /var/lib/mongo
@@ -161,7 +163,7 @@ storage:
     engineConfig:
       cacheSizeGB: 1.5
 ```
-Find unit file `mongod.service` (mostly in `/usr/lib/systemd/system/`). In the "[Service]" section add:
+Find unit file `mongod.service` (mostly in `/usr/lib/systemd/system/`). In the `[Service]` section add:
 ```conf
 Restart=on-failure
 RestartSec=10s
@@ -274,7 +276,7 @@ Next check. Edit some video - do some modification in Meta section (for example 
 ```bash
 mysql -h 127.0.0.1 -P 9306 -e "SELECT video_id,title,status FROM videos_rt WHERE video_id='XXXXXXXXXXXX'"
 ```
-where "XXXXXXXXXXXX" id ID of edited video. You could get record about modified video.
+where "XXXXXXXXXXXX" is ID of edited video. You could get record about modified video.
 
 To force reindex search DB use script `install/manticore/reindex_all.py`:
 ```bash
@@ -295,7 +297,7 @@ cd services/ytcms_proto
 
 
 ### Comments service (external)
-This is separate microservice for work with client side comments service. It communicates with MongoDB and exchanges info with app's client side part. To install and configure - see [ytcomments repo](https://github.com/sphynkx/ytcomments))
+This is separate microservice for work with client side comments service. It communicates with MongoDB and exchanges info with app's client side part. To install and configure - see [ytcomments repo](https://github.com/sphynkx/ytcomments).
 
 To configure app to work with service set options in the `.env`:
 ```conf
@@ -309,6 +311,8 @@ YTCOMMENTS_TIMEOUT_MS=3000
 YTCOMMENTS_FORCE_SERVICE_READ=1
 ```
 In case of MongoDB falling issues you may apply some tunings for it - see [ytcomments repo](https://github.com/sphynkx/ytcomments)) for details.
+
+Make sure that the `services/ytcomments/ytcomments.proto` is same as one for the `ytcomments`. Otherwise run `gen_proto.sh` to regenerate protobuf files.
 
 
 ### Sprites preview service (external)
@@ -337,11 +341,10 @@ After install need to configure ytstorage params:
 Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one in `ytstorage` installation. Otherwise you need regenerate proto files.. Just run `gen_proto.sh` in the same dir.
 
 
-## Run the app
+## Run the app manually
 Create system user for app, ensure storage directory exists and is writable:
 ```bash
 sudo useradd --system --home-dir /var/www/yurtube --shell /usr/sbin/nologin yurtube || true
-sudo mkdir -p /var/www/yurtube
 sudo chown -R yurtube:yurtube /var/www/yurtube
 ```
 and:
@@ -350,8 +353,31 @@ and:
 ```
 
 
+## Configure as a systemd service (Fedora)
+Copy systemd unit file:
+```bash
+cp install/yurtube.service /etc/systemd/system/yurtube.service
+```
+Make dir for logs:
+```bash
+mkdir -p /var/log/uvicorn
+```
+Reload and start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now yurtube.service
+sudo systemctl status yurtube.service
+journalctl -u yurtube.service -f
+```
+Firewall (if needed):
+```bash
+sudo firewall-cmd --add-port=8077/tcp --permanent
+sudo firewall-cmd --reload
+```
+
+
 ## Nginx
-On external hosting server - create `/etc/nginx/conf.d/yurtube.conf`:
+This is case of external hosting server that proxying to another server with app. On external hosting server - create `/etc/nginx/conf.d/yurtube.conf`:
 ```conf
 # upstream to VM
 upstream vm_app {
@@ -487,30 +513,4 @@ service nginx restart
 letsencrypt
 ```
 Choose subdomain and set option __2__. 
-
-
-## Configure as a systemd service (Fedora)
-Copy systemd unit file:
-```bash
-cp install/yurtube.service /etc/systemd/system/yurtube.service
-```
-
-Make dir for logs:
-```bash
-mkdir -p /var/log/uvicorn
-```
-
-Reload and start:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now yurtube.service
-sudo systemctl status yurtube.service
-journalctl -u yurtube.service -f
-```
-
-Firewall (if needed):
-```bash
-sudo firewall-cmd --add-port=8077/tcp --permanent
-sudo firewall-cmd --reload
-```
 
