@@ -1,9 +1,11 @@
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Client side configuration.. some params (for ytcomments) still in `config.py`
 
 class CommentsSettings(BaseSettings):
     # Mongo connection
+    # Will deprecate afta ytcomments implementation.
     MONGO_HOST: str = "127.0.0.1"
     MONGO_PORT: int = 27017
     MONGO_DB_NAME: str = "yt_comments"
