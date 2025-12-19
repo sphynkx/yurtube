@@ -128,7 +128,7 @@ according your configuration.
 
 Edit `/etc/mongod.conf` - temporarily disable "security" section, restart mongodb:
 ```bash
-service mongod restart
+systemctl restart mongod
 ```
 Copy sample file with mono user configuring:
 ```bash
@@ -141,6 +141,37 @@ mongosh < install/mongo_setup.js
 Edit `/etc/mongod.conf` again - enable "security" section, restart mongodb:
 ```bash
 service mongod restart
+```
+
+### MongoDB tuning
+Optional recommendations in case then service periodically falls down. 
+
+Modify `/etc/mongod.conf`, set "storage" section so:
+```conf
+storage:
+  dbPath: /var/lib/mongo
+  journal:
+    enabled: true
+#  engine:
+  wiredTiger:
+    engineConfig:
+      cacheSizeGB: 1.5
+```
+Find unit file `mongod.service` (mostly in `/usr/lib/systemd/system/`). In the "[Service]" section add:
+```conf
+Restart=on-failure
+RestartSec=10s
+StartLimitBurst=5
+StartLimitIntervalSec=60s
+OOMScoreAdjust=-900
+MemoryAccounting=true
+```
+Then copy it to `/etc/systemd/system` and update systemd configuration:
+```bash
+cp /usr/lib/systemd/system/mongod.service /etc/systemd/system
+systemctl daemon-reload
+systemctl restart mongod
+systemctl status mongod.service
 ```
 
 
