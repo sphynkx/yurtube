@@ -353,22 +353,136 @@ and:
 ## Nginx
 On external hosting server - create `/etc/nginx/conf.d/yurtube.conf`:
 ```conf
+# upstream to VM
+upstream vm_app {
+    server 192.168.7.3:8077;
+    keepalive 32;
+}
+
+# May be duplicated with nginx.conf. First check `nginx -t`
+proxy_buffering on;
+proxy_buffers 64 16k;
+proxy_busy_buffers_size 256k;
+proxy_read_timeout 120s;
+#sendfile on;
+#tcp_nopush on;
+#tcp_nodelay on;
+#keepalive_timeout 65s;
+open_file_cache max=1000 inactive=60s;
+open_file_cache_valid 120s;
+open_file_cache_min_uses 2;
+
+# Dont forget create appropriate dirs:
+# Previews cache
+proxy_cache_path /var/cache/nginx/thumbs levels=1:2 keys_zone=thumbs:50m max_size=1g inactive=30d use_temp_path=off;
+
+# Videos cache (slice, 206)
+proxy_cache_path /var/cache/nginx/video levels=1:2 keys_zone=video:200m max_size=20g inactive=7d use_temp_path=off;
+
+# Microchache for dynamicals
+proxy_cache_path /var/cache/nginx/micro levels=1:2 keys_zone=micro:20m max_size=1g inactive=30s use_temp_path=off;
+
+
+
 server {
-        server_name  yurtube.sphynkx.org.ua;
-        listen       80;
-        access_log   /var/log/nginx/yurtube-access.log  main;
-        error_log   /var/log/nginx/yurtube-error.log;
-        location / {
-        proxy_pass      http://192.168.7.3:8077;
-        proxy_connect_timeout       600;
-        proxy_send_timeout          600;
-        proxy_read_timeout          600;
-        send_timeout                600;
+    server_name  yurtube.sphynkx.org.ua;
+
+    access_log   /var/log/nginx/yurtube-access.log  main;
+    error_log    /var/log/nginx/yurtube-error.log;
+
+    # Microcache for init state of player
+    location /videos/react/state {
+        # Cache key by `video_id`
+        set $state_key "";
+        if ($args ~* "video_id=([^&]+)") {
+            set $state_key "state:$1";
         }
+
+        proxy_cache micro;
+        proxy_cache_key $state_key;
+        proxy_cache_valid 200 5s;
+        proxy_cache_lock on;
+        add_header X-Microcache $upstream_cache_status always;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host               $host;
+        proxy_set_header X-Real-IP          $remote_addr;
+        proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host   $host;
+        proxy_set_header X-Forwarded-Proto  https;
+
+        proxy_pass http://vm_app;
+    }
+
+    # Slice-cache for video (Range/206)
+    location ~* ^/internal/storage/file/.+\.(webm|mp4|mkv|mov)$ {
+        # Cut videos by 1 Mb
+        slice 1m;
+        proxy_set_header Range "bytes=$slice_range";
+        proxy_cache_key $uri?$slice_range;
+
+        proxy_cache video;
+        proxy_cache_methods GET HEAD;
+        proxy_cache_valid 206 7d;
+        proxy_cache_valid 200 7d;
+        proxy_cache_lock on;
+        proxy_cache_background_update on;
+
+        # Allow caching ignoring Set-Cookie
+        proxy_ignore_headers Set-Cookie;
+        proxy_ignore_headers Cache-Control;
+        # Dont send them to client
+        proxy_hide_header Set-Cookie;
+
+        add_header X-Cache $upstream_cache_status always;
+        add_header X-Video-Location "matched" always;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host               $host;
+        proxy_set_header X-Real-IP          $remote_addr;
+        proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host   $host;
+        proxy_set_header X-Forwarded-Proto  https;
+
+        proxy_pass http://vm_app;
+    }
+
+    # Long cache for animated previews and other imgs
+    location ~* ^/internal/storage/file/.+\.(jpg|jpeg|png|webp|gif)$ {
+        proxy_cache thumbs;
+        proxy_cache_valid 200 30d;
+        proxy_cache_lock on;
+        proxy_ignore_headers Expires Set-Cookie;
+        add_header Cache-Control "public, max-age=2592000, immutable" always;
+        add_header X-Cache $upstream_cache_status always;
+
+        proxy_http_version 1.1;
+        proxy_set_header Host               $host;
+        proxy_set_header X-Real-IP          $remote_addr;
+        proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host   $host;
+        proxy_set_header X-Forwarded-Proto  https;
+
+        proxy_pass http://vm_app;
+    }
+
+    location / {
+        proxy_http_version 1.1;
+
+        proxy_set_header Host               $host;
+        proxy_set_header X-Real-IP          $remote_addr;
+        proxy_set_header X-Forwarded-For    $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Host   $host;
+        proxy_set_header X-Forwarded-Proto  https;
+
+        proxy_pass http://vm_app;
+    }
 }
 ```
+
 Then:
 ```bash
+mkdir -p /var/cache/nginx/{micro,thumbs,video}
 service nginx restart
 letsencrypt
 ```
