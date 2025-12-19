@@ -147,7 +147,8 @@ async def watch_page(request: Request, v: str) -> Any:
                 "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
                 "allow_comments": False,
             }
-            return templates.TemplateResponse("watch.html", context, headers={"Cache-Control": "no-store"})
+            headers = {"Cache-Control": "no-store"}
+            return templates.TemplateResponse("watch.html", context, headers=headers)
 
         # Video found
         user_uid: Optional[str] = user["user_uid"] if user else None
@@ -225,7 +226,25 @@ async def watch_page(request: Request, v: str) -> Any:
             "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
             "allow_comments": allow_comments,
         }
-        return templates.TemplateResponse("watch.html", context, headers={"Cache-Control": "no-store"})
+
+        # Link preload headers
+        link_entries: List[str] = []
+        def _add_link(url: Optional[str], rel: str, as_type: str) -> None:
+            if url:
+                link_entries.append(f"<{url}>; rel={rel}; as={as_type}; crossorigin=anonymous")
+
+        _add_link(poster_url, "preload", "image")
+        _add_link(thumb_anim_url, "preload", "image")
+        _add_link(sprites_vtt_url, "preload", "image")
+        _add_link(video_src, "preload", "video")
+        caption_vtt_url = build_storage_url(caption_vtt) if caption_vtt else None
+        _add_link(caption_vtt_url, "preload", "track")
+
+        headers = {"Cache-Control": "no-store"}
+        if link_entries:
+            headers["Link"] = ", ".join(link_entries)
+
+        return templates.TemplateResponse("watch.html", context, headers=headers)
     finally:
         await release_conn(conn)
 
@@ -277,7 +296,8 @@ async def embed_page(
                 "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
                 "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
             }
-            return templates.TemplateResponse("embed.html", context, headers={"Cache-Control": "no-store"})
+            headers = {"Cache-Control": "no-store"}
+            return templates.TemplateResponse("embed.html", context, headers=headers)
 
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
@@ -317,6 +337,23 @@ async def embed_page(
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
             "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
         }
-        return templates.TemplateResponse("embed.html", context, headers={"Cache-Control": "no-store"})
+
+        # Link preload for embed
+        link_entries: List[str] = []
+        def _add_link(url: Optional[str], rel: str, as_type: str) -> None:
+            if url:
+                link_entries.append(f"<{url}>; rel={rel}; as={as_type}; crossorigin=anonymous")
+
+        _add_link(poster_url, "preload", "image")
+        _add_link(sprites_vtt_url, "preload", "image")
+        _add_link(video_src, "preload", "video")
+        caption_vtt_url = build_storage_url(caption_vtt) if caption_vtt else None
+        _add_link(caption_vtt_url, "preload", "track")
+
+        headers = {"Cache-Control": "no-store"}
+        if link_entries:
+            headers["Link"] = ", ".join(link_entries)
+
+        return templates.TemplateResponse("embed.html", context, headers=headers)
     finally:
         await release_conn(conn)
