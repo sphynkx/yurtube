@@ -72,6 +72,28 @@ class GrpcCommentsClient:
             raise RuntimeError("ytcomments gRPC stubs not available")
         if self._channel and self._stub:
             return
+
+        # Keepalive + Retry policy
+        options = [
+            ('grpc.keepalive_time_ms', 60000),
+            ('grpc.keepalive_timeout_ms', 20000),
+            ('grpc.keepalive_permit_without_calls', 1),
+            ('grpc.http2.min_time_between_pings_ms', 300000),
+            ('grpc.http2.max_pings_without_data', 0),
+            ('grpc.service_config', json.dumps({
+                "methodConfig": [{
+                    "name": [{"service": "ytcomments.v1.YtComments"}],
+                    "retryPolicy": {
+                        "maxAttempts": 5,
+                        "initialBackoff": "0.5s",
+                        "maxBackoff": "5s",
+                        "backoffMultiplier": 2.0,
+                        "retryableStatusCodes": ["UNAVAILABLE", "DEADLINE_EXCEEDED"]
+                    }
+                }]
+            }))
+        ]
+
         if self._tls_enabled:
             creds = grpc.ssl_channel_credentials()  # type: ignore
             self._channel = grpc.aio.secure_channel(self._target, creds)  # type: ignore
