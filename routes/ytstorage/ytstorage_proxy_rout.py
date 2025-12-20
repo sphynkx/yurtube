@@ -10,6 +10,7 @@ router = APIRouter(prefix="/internal/storage", tags=["storage"])
 
 _RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 
+
 def _content_type_for(path: str) -> str:
     low = path.lower()
     if low.endswith(".png"): return "image/png"
@@ -21,15 +22,35 @@ def _content_type_for(path: str) -> str:
     if low.endswith(".mp4"): return "video/mp4"
     return "application/octet-stream"
 
+
+def _cache_control_for(content_type: str) -> Optional[str]:
+    """
+    Cache policy:
+    - For videos: keep downstream caching (unchanged).
+    - For non-video assets (images, VTT, others): disable caching to ensure updates are visible immediately.
+    """
+    if content_type.startswith("video/"):
+        return None  # let downstream (e.g. nginx) apply its own caching for videos
+    # Disable caching for images/tracks/other small assets to avoid stale content
+    return "no-store"
+
+
 async def _get_size(storage: StorageClient, rel: str) -> Optional[int]:
     try:
         st = storage.stat(rel)
         if hasattr(st, "__await__"):  # async
             st = await st
-        sz = int(st.get("size_bytes", -1))
+        # st is a dict for remote, or tuple(size, mtime) for local
+        if isinstance(st, dict):
+            sz = int(st.get("size_bytes", -1))
+        elif isinstance(st, tuple) and len(st) >= 1:
+            sz = int(st[0])
+        else:
+            sz = -1
         return sz if sz >= 0 else None
     except Exception:
         return None
+
 
 def _parse_range(hval: Optional[str], size: Optional[int]) -> Optional[Tuple[int, int]]:
     """
@@ -68,6 +89,7 @@ def _parse_range(hval: Optional[str], size: Optional[int]) -> Optional[Tuple[int
         e = size - 1
         return (s, e)
 
+
 async def _stream_full(storage: StorageClient, rel: str, ct: str, size: Optional[int]) -> StreamingResponse:
     async def _aiter() -> AsyncIterator[bytes]:
         # Support both async and sync readers
@@ -78,14 +100,24 @@ async def _stream_full(storage: StorageClient, rel: str, ct: str, size: Optional
                     yield chunk
         except TypeError:
             reader = storage.open_reader(rel)        # sync
-            for chunk in reader:
-                if chunk:
-                    yield chunk
+            while True:
+                chunk = reader.read(256 * 1024)
+                if not chunk:
+                    break
+                yield chunk
+            try:
+                reader.close()
+            except Exception:
+                pass
     headers = {}
     if size is not None:
         headers["Content-Length"] = str(size)
     headers["Accept-Ranges"] = "bytes"
+    cc = _cache_control_for(ct)
+    if cc:
+        headers["Cache-Control"] = cc
     return StreamingResponse(_aiter(), media_type=ct, headers=headers, status_code=200)
+
 
 async def _stream_range(storage: StorageClient, rel: str, ct: str, size: int, rng: Tuple[int, int]) -> StreamingResponse:
     start, end = rng
@@ -98,10 +130,22 @@ async def _stream_range(storage: StorageClient, rel: str, ct: str, size: int, rn
                 if chunk:
                     yield chunk
         except TypeError:
-            reader = storage.open_reader(rel, offset=start, length=length)        # sync
-            for chunk in reader:
-                if chunk:
-                    yield chunk
+            reader = storage.open_reader(rel)        # sync (no offset/length for local)
+            try:
+                reader.seek(start)
+            except Exception:
+                pass
+            remaining = length
+            while remaining > 0:
+                chunk = reader.read(min(256 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+            try:
+                reader.close()
+            except Exception:
+                pass
 
     headers = {
         "Content-Type": ct,
@@ -109,12 +153,16 @@ async def _stream_range(storage: StorageClient, rel: str, ct: str, size: int, rn
         "Content-Range": f"bytes {start}-{end}/{size}",
         "Accept-Ranges": "bytes",
     }
+    cc = _cache_control_for(ct)
+    if cc:
+        headers["Cache-Control"] = cc
     return StreamingResponse(_aiter(), media_type=ct, headers=headers, status_code=206)
+
 
 async def _serve(request: Request, raw_path: str) -> StreamingResponse:
     if not raw_path:
         raise HTTPException(status_code=400, detail="missing_path")
-    rel = raw_path.lstrip("/")
+    rel = raw_path.strip().lstrip("/")
     storage: StorageClient = request.app.state.storage
     ct = _content_type_for(rel)
 
@@ -128,6 +176,7 @@ async def _serve(request: Request, raw_path: str) -> StreamingResponse:
 
     # Fallback: full stream
     return await _stream_full(storage, rel, ct, size)
+
 
 @router.get("/file")
 async def storage_file_query(request: Request, path: str = Query(...)) -> StreamingResponse:

@@ -5,6 +5,7 @@ import json
 import asyncio
 import secrets
 from urllib.parse import urlparse
+import tempfile
 
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -52,7 +53,6 @@ def _bool_from_form(val: Optional[str]) -> bool:
 async def _fetch_owned_video_full(conn, video_id: str, owner_uid: str) -> Optional[Dict[str, Any]]:
     """
     Fetch owned video with related assets for edit pages.
-
     NOTE: DB access is delegated to db.videos_query_db.get_owned_video_full.
     """
     return await db_get_owned_video_full(conn, video_id, owner_uid)
@@ -61,7 +61,6 @@ async def _fetch_owned_video_full(conn, video_id: str, owner_uid: str) -> Option
 async def _list_renditions(conn, video_id: str) -> List[Dict[str, Any]]:
     """
     List renditions for a video (status, codec, preset, etc).
-
     NOTE: DB access is delegated to db.video_renditions_db.list_video_renditions.
     """
     return await db_list_renditions(conn, video_id)
@@ -250,6 +249,93 @@ async def edit_meta(
     return RedirectResponse(f"/manage/edit?v={video_id}", status_code=302)
 
 
+# --- Storage helpers ---
+
+async def _read_to_temp(sc: StorageClient, rel_path: str, suffix: str) -> str:
+    """
+    Materialize a storage file into a local temp file.
+    Always uses reader (async for remote, sync for local).
+    """
+    tmp = tempfile.NamedTemporaryFile(prefix="yt_src_", suffix=suffix, delete=False)
+    try:
+        try:
+            reader = await sc.open_reader(rel_path)  # type: ignore
+            async for chunk in reader:
+                if chunk:
+                    tmp.write(chunk)
+        except TypeError:
+            f = sc.open_reader(rel_path)  # type: ignore
+            try:
+                while True:
+                    buf = f.read(1024 * 1024)
+                    if not buf:
+                        break
+                    tmp.write(buf)
+            finally:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+        tmp.flush()
+        return tmp.name
+    finally:
+        try:
+            tmp.close()
+        except Exception:
+            pass
+
+
+async def _write_bytes(sc: StorageClient, rel_path: str, src_path: str) -> None:
+    """
+    Write local file bytes into storage path.
+    Uses async writer for remote and plain file write for local.
+    """
+    try:
+        writer = await sc.open_writer(rel_path, overwrite=True)  # type: ignore
+        async with writer as w:  # type: ignore
+            with open(src_path, "rb") as rf:
+                while True:
+                    chunk = rf.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    await w.write(chunk)  # type: ignore
+        return
+    except TypeError:
+        # Local storage
+        abs_path = sc.to_abs(rel_path)  # type: ignore
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "wb") as f, open(src_path, "rb") as rf:
+            while True:
+                ch = rf.read(1024 * 1024)
+                if not ch:
+                    break
+                f.write(ch)
+
+
+async def _write_upload(sc: StorageClient, rel_path: str, upl: UploadFile) -> None:
+    """
+    Write UploadFile stream to storage path.
+    """
+    try:
+        writer = await sc.open_writer(rel_path, overwrite=True)  # type: ignore
+        async with writer as w:  # type: ignore
+            while True:
+                chunk = await upl.read(1024 * 1024)
+                if not chunk:
+                    break
+                await w.write(chunk)  # type: ignore
+        return
+    except TypeError:
+        abs_path = sc.to_abs(rel_path)  # type: ignore
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        with open(abs_path, "wb") as f:
+            while True:
+                ch = await upl.read(1024 * 1024)
+                if not ch:
+                    break
+                f.write(ch)
+
+
 @router.post("/manage/edit/thumb/regen")
 async def regen_thumbs(
     request: Request,
@@ -267,54 +353,73 @@ async def regen_thumbs(
         raise HTTPException(status_code=403, detail="csrf_required")
 
     conn = await get_conn()
+    tmp_src = None
+    tmp_out = None
     try:
         owned = await _fetch_owned_video_full(conn, video_id, user["user_uid"])
         if not owned:
             raise HTTPException(status_code=404, detail="Video not found")
 
         rel_storage = owned["storage_path"]
-
-        # StorageClient paths
         storage_client: StorageClient = request.app.state.storage
+
         original_rel = f"{rel_storage.strip('/')}/original.webm"
         thumbs_rel_dir = f"{rel_storage.strip('/')}/thumbs"
 
-        # ffmpeg expects absolute paths
-        original_abs = storage_client.to_abs(original_rel)
-        thumbs_abs_dir = storage_client.to_abs(thumbs_rel_dir)
-        os.makedirs(thumbs_abs_dir, exist_ok=True)
+        # Ensure thumbs dir exists (for local it makes dirs; for remote the backend handles it)
+        try:
+            await storage_client.mkdirs(thumbs_rel_dir, exist_ok=True)  # type: ignore
+        except TypeError:
+            try:
+                storage_client.mkdirs(thumbs_rel_dir, exist_ok=True)  # type: ignore
+            except Exception:
+                pass
 
-        tmp = await async_generate_thumbnails(original_abs, thumbs_abs_dir, [max(0, int(offset_sec))])
-        if tmp:
-            gen_path = tmp[0]
-            out_static = os.path.join(thumbs_abs_dir, "thumb_custom.jpg")
-            if os.path.abspath(gen_path) != os.path.abspath(out_static):
-                try:
-                    if os.path.exists(out_static):
-                        os.remove(out_static)
-                except Exception:
-                    pass
-                os.replace(gen_path, out_static)
-            # compute relative for DB
-            rel_static = os.path.relpath(out_static, storage_client.to_abs(""))
-            await upsert_video_asset(conn, video_id, "thumbnail_default", rel_static)
+        # Read source to temp
+        tmp_src = await _read_to_temp(storage_client, original_rel, ".webm")
+        tmp_out = tempfile.mkdtemp(prefix="yt_th_")
 
+        # Static preview: thumb_custom.jpg
+        static_list = await async_generate_thumbnails(tmp_src, tmp_out, [max(0, int(offset_sec))])
+        if static_list:
+            static_tmp = static_list[0]
+            static_rel = f"{thumbs_rel_dir}/thumb_custom.jpg"
+            await _write_bytes(storage_client, static_rel, static_tmp)
+            await upsert_video_asset(conn, video_id, "thumbnail_default", static_rel)
+
+        # Animated preview: keep stable name
         if _bool_from_form(animate):
-            anim_abs = os.path.join(thumbs_abs_dir, "thumb_anim.webp")
-            ok_anim = await async_generate_animated_preview(
-                original_abs,
-                anim_abs,
-                start_sec=max(0, int(offset_sec)),
-                duration_sec=3,
-                fps=12,
-            )
-            if ok_anim and os.path.exists(anim_abs):
-                rel_anim = os.path.relpath(anim_abs, storage_client.to_abs(""))
-                await upsert_video_asset(conn, video_id, "thumbnail_anim", rel_anim)
+            anim_tmp = os.path.join(tmp_out, "thumb_anim.webp")
+            ok = await async_generate_animated_preview(tmp_src, anim_tmp, start_sec=max(0, int(offset_sec)), duration_sec=3, fps=12)
+            if ok and os.path.exists(anim_tmp):
+                anim_rel = f"{thumbs_rel_dir}/thumb_anim.webp"
+                await _write_bytes(storage_client, anim_rel, anim_tmp)
+                await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel)
 
+        # Save preferred offset
         await db_update_thumb_pref_offset(conn, video_id, max(0, int(offset_sec)))
     finally:
         await release_conn(conn)
+        # Cleanup temp
+        try:
+            if tmp_src and os.path.isfile(tmp_src):
+                os.remove(tmp_src)
+        except Exception:
+            pass
+        try:
+            if tmp_out and os.path.isdir(tmp_out):
+                for n in os.listdir(tmp_out):
+                    p = os.path.join(tmp_out, n)
+                    try:
+                        os.remove(p)
+                    except Exception:
+                        pass
+                try:
+                    os.rmdir(tmp_out)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     return RedirectResponse(f"/manage/edit?v={video_id}", status_code=302)
 
@@ -347,30 +452,25 @@ async def upload_thumbs(
         rel_storage = owned["storage_path"]
         storage_client: StorageClient = request.app.state.storage
         thumbs_rel_dir = f"{rel_storage.strip('/')}/thumbs"
-        thumbs_abs_dir = storage_client.to_abs(thumbs_rel_dir)
-        os.makedirs(thumbs_abs_dir, exist_ok=True)
+
+        # Ensure thumbs dir
+        try:
+            await storage_client.mkdirs(thumbs_rel_dir, exist_ok=True)  # type: ignore
+        except TypeError:
+            try:
+                storage_client.mkdirs(thumbs_rel_dir, exist_ok=True)  # type: ignore
+            except Exception:
+                pass
 
         if thumb_static:
-            out_static = os.path.join(thumbs_abs_dir, "thumb_custom.jpg")
-            with open(out_static, "wb") as f:
-                while True:
-                    chunk = await thumb_static.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-            rel = os.path.relpath(out_static, storage_client.to_abs(""))
-            await upsert_video_asset(conn, video_id, "thumbnail_default", rel)
+            static_rel = f"{thumbs_rel_dir}/thumb_custom.jpg"
+            await _write_upload(storage_client, static_rel, thumb_static)
+            await upsert_video_asset(conn, video_id, "thumbnail_default", static_rel)
 
         if thumb_anim:
-            out_anim = os.path.join(thumbs_abs_dir, "thumb_anim.webp")
-            with open(out_anim, "wb") as f:
-                while True:
-                    chunk = await thumb_anim.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    f.write(chunk)
-            rel = os.path.relpath(out_anim, storage_client.to_abs(""))
-            await upsert_video_asset(conn, video_id, "thumbnail_anim", rel)
+            anim_rel = f"{thumbs_rel_dir}/thumb_anim.webp"
+            await _write_upload(storage_client, anim_rel, thumb_anim)
+            await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel)
     finally:
         await release_conn(conn)
 
@@ -395,14 +495,20 @@ async def pick_thumb_page(request: Request, v: str = Query(..., min_length=12, m
 
         items: List[Dict[str, str]] = []
         # list via StorageClient; build relative URLs for template
-        if storage_client.exists(thumbs_rel_dir):
-            abs_root = storage_client.to_abs("")
-            abs_dir = storage_client.to_abs(thumbs_rel_dir)
-            if os.path.isdir(abs_dir):
-                for name in sorted(os.listdir(abs_dir)):
-                    if re.match(r"^thumb_.*\.jpg$", name):
-                        rel = f"{rel_storage.strip('/')}/thumbs/{name}".replace("\\", "/")
-                        items.append({"rel": rel, "url": build_storage_url(rel)})
+        try:
+            exists_res = storage_client.exists(thumbs_rel_dir)  # type: ignore
+            if hasattr(exists_res, "__await__"):
+                exists_res = await exists_res  # type: ignore
+            if bool(exists_res):
+                abs_dir = storage_client.to_abs(thumbs_rel_dir)
+                if abs_dir and os.path.isdir(abs_dir):
+                    for name in sorted(os.listdir(abs_dir)):
+                        if re.match(r"^thumb_.*\.jpg$", name):
+                            rel = f"{rel_storage.strip('/')}/thumbs/{name}".replace("\\", "/")
+                            items.append({"rel": rel, "url": build_storage_url(rel)})
+        except Exception:
+            pass
+
         video = dict(owned)
     finally:
         await release_conn(conn)

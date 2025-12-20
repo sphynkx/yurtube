@@ -63,23 +63,40 @@ def _avatar_small_url(avatar_path: Optional[str]) -> str:
         small_rel = avatar_path
     return build_storage_url(small_rel)
 
+
+def _with_ver(url: Optional[str], ver: Optional[int]) -> Optional[str]:
+    if not url:
+        return url
+    try:
+        v = int(ver or 0)
+    except Exception:
+        v = 0
+    if v <= 0:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}v={v}"
+
+
 def _augment(request: Request, vrow: Dict[str, Any]) -> Dict[str, Any]:
     v = dict(vrow)
     thumb_path = v.get("thumb_asset_path")
-    v["thumb_url"] = build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
+    ver = v.get("thumb_pref_offset")
+    v["thumb_url"] = _with_ver(build_storage_url(thumb_path), ver) if thumb_path else DEFAULT_THUMB_DATA_URI
     if thumb_path and "/" in thumb_path:
         anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
         # Use StorageClient absolute root for existence check
         storage_client: StorageClient = request.app.state.storage
         abs_anim = os.path.join(storage_client.to_abs(""), anim_rel)
-        v["thumb_anim_url"] = build_storage_url(anim_rel) if os.path.isfile(abs_anim) else None
+        v["thumb_anim_url"] = _with_ver(build_storage_url(anim_rel), ver) if os.path.isfile(abs_anim) else None
     else:
         v["thumb_anim_url"] = None
     v["author_avatar_url_small"] = _avatar_small_url(v.get("avatar_asset_path"))
     return v
 
+
 async def _get_user_by_name_or_channel(conn, name_or_channel: str) -> Optional[Dict[str, Any]]:
     return await db_get_user_by_name_or_channel(conn, name_or_channel)
+
 
 async def _render_channel(request: Request, owner: Optional[Dict[str, Any]]) -> HTMLResponse:
     user = get_current_user(request)
@@ -141,6 +158,7 @@ async def _render_channel(request: Request, owner: Optional[Dict[str, Any]]) -> 
         resp.set_cookie(settings.CSRF_COOKIE_NAME, csrf_token, httponly=False, secure=True, samesite="lax", path="/")
     return resp
 
+
 # --- GET channel pages ---
 
 @router.get("/@{username}", response_class=HTMLResponse)
@@ -152,6 +170,7 @@ async def channel_by_username(request: Request, username: str) -> Any:
         await release_conn(conn)
     return await _render_channel(request, owner)
 
+
 @router.get("/c/{channel_id}", response_class=HTMLResponse)
 @router.get("/channel/{channel_id}", response_class=HTMLResponse)
 async def channel_by_id(request: Request, channel_id: str) -> Any:
@@ -161,6 +180,7 @@ async def channel_by_id(request: Request, channel_id: str) -> Any:
     finally:
         await release_conn(conn)
     return await _render_channel(request, owner)
+
 
 # --- Subscribers list pages ---
 
@@ -201,6 +221,7 @@ async def channel_subscribers(request: Request, name: str) -> Any:
     finally:
         await release_conn(conn)
 
+
 # --- POST subscribe/unsubscribe with CSRF ---
 
 @router.post("/channel/subscribe")
@@ -221,6 +242,7 @@ async def post_subscribe(
         await release_conn(conn)
     ref = request.headers.get("referer") or "/"
     return RedirectResponse(ref, status_code=302)
+
 
 @router.post("/channel/unsubscribe")
 async def post_unsubscribe(

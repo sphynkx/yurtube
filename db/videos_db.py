@@ -60,30 +60,6 @@ async def set_video_ready(
         )
 
 
-async def list_latest_public_videos_OLD(
-    conn: asyncpg.Connection,
-    limit: int = 20,
-):
-    return await conn.fetch(
-        """
-        SELECT v.*, u.username, u.channel_id,
-               a.path AS thumb_asset_path,
-               ua.path AS avatar_asset_path
-        FROM videos v
-        JOIN users u ON u.user_uid = v.author_uid
-        LEFT JOIN video_assets a
-          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
-        LEFT JOIN user_assets ua
-          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
-        WHERE v.status = 'public' AND v.processing_status = 'ready'
-        ORDER BY v.created_at DESC
-        LIMIT $1
-        """,
-        limit,
-    )
-
-
-
 async def list_latest_public_videos_count(conn) -> int:
     """
     Amount of public videos - for pagination on root page
@@ -105,11 +81,17 @@ async def list_latest_public_videos(conn, limit: int = 24, offset: int = 0):
     """
     rows = await conn.fetch(
         """
-        SELECT v.video_id, v.title, v.duration_sec, v.storage_path, v.created_at,
+        SELECT v.video_id,
+               v.title,
+               v.duration_sec,
+               v.storage_path,
+               v.created_at,
+               v.thumb_pref_offset AS thumb_pref_offset,
                vthumb.path AS thumb_asset_path,
-               vanim.path AS thumb_anim_asset_path,
-               u.username, u.channel_id,
-               uava.path AS avatar_asset_path
+               vanim.path  AS thumb_anim_asset_path,
+               u.username,
+               u.channel_id,
+               uava.path   AS avatar_asset_path
         FROM videos v
         JOIN users u ON u.user_uid = v.author_uid
         LEFT JOIN LATERAL (
@@ -263,15 +245,37 @@ async def list_author_public_videos(
 ):
     return await conn.fetch(
         """
-        SELECT v.*, u.username, u.channel_id,
-               a.path AS thumb_asset_path,
-               ua.path AS avatar_asset_path
+        SELECT v.video_id,
+               v.title,
+               v.duration_sec,
+               v.storage_path,
+               v.created_at,
+               v.thumb_pref_offset AS thumb_pref_offset,
+               vthumb.path AS thumb_asset_path,
+               vanim.path  AS thumb_anim_asset_path,
+               u.username,
+               u.channel_id,
+               uava.path   AS avatar_asset_path
         FROM videos v
         JOIN users u ON u.user_uid = v.author_uid
-        LEFT JOIN video_assets a
-          ON a.video_id = v.video_id AND a.asset_type = 'thumbnail_default'
-        LEFT JOIN user_assets ua
-          ON ua.user_uid = v.author_uid AND ua.asset_type = 'avatar'
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_default'
+          LIMIT 1
+        ) vthumb ON true
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_anim'
+          LIMIT 1
+        ) vanim ON true
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM user_assets
+          WHERE user_uid = v.author_uid AND asset_type = 'avatar'
+          LIMIT 1
+        ) uava ON true
         WHERE v.author_uid = $1
           AND v.status = 'public'
           AND v.processing_status = 'ready'
@@ -438,4 +442,3 @@ async def list_history_distinct_latest(
         limit,
         offset,
     )
-

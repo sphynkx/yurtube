@@ -21,6 +21,7 @@ from utils.pagination_ut import normalize_page, normalize_page_size, build_page_
 # --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
 
+
 router = APIRouter(tags=["root"])
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
@@ -57,14 +58,33 @@ async def _storage_exists(storage_client: StorageClient, rel: str) -> bool:
         return False
 
 
+def _with_ver(url: Optional[str], ver: Optional[int]) -> Optional[str]:
+    if not url:
+        return url
+    try:
+        v = int(ver or 0)
+    except Exception:
+        v = 0
+    if v <= 0:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}v={v}"
+
+
 async def _augment(vrow: Dict[str, Any], storage_client: StorageClient) -> Dict[str, Any]:
     v = dict(vrow)
     thumb_path = v.get("thumb_asset_path")
-    v["thumb_url"] = build_storage_url(thumb_path) if thumb_path else DEFAULT_THUMB_DATA_URI
+    ver = v.get("thumb_pref_offset")
+    v["thumb_url"] = _with_ver(build_storage_url(thumb_path), ver) if thumb_path else DEFAULT_THUMB_DATA_URI
 
-    if thumb_path and "/" in thumb_path:
+    # Prefer explicit DB asset path for animated preview, fall back to legacy static name.
+    anim_asset = v.get("thumb_anim_asset_path")
+    if anim_asset:
+        v["thumb_anim_url"] = _with_ver(build_storage_url(anim_asset), ver)
+    elif thumb_path and "/" in thumb_path:
         anim_rel = thumb_path.rsplit("/", 1)[0] + "/thumb_anim.webp"
-        v["thumb_anim_url"] = build_storage_url(anim_rel) if await _storage_exists(storage_client, anim_rel) else None
+        exists = await _storage_exists(storage_client, anim_rel)
+        v["thumb_anim_url"] = _with_ver(build_storage_url(anim_rel), ver) if exists else None
     else:
         v["thumb_anim_url"] = None
 
@@ -95,44 +115,34 @@ async def index(
     total_pages = max(1, (total + page_size - 1) // page_size)
     has_prev = page > 1
     has_next = page < total_pages
-    # Build pages range with ellipsises, curr page keeps at center
-    page_items_raw = build_page_range(page, total_pages, window=2)
-    page_items: List[Dict[str, Any]] = []
-    for kind, num in page_items_raw:
-        if kind == "ellipsis":
-            page_items.append({"kind": "ellipsis"})
-        else:
-            page_items.append({
-                "kind": "number",
-                "num": num,
-                "current": (num == page),
-                "url": f"/?page={num}&page_size={page_size}",
-            })
+    page_range: List[Tuple[str, Optional[int]]] = build_page_range(page, total_pages, window=2)
 
-    user: Optional[Dict[str, str]] = get_current_user(request)
-    storage_client: StorageClient = request.app.state.storage  # mark: uses StorageClient for augment
-    #videos = [_augment(dict(r), storage_client) for r in rows]
-    videos = await asyncio.gather(*[_augment(dict(r), storage_client) for r in rows])
+    # Storage client
+    storage_client: StorageClient = request.app.state.storage
 
-    return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
-            "videos": videos,
-            "page": page,
-            "page_size": page_size,
-            "total": total,
-            "total_pages": total_pages,
-            "has_prev": has_prev,
-            "has_next": has_next,
-            "prev_page": (page - 1) if has_prev else None,
-            "next_page": (page + 1) if has_next else None,
-            "page_items": page_items,
-            "brand_logo_url": settings.BRAND_LOGO_URL,
-            "brand_tagline": settings.BRAND_TAGLINE,
-            "favicon_url": settings.FAVICON_URL,
-            "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-            "current_user": user,
-            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
-        },
-    )
+    # Augment rows with URLs
+    videos: List[Dict[str, Any]] = []
+    for r in rows:
+        try:
+            videos.append(await _augment(dict(r), storage_client))
+        except Exception:
+            videos.append(dict(r))
+
+    context = {
+        "brand_logo_url": settings.BRAND_LOGO_URL,
+        "brand_tagline": settings.BRAND_TAGLINE,
+        "favicon_url": settings.FAVICON_URL,
+        "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
+        "request": request,
+        "current_user": get_current_user(request),
+        "videos": videos,
+        "videos_count": len(videos),
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": total_pages,
+        "has_prev": has_prev,
+        "has_next": has_next,
+        "page_range": page_range,
+    }
+    return templates.TemplateResponse("index.html", context)
