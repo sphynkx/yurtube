@@ -408,6 +408,10 @@ proxy_cache_path /var/cache/nginx/video levels=1:2 keys_zone=video:200m max_size
 # Microchache for dynamicals
 proxy_cache_path /var/cache/nginx/micro levels=1:2 keys_zone=micro:20m max_size=1g inactive=30s use_temp_path=off;
 
+map $http_range $nocache_no_range {
+    default 0;
+    ""      1;
+}
 
 
 server {
@@ -441,22 +445,27 @@ server {
     }
 
     # Slice-cache for video (Range/206)
+    # 1. Cache full 200
+    # 2. Force snt to client 206 from cache
+    # 3. Cache key w/o $slice_range !! Full 200
     location ~* ^/internal/storage/file/.+\.(webm|mp4|mkv|mov)$ {
-        # Cut videos by 1 Mb
-        slice 1m;
-        proxy_set_header Range "bytes=$slice_range";
-        proxy_cache_key $uri?$slice_range;
-
+        proxy_cache_key $uri;
         proxy_cache video;
         proxy_cache_methods GET HEAD;
-        proxy_cache_valid 206 7d;
+
+        # Full cache
         proxy_cache_valid 200 7d;
+        # Optional 206 caching for upstream
+        proxy_cache_valid 206 7d;
+
+        # Force send 206 to client from cached 200
+        proxy_force_ranges on;
+
         proxy_cache_lock on;
         proxy_cache_background_update on;
 
         # Allow caching ignoring Set-Cookie
-        proxy_ignore_headers Set-Cookie;
-        proxy_ignore_headers Cache-Control;
+        proxy_ignore_headers Set-Cookie Expires;
         # Dont send them to client
         proxy_hide_header Set-Cookie;
 
