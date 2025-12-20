@@ -20,9 +20,8 @@
         &mdash; <a href="/watch?v={{ v['video_id'] }}">Watch</a>
       </div>
 
-      {# Watch-like player container using the configured player (fallback to 'yurtube') #}
       {% set _video_rel = v['storage_path'] ~ '/original.webm' %}
-      {% set _video_src = (storage_public_base_url ~ '/' ~ _video_rel) if storage_public_base_url else ('/storage/' ~ _video_rel) %}
+      {% set _video_src = (storage_public_base_url ~ '/' ~ _video_rel) if storage_public_base_url else ('/internal/storage/file/' ~ _video_rel) %}
       <div class="player-wrap" id="edit-player-wrap" style="position:relative; max-width:960px; margin-top:8px;">
         {{ pm.render_player(
              player_name=(player_name if player_name else 'yurtube'),
