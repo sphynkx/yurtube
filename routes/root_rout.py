@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, List, Tuple
+from typing import Any, Dict, Optional, List, Tuple, Union
 import os
 import asyncio
 import inspect
@@ -20,7 +20,6 @@ from utils.pagination_ut import normalize_page, normalize_page_size, build_page_
 
 # --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
-
 
 router = APIRouter(tags=["root"])
 templates = Jinja2Templates(directory="templates")
@@ -92,6 +91,64 @@ async def _augment(vrow: Dict[str, Any], storage_client: StorageClient) -> Dict[
     return v
 
 
+def _build_page_items(page: int, total_pages: int, page_size: int) -> List[Dict[str, Union[str, int, bool]]]:
+    """
+    Build page_items for the template:
+      - kind: 'ellipsis' | 'number'
+      - num: page number (for kind=='number')
+      - current: bool (for kind=='number')
+      - url: href with page & page_size (for kind=='number')
+    Uses utils.pagination_ut.build_page_range if available to shape the window, but guarantees the structure template expects.
+    """
+    raw = build_page_range(page, total_pages, window=2)
+    items: List[Dict[str, Union[str, int, bool]]] = []
+
+    for it in raw:
+        # Accept dict form
+        if isinstance(it, dict) and "kind" in it:
+            kind = it.get("kind")
+            if kind == "ellipsis":
+                items.append({"kind": "ellipsis"})
+            elif kind == "number":
+                try:
+                    num = int(it.get("num"))
+                except Exception:
+                    continue
+                items.append({
+                    "kind": "number",
+                    "num": num,
+                    "current": (num == page),
+                    "url": f"/?page={num}&page_size={page_size}",
+                })
+            continue
+
+        # Accept tuple/list form: ('ellipsis', None) or ('number', num)
+        if isinstance(it, (tuple, list)) and len(it) >= 1:
+            kind = it[0]
+            if kind == "ellipsis":
+                items.append({"kind": "ellipsis"})
+            elif kind == "number" and len(it) >= 2:
+                try:
+                    num = int(it[1])
+                except Exception:
+                    continue
+                items.append({
+                    "kind": "number",
+                    "num": num,
+                    "current": (num == page),
+                    "url": f"/?page={num}&page_size={page_size}",
+                })
+
+    # Fallback: if build_page_range returned nothing, put at least current page
+    if not items:
+        items.append({
+            "kind": "number",
+            "num": page,
+            "current": True,
+            "url": f"/?page={page}&page_size={page_size}",
+        })
+    return items
+
 
 @router.get("/", response_class=HTMLResponse)
 async def index(
@@ -115,7 +172,9 @@ async def index(
     total_pages = max(1, (total + page_size - 1) // page_size)
     has_prev = page > 1
     has_next = page < total_pages
-    page_range: List[Tuple[str, Optional[int]]] = build_page_range(page, total_pages, window=2)
+    prev_page = page - 1 if has_prev else 1
+    next_page = page + 1 if has_next else total_pages
+    page_items = _build_page_items(page, total_pages, page_size)
 
     # Storage client
     storage_client: StorageClient = request.app.state.storage
@@ -143,6 +202,8 @@ async def index(
         "total_pages": total_pages,
         "has_prev": has_prev,
         "has_next": has_next,
-        "page_range": page_range,
+        "prev_page": prev_page,
+        "next_page": next_page,
+        "page_items": page_items,
     }
     return templates.TemplateResponse("index.html", context)
