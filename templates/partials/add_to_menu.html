@@ -1,0 +1,101 @@
+{# Add-to… playlists flyout with gray page backdrop (like Embed).
+   Renders button next to Embed, absolute dropdown anchored to this button.
+   Expects: playlists (list), show_watch_later (bool), show_favorites (bool). #}
+<div class="addto-inline" id="addto-inline" style="display:inline-block; position:relative; margin-left:8px;">
+  <button type="button"
+          class="addto-trigger"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          aria-controls="addto-flyout"
+          style="padding:6px 10px; border:1px solid #ddd; border-radius:6px; background:#f7f7f7; color:#111; cursor:pointer;">
+    Add to…
+  </button>
+
+  <div class="addto-flyout"
+       id="addto-flyout"
+       role="menu"
+       aria-label="Add to playlist"
+       hidden
+       style="position:absolute; top:calc(100% + 6px); right:0; z-index:1000; min-width:220px; max-width:280px; background:#fff; border:1px solid #ddd; border-radius:8px; box-shadow:0 8px 20px rgba(0,0,0,0.12); padding:6px;">
+    <ul class="addto-list" role="none" style="list-style:none; margin:0; padding:0;">
+      {% if show_watch_later %}
+        <li role="none"><button type="button" role="menuitem" class="addto-item" data-action="watch_later" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; cursor:pointer; border-radius:6px;">Watch later</button></li>
+      {% endif %}
+      {% if show_favorites %}
+        <li role="none"><button type="button" role="menuitem" class="addto-item" data-action="favorites" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; cursor:pointer; border-radius:6px;">Favorites</button></li>
+      {% endif %}
+
+      {% if playlists and playlists|length > 0 %}
+        {% for p in playlists %}
+          <li role="none">
+            <button type="button"
+                    role="menuitem"
+                    class="addto-item"
+                    data-action="playlist"
+                    data-playlist-id="{{ p['playlist_id'] }}"
+                    style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; cursor:pointer; border-radius:6px;">
+              {{ p['name'] }}
+            </button>
+          </li>
+        {% endfor %}
+      {% else %}
+        <li role="none" class="addto-empty" style="opacity:0.7; padding:8px 10px;">No playlists yet</li>
+      {% endif %}
+
+      <li role="none" class="addto-sep" style="border-top:1px solid #eee; margin:6px 0;"></li>
+      <li role="none"><button type="button" role="menuitem" class="addto-new" data-action="new" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; cursor:pointer; border-radius:6px;">New Playlist…</button></li>
+    </ul>
+  </div>
+</div>
+
+{# Gray backdrop like Embed; sits under the flyout, above page content #}
+<div id="addto-backdrop" hidden
+     style="position:fixed; inset:0; background:rgba(0,0,0,0.25); z-index:900;"></div>
+
+<script>
+(function(){
+  var root = document.getElementById('addto-inline');
+  if (!root) return;
+  var trigger = root.querySelector('.addto-trigger');
+  var flyout = root.querySelector('#addto-flyout');
+  var backdrop = document.getElementById('addto-backdrop');
+
+  function openFlyout() {
+    flyout.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    if (backdrop) backdrop.hidden = false;
+    // Close when clicking outside
+    setTimeout(function(){
+      document.addEventListener('click', onDocClick, { capture: true, once: true });
+    }, 0);
+  }
+  function closeFlyout() {
+    flyout.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    if (backdrop) backdrop.hidden = true;
+  }
+  function onDocClick(ev) {
+    if (!root.contains(ev.target)) closeFlyout();
+  }
+
+  trigger.addEventListener('click', function(){
+    if (flyout.hidden) openFlyout(); else closeFlyout();
+  });
+  if (backdrop) backdrop.addEventListener('click', closeFlyout);
+  document.addEventListener('keydown', function(ev){
+    if (ev.key === 'Escape') closeFlyout();
+  });
+
+  // Item handlers (placeholder; integrate with routes later)
+  root.addEventListener('click', function(ev){
+    var btn = ev.target.closest('.addto-item, .addto-new');
+    if (!btn) return;
+    var action = btn.getAttribute('data-action') || '';
+    var playlistId = btn.getAttribute('data-playlist-id') || '';
+    var vr = document.getElementById('video-reactions');
+    var vid = vr ? vr.getAttribute('data-video-id') : '';
+    // TODO: POST to routes (watch_later/favorites/add/create)
+    closeFlyout();
+  });
+})();
+</script>
