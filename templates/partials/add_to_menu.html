@@ -4,7 +4,7 @@
           aria-haspopup="menu"
           aria-expanded="false"
           aria-controls="addto-flyout"
-          style="padding:6px 10px; border:1px solid #ddd; border-radius:6px; background:#f7f7f7; color:#111; cursor:pointer;">
+          style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#fff; color:#111; cursor:pointer;">
     Add to…
   </button>
 
@@ -82,44 +82,41 @@
     e.stopPropagation();
     if (flyout.hidden) openFlyout(); else closeFlyout();
   });
-
   // Prevent bubbling clicks inside the flyout from being treated as "outside"
-  flyout.addEventListener('click', function(e){
-    e.stopPropagation();
-
-    var btn = e.target.closest('.addto-item, .addto-new');
-    if (!btn) return;
-
-    var action = btn.getAttribute('data-action') || '';
-    var playlistId = btn.getAttribute('data-playlist-id') || '';
-    var vr = document.getElementById('video-reactions');
-    var vid = vr ? vr.getAttribute('data-video-id') : '';
-
-    if (action === 'watch_later') {
-      // CSRF from cookie (default from yt_csrf)
-      var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
-      var csrf = m ? decodeURIComponent(m[1]) : '';
-      fetch('/playlists/watch_later', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-CSRF-Token': csrf
-        },
-        body: JSON.stringify({ video_id: vid })
-      }).catch(function(){ /* ignore */ }).finally(function(){
-        closeFlyout();
-      });
-      return;
-    }
-
-    // TODO: Handle all another (favorites/add/create)
-    closeFlyout();
-  });
+  flyout.addEventListener('click', function(e){ e.stopPropagation(); });
 
   if (backdrop) backdrop.addEventListener('click', closeFlyout);
   document.addEventListener('keydown', function(ev){
     if (ev.key === 'Escape') closeFlyout();
   });
+
+  var watchLaterBtn = flyout.querySelector('button.addto-item[data-action="watch_later"]');
+  if (watchLaterBtn) {
+    watchLaterBtn.addEventListener('click', async function(e){
+      e.preventDefault();
+      e.stopPropagation();
+
+      var vr = document.getElementById('video-reactions');
+      var vid = vr ? vr.getAttribute('data-video-id') : '';
+
+      // CSRF from cookie (default from yt_csrf)
+      var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
+      var csrf = m ? decodeURIComponent(m[1]) : '';
+
+      try {
+        await fetch('/playlists/watch_later', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRF-Token': csrf
+          },
+          body: JSON.stringify({ video_id: vid })
+        });
+      } catch(e) { /* ignore */ }
+
+      closeFlyout();
+    });
+  }
 
   // Item handlers (placeholder; integrate with routes later)
   root.addEventListener('click', async function(ev){
@@ -129,20 +126,6 @@
     var playlistId = btn.getAttribute('data-playlist-id') || '';
     var vr = document.getElementById('video-reactions');
     var vid = vr ? vr.getAttribute('data-video-id') : '';
-
-    if (action === 'watch_later') {
-      var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
-      var csrf = m ? decodeURIComponent(m[1]) : '';
-      try {
-        await fetch('/playlists/watch_later', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
-          body: JSON.stringify({ video_id: vid })
-        });
-      } catch(e) { /* ignore */ }
-      closeFlyout();
-      return;
-    }
 
     // TODO: POST to routes (watch_later/favorites/add/create)
     closeFlyout();
