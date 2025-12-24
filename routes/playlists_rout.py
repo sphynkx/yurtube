@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 
 from config.config import settings
 from db import get_conn, release_conn
-from db.playlists_db import add_video_to_watch_later, list_user_playlists_min
+from db.playlists_db import add_video_to_watch_later, add_video_to_favorites, list_user_playlists_min
 from utils.security_ut import get_current_user
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -54,6 +54,36 @@ async def api_watch_later(request: Request) -> Any:
     conn = await get_conn()
     try:
         ok = await add_video_to_watch_later(conn, user["user_uid"], video_id)
+        return JSONResponse({"ok": bool(ok)})
+    finally:
+        await release_conn(conn)
+
+
+@router.post("/favorites")
+async def api_favorites(request: Request) -> Any:
+    """
+    JSON body: { "video_id": "XXXXXXXXXXXX" }
+    Requires logged-in user and CSRF header "X-CSRF-Token": <cookie_value>.
+    """
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="auth_required")
+
+    try:
+        body: Dict[str, Any] = await request.json()
+    except Exception:
+        body = {}
+
+    video_id = (body.get("video_id") or "").strip()
+    if not video_id:
+        raise HTTPException(status_code=400, detail="video_id_required")
+
+    if not _validate_csrf(request):
+        raise HTTPException(status_code=403, detail="csrf_required")
+
+    conn = await get_conn()
+    try:
+        ok = await add_video_to_favorites(conn, user["user_uid"], video_id)
         return JSONResponse({"ok": bool(ok)})
     finally:
         await release_conn(conn)

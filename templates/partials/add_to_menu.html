@@ -15,7 +15,7 @@
        hidden
        style="position:absolute; top:calc(100% + 6px); right:0; z-index:1500; min-width:220px; max-width:280px; background:#fff; border:1px solid #ddd; border-radius:8px; box-shadow:0 8px 20px rgba(0,0,0,0.12); padding:6px;">
     {% set _show_watch_later = show_watch_later|default(true) %}
-    {% set _show_favorites   = show_favorites|default(false) %}
+    {% set _show_favorites   = show_favorites|default(true) %}
     <ul class="addto-list" role="none" style="list-style:none; margin:0; padding:0;">
       {% if _show_watch_later %}
         <li role="none"><button type="button" role="menuitem" class="addto-item" data-action="watch_later" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; cursor:pointer; border-radius:6px;">Watch later</button></li>
@@ -99,17 +99,37 @@
       var vr = document.getElementById('video-reactions');
       var vid = vr ? vr.getAttribute('data-video-id') : '';
 
-      // CSRF from cookie (default from yt_csrf)
       var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
       var csrf = m ? decodeURIComponent(m[1]) : '';
 
       try {
         await fetch('/playlists/watch_later', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-CSRF-Token': csrf
-          },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+          body: JSON.stringify({ video_id: vid })
+        });
+      } catch(e) { /* ignore */ }
+
+      closeFlyout();
+    });
+  }
+
+  var favoritesBtn = flyout.querySelector('button.addto-item[data-action="favorites"]');
+  if (favoritesBtn) {
+    favoritesBtn.addEventListener('click', async function(e){
+      e.preventDefault();
+      e.stopPropagation();
+
+      var vr = document.getElementById('video-reactions');
+      var vid = vr ? vr.getAttribute('data-video-id') : '';
+
+      var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
+      var csrf = m ? decodeURIComponent(m[1]) : '';
+
+      try {
+        await fetch('/playlists/favorites', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
           body: JSON.stringify({ video_id: vid })
         });
       } catch(e) { /* ignore */ }

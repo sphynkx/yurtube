@@ -52,6 +52,10 @@ async def ensure_watch_later(conn: asyncpg.Connection, owner_uid: str) -> str:
     return await ensure_system_playlist(conn, owner_uid, WATCH_LATER_TYPE, "Watch later")
 
 
+async def ensure_favorites(conn: asyncpg.Connection, owner_uid: str) -> str:
+    return await ensure_system_playlist(conn, owner_uid, FAVORITES_TYPE, "Favorites")
+
+
 async def add_video_to_playlist(
     conn: asyncpg.Connection,
     playlist_id: str,
@@ -85,6 +89,15 @@ async def add_video_to_watch_later(
     video_id: str,
 ) -> bool:
     plid = await ensure_watch_later(conn, owner_uid)
+    return await add_video_to_playlist(conn, plid, video_id)
+
+
+async def add_video_to_favorites(
+    conn: asyncpg.Connection,
+    owner_uid: str,
+    video_id: str,
+) -> bool:
+    plid = await ensure_favorites(conn, owner_uid)
     return await add_video_to_playlist(conn, plid, video_id)
 
 
