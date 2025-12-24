@@ -145,16 +145,92 @@ CREATE TABLE IF NOT EXISTS playlists (
 
 CREATE INDEX IF NOT EXISTS playlists_owner_created_idx ON playlists (owner_uid, created_at DESC);
 
--- Playlist items
-CREATE TABLE IF NOT EXISTS playlist_items (
-    item_uid     TEXT PRIMARY KEY,
-    playlist_id  TEXT NOT NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE,
-    video_id     TEXT NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
-    position     INTEGER NOT NULL DEFAULT 0 CHECK (position >= 0)
+-- Playlists core schema (MVP) with indices and cascade behavior.
+-- Uses TEXT ids consistent with existing schema. Visibility/type/order are TEXT with CHECK constraints.
+
+-- (1) Playlists table
+CREATE TABLE IF NOT EXISTS playlists (
+    playlist_id      TEXT PRIMARY KEY,
+    owner_uid        TEXT NOT NULL REFERENCES users(user_uid) ON DELETE CASCADE,
+    name             TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
+    description      TEXT,
+    visibility       TEXT NOT NULL CHECK (visibility IN ('private','unlisted','public')),
+    type             TEXT NOT NULL CHECK (type IN ('user','system_watch_later','system_favorites')),
+    parent_id        TEXT REFERENCES playlists(playlist_id) ON DELETE SET NULL,  -- for future hierarchy
+    cover_asset_path TEXT,                                                      -- playlist cover image (relative storage path)
+    is_loop          BOOLEAN NOT NULL DEFAULT FALSE,                            -- loop playback flag
+    ordering_mode    TEXT NOT NULL DEFAULT 'manual' CHECK (ordering_mode IN ('manual','added_at_desc','popularity')),
+    share_token      TEXT UNIQUE,                                               -- optional unlisted share token
+    items_count      INTEGER NOT NULL DEFAULT 0,                                 -- cached count of items
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS playlist_items_unique_vid_per_playlist_uidx ON playlist_items (playlist_id, video_id);
-CREATE INDEX IF NOT EXISTS playlist_items_playlist_position_idx ON playlist_items (playlist_id, position);
+-- Helpful indices for common queries
+CREATE INDEX IF NOT EXISTS playlists_owner_idx ON playlists (owner_uid);
+CREATE INDEX IF NOT EXISTS playlists_owner_visibility_idx ON playlists (owner_uid, visibility, created_at DESC);
+CREATE INDEX IF NOT EXISTS playlists_parent_idx ON playlists (parent_id);
+
+-- Ensure only one system_watch_later per user
+CREATE UNIQUE INDEX IF NOT EXISTS playlists_unique_watch_later_per_user_uidx
+    ON playlists (owner_uid)
+    WHERE type = 'system_watch_later';
+
+-- Ensure only one system_favorites per user
+CREATE UNIQUE INDEX IF NOT EXISTS playlists_unique_favorites_per_user_uidx
+    ON playlists (owner_uid)
+    WHERE type = 'system_favorites';
+
+-- (2) Playlist items table
+-- Composite PK enforces unique (playlist_id, video_id) and is efficient for ordered listing.
+CREATE TABLE IF NOT EXISTS playlist_items (
+    playlist_id  TEXT NOT NULL REFERENCES playlists(playlist_id) ON DELETE CASCADE,
+    video_id     TEXT NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
+    position     INTEGER NOT NULL DEFAULT 0 CHECK (position >= 0),  -- manual order
+    added_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (playlist_id, video_id)
+);
+
+-- Indices optimized for listing and maintenance
+CREATE INDEX IF NOT EXISTS playlist_items_order_idx ON playlist_items (playlist_id, position, video_id);
+CREATE INDEX IF NOT EXISTS playlist_items_added_idx ON playlist_items (playlist_id, added_at DESC);
+CREATE INDEX IF NOT EXISTS playlist_items_video_idx ON playlist_items (video_id);
+
+-- (3) Lightweight triggers to maintain items_count and updated_at
+-- Keep schema self-contained; no heavy logic, just counters.
+
+CREATE OR REPLACE FUNCTION playlist_items_count_trigger() RETURNS TRIGGER AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    UPDATE playlists
+      SET items_count = items_count + 1,
+          updated_at = NOW()
+      WHERE playlist_id = NEW.playlist_id;
+    RETURN NEW;
+  ELSIF TG_OP = 'DELETE' THEN
+    UPDATE playlists
+      SET items_count = GREATEST(items_count - 1, 0),
+          updated_at = NOW()
+      WHERE playlist_id = OLD.playlist_id;
+    RETURN OLD;
+  ELSE
+    RETURN NULL;
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS playlist_items_count_ai ON playlist_items;
+DROP TRIGGER IF EXISTS playlist_items_count_ad ON playlist_items;
+
+CREATE TRIGGER playlist_items_count_ai
+  AFTER INSERT ON playlist_items
+  FOR EACH ROW
+  EXECUTE PROCEDURE playlist_items_count_trigger();
+
+CREATE TRIGGER playlist_items_count_ad
+  AFTER DELETE ON playlist_items
+  FOR EACH ROW
+  EXECUTE PROCEDURE playlist_items_count_trigger();
 
 -- Tags (many-to-many)
 CREATE TABLE IF NOT EXISTS tags (
