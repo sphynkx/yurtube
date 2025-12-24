@@ -1,6 +1,6 @@
-from typing import Any, Optional, Dict
+from typing import Any, Dict
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 
 from config.config import settings
 from db import get_conn, release_conn

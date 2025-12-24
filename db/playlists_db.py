@@ -58,29 +58,25 @@ async def add_video_to_playlist(
     video_id: str,
 ) -> bool:
     """
-    Adds a video to playlist with next position. Returns True if inserted or already there.
+    Adds a video to playlist with next position. Returns True if inserted or already exists.
     """
-    # Compute next position
     pos_row = await conn.fetchrow(
         "SELECT COALESCE(MAX(position), -1) AS maxpos FROM playlist_items WHERE playlist_id = $1",
         playlist_id,
     )
     next_pos = int(pos_row["maxpos"]) + 1 if pos_row and pos_row["maxpos"] is not None else 0
 
-    try:
-        await conn.execute(
-            """
-            INSERT INTO playlist_items (playlist_id, video_id, position)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (playlist_id, video_id) DO NOTHING
-            """,
-            playlist_id,
-            video_id,
-            next_pos,
-        )
-        return True
-    except Exception:
-        return False
+    await conn.execute(
+        """
+        INSERT INTO playlist_items (playlist_id, video_id, position)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (playlist_id, video_id) DO NOTHING
+        """,
+        playlist_id,
+        video_id,
+        next_pos,
+    )
+    return True
 
 
 async def add_video_to_watch_later(

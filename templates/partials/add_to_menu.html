@@ -82,8 +82,39 @@
     e.stopPropagation();
     if (flyout.hidden) openFlyout(); else closeFlyout();
   });
+
   // Prevent bubbling clicks inside the flyout from being treated as "outside"
-  flyout.addEventListener('click', function(e){ e.stopPropagation(); });
+  flyout.addEventListener('click', function(e){
+    e.stopPropagation();
+
+    var btn = e.target.closest('.addto-item, .addto-new');
+    if (!btn) return;
+
+    var action = btn.getAttribute('data-action') || '';
+    var playlistId = btn.getAttribute('data-playlist-id') || '';
+    var vr = document.getElementById('video-reactions');
+    var vid = vr ? vr.getAttribute('data-video-id') : '';
+
+    if (action === 'watch_later') {
+      // CSRF from cookie (default from yt_csrf)
+      var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
+      var csrf = m ? decodeURIComponent(m[1]) : '';
+      fetch('/playlists/watch_later', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-CSRF-Token': csrf
+        },
+        body: JSON.stringify({ video_id: vid })
+      }).catch(function(){ /* ignore */ }).finally(function(){
+        closeFlyout();
+      });
+      return;
+    }
+
+    // TODO: Handle all another (favorites/add/create)
+    closeFlyout();
+  });
 
   if (backdrop) backdrop.addEventListener('click', closeFlyout);
   document.addEventListener('keydown', function(ev){
@@ -91,13 +122,28 @@
   });
 
   // Item handlers (placeholder; integrate with routes later)
-  root.addEventListener('click', function(ev){
+  root.addEventListener('click', async function(ev){
     var btn = ev.target.closest('.addto-item, .addto-new');
     if (!btn) return;
     var action = btn.getAttribute('data-action') || '';
     var playlistId = btn.getAttribute('data-playlist-id') || '';
     var vr = document.getElementById('video-reactions');
     var vid = vr ? vr.getAttribute('data-video-id') : '';
+
+    if (action === 'watch_later') {
+      var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
+      var csrf = m ? decodeURIComponent(m[1]) : '';
+      try {
+        await fetch('/playlists/watch_later', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+          body: JSON.stringify({ video_id: vid })
+        });
+      } catch(e) { /* ignore */ }
+      closeFlyout();
+      return;
+    }
+
     // TODO: POST to routes (watch_later/favorites/add/create)
     closeFlyout();
   });
