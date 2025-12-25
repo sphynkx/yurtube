@@ -43,9 +43,30 @@
 
       <li role="none" class="addto-sep" style="border-top:1px solid #eee; margin:6px 0;"></li>
       <li role="none"><button type="button" role="menuitem" class="addto-new" data-action="new" style="width:100%; text-align:left; padding:8px 10px; border:none; background:transparent; cursor:pointer; border-radius:6px;">New Playlist…</button></li>
+
+      <li role="none" class="addto-create-form" id="addto-create-form" hidden style="padding:8px 10px;">
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <input type="text" class="addto-new-name" placeholder="Playlist name" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+          <select class="addto-new-vis" style="width:100%; padding:8px; border:1px solid #ddd; border-radius:6px;">
+            <option value="private">Private</option>
+            <option value="unlisted">Unlisted</option>
+            <option value="public">Public</option>
+          </select>
+          <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button type="button" class="addto-create-do" style="padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer;">Create</button>
+            <button type="button" class="addto-create-cancel" style="padding:6px 10px; border:1px solid #eee; border-radius:6px; background:#f5f5f5; cursor:pointer;">Cancel</button>
+          </div>
+        </div>
+      </li>
     </ul>
   </div>
 </div>
+
+<style>
+  .addto-flyout .addto-item { transition: background-color .12s ease; }
+  .addto-flyout .addto-item:hover { background: #f3f7ff !important; }
+  .addto-flyout .addto-item:focus-visible { outline: 2px solid #aac4ff; outline-offset: 2px; }
+</style>
 
 <div id="addto-backdrop" hidden
      style="position:fixed; inset:0; background:rgba(0,0,0,0.25); z-index:900;"></div>
@@ -72,6 +93,7 @@
     flyout.hidden = true;
     trigger.setAttribute('aria-expanded', 'false');
     if (backdrop) backdrop.hidden = true;
+    hideCreateForm();
   }
   function onDocClick(ev) {
     if (!root.contains(ev.target)) closeFlyout();
@@ -126,10 +148,15 @@
     var empty = ul.querySelector('.addto-empty');
     if (empty) empty.remove();
 
+    var filtered = Array.isArray(items) ? items.filter(function(p){
+      var t = (p.type || '').toString();
+      return !(t === 'system_watch_later' || t === 'system_favorites' || t.indexOf('system_') === 0);
+    }) : [];
+
     var sep = ul.querySelector('.addto-sep');
     var insertBeforeNode = sep || ul.lastElementChild;
 
-    if (!items || items.length === 0) {
+    if (!filtered || filtered.length === 0) {
       var liEmpty = document.createElement('li');
       liEmpty.setAttribute('role','none');
       liEmpty.className = 'addto-empty';
@@ -140,7 +167,7 @@
       return;
     }
 
-    items.forEach(function(p){
+    filtered.forEach(function(p){
       var li = document.createElement('li');
       li.setAttribute('role','none');
 
@@ -175,6 +202,7 @@
     } catch(e) { /* ignore */ }
   }
 
+  // Watch later
   var watchLaterBtn = flyout.querySelector('button.addto-item[data-action="watch_later"]');
   if (watchLaterBtn) {
     watchLaterBtn.addEventListener('click', async function(e){
@@ -196,6 +224,7 @@
     });
   }
 
+  // Favorites
   var favoritesBtn = flyout.querySelector('button.addto-item[data-action="favorites"]');
   if (favoritesBtn) {
     favoritesBtn.addEventListener('click', async function(e){
@@ -220,22 +249,64 @@
   flyout.querySelectorAll('button.addto-item[data-action="playlist"]').forEach(bindPlaylistButton);
 
   var newBtn = flyout.querySelector('button.addto-new[data-action="new"]');
+  var newBtnLi = newBtn ? newBtn.closest('li') : null;
+  var formLi = flyout.querySelector('#addto-create-form');
+  var nameInput = formLi ? formLi.querySelector('.addto-new-name') : null;
+  var visSelect = formLi ? formLi.querySelector('.addto-new-vis') : null;
+  var createDo = formLi ? formLi.querySelector('.addto-create-do') : null;
+  var createCancel = formLi ? formLi.querySelector('.addto-create-cancel') : null;
+
+  function showCreateForm(){
+    if (!formLi || !newBtnLi) return;
+    newBtnLi.hidden = true;
+    formLi.hidden = false;
+    if (nameInput) { nameInput.value = ''; nameInput.focus(); }
+    if (visSelect) { visSelect.value = 'private'; }
+  }
+  function hideCreateForm(){
+    if (!formLi || !newBtnLi) return;
+    formLi.hidden = true;
+    newBtnLi.hidden = false;
+    if (nameInput) nameInput.value = '';
+  }
+
   if (newBtn) {
-    newBtn.addEventListener('click', async function(e){
+    newBtn.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      showCreateForm();
+    });
+  }
+  if (createCancel) {
+    createCancel.addEventListener('click', function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      hideCreateForm();
+    });
+  }
+
+  if (createDo) {
+    createDo.addEventListener('click', async function(e){
       e.preventDefault();
       e.stopPropagation();
 
-      var name = window.prompt('New playlist name:', 'My playlist');
-      if (!name) { closeFlyout(); return; }
+      var name = nameInput ? (nameInput.value || '').trim() : '';
+      var vis  = visSelect ? (visSelect.value || 'private') : 'private';
+      if (!name) {
+        if (nameInput) nameInput.focus();
+        return;
+      }
 
+      createDo.disabled = true;
       try {
         var res = await fetch('/playlists/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
-          body: JSON.stringify({ name: name, visibility: 'private' })
+          body: JSON.stringify({ name: name, visibility: vis })
         });
         var js = await res.json();
         var plid = js && js.playlist_id ? js.playlist_id : '';
+
         if (plid) {
           var vr = document.getElementById('video-reactions');
           var vid = vr ? vr.getAttribute('data-video-id') : '';
@@ -245,10 +316,27 @@
             body: JSON.stringify({ playlist_id: plid, video_id: vid })
           });
           await refreshPlaylists();
+          closeFlyout();
         }
-      } catch(e) { /* ignore */ }
+      } catch(err) {
+        // ignore
+      } finally {
+        createDo.disabled = false;
+        hideCreateForm();
+      }
+    });
+  }
 
-      closeFlyout();
+  if (nameInput) {
+    nameInput.addEventListener('keydown', function(ev){
+      if (ev.key === 'Enter') {
+        ev.preventDefault();
+        if (createDo && !createDo.disabled) createDo.click();
+      }
+      if (ev.key === 'Escape') {
+        ev.preventDefault();
+        hideCreateForm();
+      }
     });
   }
 
@@ -256,13 +344,6 @@
   root.addEventListener('click', async function(ev){
     var btn = ev.target.closest('.addto-item, .addto-new');
     if (!btn) return;
-    var action = btn.getAttribute('data-action') || '';
-    var playlistId = btn.getAttribute('data-playlist-id') || '';
-    var vr = document.getElementById('video-reactions');
-    var vid = vr ? vr.getAttribute('data-video-id') : '';
-
-    // TODO: POST to routes (watch_later/favorites/add/create)
-    closeFlyout();
   });
 })();
 </script>
