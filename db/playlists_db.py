@@ -56,6 +56,38 @@ async def ensure_favorites(conn: asyncpg.Connection, owner_uid: str) -> str:
     return await ensure_system_playlist(conn, owner_uid, FAVORITES_TYPE, "Favorites")
 
 
+async def create_user_playlist(
+    conn: asyncpg.Connection,
+    owner_uid: str,
+    name: str,
+    visibility: str = "private",
+) -> str:
+    """
+    Create a user playlist (type='user') and return playlist_id.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise ValueError("playlist_name_required")
+    if visibility not in ("private", "unlisted", "public"):
+        visibility = "private"
+
+    playlist_id = gen_id(12)
+    await conn.execute(
+        """
+        INSERT INTO playlists (
+            playlist_id, owner_uid, name, description, visibility,
+            type, parent_id, cover_asset_path, is_loop, ordering_mode, share_token
+        )
+        VALUES ($1, $2, $3, NULL, $4, 'user', NULL, NULL, FALSE, 'manual', NULL)
+        """,
+        playlist_id,
+        owner_uid,
+        name,
+        visibility,
+    )
+    return playlist_id
+
+
 async def add_video_to_playlist(
     conn: asyncpg.Connection,
     playlist_id: str,

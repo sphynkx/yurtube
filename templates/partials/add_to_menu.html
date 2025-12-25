@@ -66,6 +66,7 @@
     setTimeout(function(){
       document.addEventListener('click', onDocClick, { capture: true, once: true });
     }, 0);
+    refreshPlaylists();
   }
   function closeFlyout() {
     flyout.hidden = true;
@@ -90,6 +91,90 @@
     if (ev.key === 'Escape') closeFlyout();
   });
 
+  function getCSRF() {
+    var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  function bindPlaylistButton(btn){
+    if (!btn) return;
+    btn.addEventListener('click', async function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      var plid = btn.getAttribute('data-playlist-id') || '';
+      var vr = document.getElementById('video-reactions');
+      var vid = vr ? vr.getAttribute('data-video-id') : '';
+      try {
+        await fetch('/playlists/add', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+          body: JSON.stringify({ playlist_id: plid, video_id: vid })
+        });
+      } catch(e) { /* ignore */ }
+      closeFlyout();
+    });
+  }
+
+  function renderPlaylists(items){
+    var ul = flyout.querySelector('.addto-list');
+    if (!ul) return;
+
+    ul.querySelectorAll('li > button.addto-item[data-action="playlist"]').forEach(function(btn){
+      var li = btn.closest('li');
+      if (li) li.remove();
+    });
+    var empty = ul.querySelector('.addto-empty');
+    if (empty) empty.remove();
+
+    var sep = ul.querySelector('.addto-sep');
+    var insertBeforeNode = sep || ul.lastElementChild;
+
+    if (!items || items.length === 0) {
+      var liEmpty = document.createElement('li');
+      liEmpty.setAttribute('role','none');
+      liEmpty.className = 'addto-empty';
+      liEmpty.style.opacity = '0.7';
+      liEmpty.style.padding = '8px 10px';
+      liEmpty.textContent = 'No playlists yet';
+      ul.insertBefore(liEmpty, insertBeforeNode);
+      return;
+    }
+
+    items.forEach(function(p){
+      var li = document.createElement('li');
+      li.setAttribute('role','none');
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('role','menuitem');
+      btn.className = 'addto-item';
+      btn.setAttribute('data-action', 'playlist');
+      btn.setAttribute('data-playlist-id', p.playlist_id || '');
+      btn.style.width = '100%';
+      btn.style.textAlign = 'left';
+      btn.style.padding = '8px 10px';
+      btn.style.border = 'none';
+      btn.style.background = 'transparent';
+      btn.style.cursor = 'pointer';
+      btn.style.borderRadius = '6px';
+      btn.textContent = p.name || 'Playlist';
+
+      li.appendChild(btn);
+      ul.insertBefore(li, insertBeforeNode);
+      bindPlaylistButton(btn);
+    });
+  }
+
+  async function refreshPlaylists(){
+    try {
+      var res = await fetch('/playlists/my', { method: 'GET', headers: { 'Accept': 'application/json' } });
+      if (!res.ok) return;
+      var js = await res.json();
+      var items = (js && js.items) ? js.items : [];
+      renderPlaylists(items);
+    } catch(e) { /* ignore */ }
+  }
+
   var watchLaterBtn = flyout.querySelector('button.addto-item[data-action="watch_later"]');
   if (watchLaterBtn) {
     watchLaterBtn.addEventListener('click', async function(e){
@@ -99,13 +184,10 @@
       var vr = document.getElementById('video-reactions');
       var vid = vr ? vr.getAttribute('data-video-id') : '';
 
-      var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
-      var csrf = m ? decodeURIComponent(m[1]) : '';
-
       try {
         await fetch('/playlists/watch_later', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
           body: JSON.stringify({ video_id: vid })
         });
       } catch(e) { /* ignore */ }
@@ -123,15 +205,47 @@
       var vr = document.getElementById('video-reactions');
       var vid = vr ? vr.getAttribute('data-video-id') : '';
 
-      var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
-      var csrf = m ? decodeURIComponent(m[1]) : '';
-
       try {
         await fetch('/playlists/favorites', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
           body: JSON.stringify({ video_id: vid })
         });
+      } catch(e) { /* ignore */ }
+
+      closeFlyout();
+    });
+  }
+
+  flyout.querySelectorAll('button.addto-item[data-action="playlist"]').forEach(bindPlaylistButton);
+
+  var newBtn = flyout.querySelector('button.addto-new[data-action="new"]');
+  if (newBtn) {
+    newBtn.addEventListener('click', async function(e){
+      e.preventDefault();
+      e.stopPropagation();
+
+      var name = window.prompt('New playlist name:', 'My playlist');
+      if (!name) { closeFlyout(); return; }
+
+      try {
+        var res = await fetch('/playlists/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+          body: JSON.stringify({ name: name, visibility: 'private' })
+        });
+        var js = await res.json();
+        var plid = js && js.playlist_id ? js.playlist_id : '';
+        if (plid) {
+          var vr = document.getElementById('video-reactions');
+          var vid = vr ? vr.getAttribute('data-video-id') : '';
+          await fetch('/playlists/add', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+            body: JSON.stringify({ playlist_id: plid, video_id: vid })
+          });
+          await refreshPlaylists();
+        }
       } catch(e) { /* ignore */ }
 
       closeFlyout();

@@ -7,6 +7,8 @@ from db import get_conn, release_conn
 from db.playlists_db import add_video_to_watch_later, add_video_to_favorites, list_user_playlists_min
 from utils.security_ut import get_current_user
 
+from db.playlists_db import add_video_to_playlist, create_user_playlist
+
 router = APIRouter(prefix="/playlists", tags=["playlists"])
 
 
@@ -85,6 +87,74 @@ async def api_favorites(request: Request) -> Any:
     try:
         ok = await add_video_to_favorites(conn, user["user_uid"], video_id)
         return JSONResponse({"ok": bool(ok)})
+    finally:
+        await release_conn(conn)
+
+
+@router.post("/add")
+async def api_add_to_playlist(request: Request) -> Any:
+    """
+    JSON body: { "playlist_id": "XXXXXXXXXXXX", "video_id": "XXXXXXXXXXXX" }
+    Owner must match current user.
+    """
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="auth_required")
+
+    try:
+        body: Dict[str, Any] = await request.json()
+    except Exception:
+        body = {}
+
+    playlist_id = (body.get("playlist_id") or "").strip()
+    video_id = (body.get("video_id") or "").strip()
+    if not playlist_id or not video_id:
+        raise HTTPException(status_code=400, detail="playlist_id_and_video_id_required")
+
+    if not _validate_csrf(request):
+        raise HTTPException(status_code=403, detail="csrf_required")
+
+    conn = await get_conn()
+    try:
+        # Ensure ownership
+        row = await conn.fetchrow(
+            "SELECT owner_uid FROM playlists WHERE playlist_id = $1",
+            playlist_id,
+        )
+        if not row or (row["owner_uid"] != user["user_uid"]):
+            raise HTTPException(status_code=403, detail="not_owner")
+
+        ok = await add_video_to_playlist(conn, playlist_id, video_id)
+        return JSONResponse({"ok": bool(ok)})
+    finally:
+        await release_conn(conn)
+
+
+@router.post("/create")
+async def api_create_playlist(request: Request) -> Any:
+    """
+    JSON body: { "name": "My playlist", "visibility": "private|unlisted|public" }
+    Returns: { "playlist_id": "XXXXXXXXXXXX" }
+    """
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="auth_required")
+
+    try:
+        body: Dict[str, Any] = await request.json()
+    except Exception:
+        body = {}
+
+    name = (body.get("name") or "").strip()
+    visibility = (body.get("visibility") or "private").strip().lower()
+
+    if not _validate_csrf(request):
+        raise HTTPException(status_code=403, detail="csrf_required")
+
+    conn = await get_conn()
+    try:
+        plid = await create_user_playlist(conn, user["user_uid"], name, visibility)
+        return JSONResponse({"playlist_id": plid})
     finally:
         await release_conn(conn)
 
