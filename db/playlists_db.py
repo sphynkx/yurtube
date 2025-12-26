@@ -322,3 +322,28 @@ async def list_playlist_items_with_assets(
         playlist_id,
     )
     return [dict(r) for r in rows]
+
+
+async def update_playlist_visibility(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    owner_uid: str,
+    visibility: str,
+) -> None:
+    """
+    Update visibility for a playlist owned by owner_uid.
+    """
+    vis = (visibility or "").strip().lower()
+    if vis not in ("private", "unlisted", "public"):
+        raise ValueError("invalid_visibility")
+    await conn.execute(
+        """
+        UPDATE playlists
+        SET visibility = $3, updated_at = NOW()
+        WHERE playlist_id = $1 AND owner_uid = $2
+        """,
+        playlist_id,
+        owner_uid,
+        vis,
+    )
+

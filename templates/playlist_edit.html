@@ -8,15 +8,20 @@
   .pl-form { flex: 1; }
   .pl-form .row { margin-bottom:8px; }
   .pl-form input[type="text"] { width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; }
+  .pl-form select { padding:6px 8px; border:1px solid #ddd; border-radius:6px; width:auto; }
   .btn { padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
   .btn-primary { border-color:#88aaff; background:#eef3ff; }
   .btn-danger { border-color:#e39999; background:#fff3f3; color:#a33; }
   .list { display:flex; flex-direction:column; gap:8px; }
-  .item { display:flex; gap:12px; align-items:center; border:1px solid #eee; border-radius:8px; padding:8px; }
+  .item { display:flex; gap:12px; align-items:center; border:1px solid #eee; border-radius:8px; padding:8px; background:#fff; }
   .thumb { width: 200px; height: 112px; background:#f5f5f5 center/cover no-repeat; border-radius:6px; }
   .meta { flex:1; }
   .title { margin:0 0 4px; font-weight:600; }
   .sub { margin:0; font-size:12px; color:#666; }
+
+  .item[draggable="true"] { cursor: move; }
+  .item.dragging { opacity: 0.6; }
+  .item.drop-target { outline: 2px dashed #88aaff; outline-offset: 2px; }
 </style>
 
 <div class="manage-comments-layout">
@@ -33,14 +38,23 @@
           <label>Name</label>
           <input type="text" id="pl-name" value="{{ playlist.name }}">
         </div>
-        <div class="row" style="display:flex; gap:8px;">
-          <button id="pl-save" class="btn btn-primary">Save</button>
+        <div class="row" style="display:flex; gap:8px; align-items:center;">
           <label class="btn" for="pl-file">Upload cover</label>
           <input type="file" id="pl-file" accept="image/*" style="display:none;">
           <button id="pl-remove-cover" class="btn btn-danger" type="button">Remove cover</button>
+
+          <select id="pl-visibility" style="margin-left:50px;">
+            <option value="private" {% if playlist.visibility == 'private' %}selected{% endif %}>Private</option>
+            <option value="unlisted" {% if playlist.visibility == 'unlisted' %}selected{% endif %}>Unlisted</option>
+            <option value="public" {% if playlist.visibility == 'public' %}selected{% endif %}>Public</option>
+          </select>
+
+          <button id="pl-save" class="btn btn-primary" style="margin-left:50px;">Save</button>
         </div>
         <div class="row">
-          <span style="font-size:12px; color:#666;">Visibility: {{ playlist.visibility }} • {{ playlist.items_count }} items</span>
+          <span style="font-size:12px; color:#666;">
+            Visibility: <span id="pl-vis-label">{{ playlist.visibility }}</span> • {{ playlist.items_count }} items
+          </span>
         </div>
       </div>
     </section>
@@ -50,7 +64,7 @@
       {% if items and items|length > 0 %}
       <div class="list" id="pl-items">
         {% for it in items %}
-        <div class="item" data-video-id="{{ it['video_id'] }}">
+        <div class="item" data-video-id="{{ it['video_id'] }}" draggable="true">
           <div class="thumb" style="background-image:url('{{ it['thumb_anim_url'] or it['thumb_url'] or '/static/img/thumb_default.webp' }}');"></div>
           <div class="meta">
             <p class="title"><a href="/watch?v={{ it['video_id'] }}">{{ it['title'] }}</a></p>
@@ -85,22 +99,50 @@
 
   var plid = "{{ playlist.playlist_id }}";
   var nameInput = document.getElementById('pl-name');
+  var visSelect = document.getElementById('pl-visibility');
+  var visLabel  = document.getElementById('pl-vis-label');
   var saveBtn = document.getElementById('pl-save');
   var fileInput = document.getElementById('pl-file');
   var coverDiv = document.getElementById('pl-cover');
   var removeCoverBtn = document.getElementById('pl-remove-cover');
+  var listEl = document.getElementById('pl-items');
 
-  if (saveBtn && nameInput) {
+  async function renameIfNeeded(){
+    var name = (nameInput && nameInput.value || '').trim();
+    if (!name) return;
+    try {
+      await fetch('/playlists/' + encodeURIComponent(plid) + '/rename', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+        body: JSON.stringify({ name: name })
+      });
+    } catch(e) {}
+  }
+
+  async function updateVisibility(){
+    var vis = (visSelect && visSelect.value || '').trim().toLowerCase();
+    if (!vis || !/^(private|unlisted|public)$/.test(vis)) return;
+    try {
+      await fetch('/playlists/' + encodeURIComponent(plid) + '/visibility', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+        body: JSON.stringify({ visibility: vis })
+      });
+      if (visLabel) visLabel.textContent = vis;
+    } catch(e) {}
+  }
+
+  if (saveBtn) {
     saveBtn.addEventListener('click', async function(){
-      var name = (nameInput.value || '').trim();
-      if (!name) { nameInput.focus(); return; }
-      try {
-        await fetch('/playlists/' + encodeURIComponent(plid) + '/rename', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
-          body: JSON.stringify({ name: name })
-        });
-      } catch(e) {}
+      await saveOrderIfDirty();
+      await updateVisibility();
+      await renameIfNeeded();
+    });
+  }
+
+  if (visSelect && visLabel) {
+    visSelect.addEventListener('change', function(){
+      visLabel.textContent = (visSelect.value || '').trim().toLowerCase();
     });
   }
 
@@ -124,7 +166,6 @@
     });
   }
 
-  // Remove cover
   if (removeCoverBtn && coverDiv) {
     removeCoverBtn.addEventListener('click', async function(){
       try {
@@ -149,10 +190,82 @@
           body: JSON.stringify({ video_id: vid })
         });
         item.remove();
+        orderDirty = true;
       } catch(e) {}
     });
   });
 
+  var dragEl = null;
+  var orderDirty = false;
+
+  function getItems(){ return Array.prototype.slice.call(listEl.querySelectorAll('.item')); }
+  function getOrder(){ return getItems().map(function(el){ return el.getAttribute('data-video-id') || ''; }); }
+
+  function swapElements(a, b){
+    var parent = a.parentNode;
+    var aNext = a.nextSibling;
+    var bNext = b.nextSibling;
+    if (aNext === b) {
+      parent.insertBefore(b, a);
+    } else if (bNext === a) {
+      parent.insertBefore(a, b);
+    } else {
+      parent.insertBefore(a, bNext);
+      parent.insertBefore(b, aNext);
+    }
+  }
+
+  function onDropSwap(target){
+    if (!dragEl || !target || dragEl === target) return;
+    swapElements(dragEl, target);
+    orderDirty = true;
+  }
+
+  getItems().forEach(function(el){
+    el.setAttribute('draggable', 'true');
+
+    el.addEventListener('dragstart', function(e){
+      dragEl = el;
+      el.classList.add('dragging');
+      try { e.dataTransfer.setData('text/plain', el.getAttribute('data-video-id') || ''); } catch(_){}
+      try { e.dataTransfer.effectAllowed = 'move'; } catch(_){}
+    });
+
+    el.addEventListener('dragend', function(){
+      el.classList.remove('dragging');
+      dragEl = null;
+      getItems().forEach(function(x){ x.classList.remove('drop-target'); });
+    });
+
+    el.addEventListener('dragover', function(e){
+      e.preventDefault();
+      el.classList.add('drop-target');
+      try { e.dataTransfer.dropEffect = 'move'; } catch(_){}
+    });
+
+    el.addEventListener('dragleave', function(){
+      el.classList.remove('drop-target');
+    });
+
+    el.addEventListener('drop', function(e){
+      e.preventDefault();
+      el.classList.remove('drop-target');
+      onDropSwap(el);
+    });
+  });
+
+  async function saveOrderIfDirty(){
+    if (!orderDirty) return;
+    var order = getOrder();
+    try {
+      await fetch('/playlists/' + encodeURIComponent(plid) + '/items/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+        body: JSON.stringify({ order: order })
+      });
+      orderDirty = false;
+    } catch(e) {}
+  }
 })();
 </script>
 {% endblock %}

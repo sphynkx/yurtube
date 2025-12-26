@@ -27,6 +27,7 @@ from db.playlists_db import (
     delete_playlist_by_owner,
     remove_video_from_playlist,
     reorder_playlist_items,
+    update_playlist_visibility,
 )
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -247,7 +248,7 @@ async def playlist_edit_page(request: Request, playlist_id: str) -> Any:
 
     context = {
         "brand_logo_url": settings.BRAND_LOGO_URL,
-        "brand_tagline": settings.brand_tagline if hasattr(settings, 'brand_tagline') else settings.BRAND_TAGLINE,
+        "brand_tagline": settings.BRAND_TAGLINE,
         "favicon_url": settings.FAVICON_URL,
         "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
         "request": request,
@@ -280,6 +281,34 @@ async def api_rename_playlist(request: Request, playlist_id: str) -> Any:
     conn = await get_conn()
     try:
         await update_playlist_name(conn, playlist_id, user["user_uid"], name)
+        return JSONResponse({"ok": True})
+    finally:
+        await release_conn(conn)
+
+
+@router.post("/{playlist_id}/visibility")
+async def api_update_visibility(request: Request, playlist_id: str) -> Any:
+    """
+    JSON body: { "visibility": "private|unlisted|public" }
+    """
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="auth_required")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    visibility = (body.get("visibility") or "").strip().lower()
+    if visibility not in ("private", "unlisted", "public"):
+        raise HTTPException(status_code=400, detail="invalid_visibility")
+
+    if not _validate_csrf(request):
+        raise HTTPException(status_code=403, detail="csrf_required")
+
+    conn = await get_conn()
+    try:
+        await update_playlist_visibility(conn, playlist_id, user["user_uid"], visibility)
         return JSONResponse({"ok": True})
     finally:
         await release_conn(conn)
@@ -327,12 +356,10 @@ async def api_upload_cover(request: Request, playlist_id: str, file: UploadFile 
     except Exception:
         out = data
 
-    # mkdirs (await if async)
     mkdirs_res = storage.mkdirs(rel_dir, exist_ok=True)
     if inspect.isawaitable(mkdirs_res):
         await mkdirs_res
 
-    # open_writer supports async and sync contexts
     writer_ctx = storage.open_writer(rel_path, overwrite=True)
     if inspect.isawaitable(writer_ctx):
         writer_ctx = await writer_ctx
@@ -361,7 +388,7 @@ async def api_upload_cover(request: Request, playlist_id: str, file: UploadFile 
 @router.post("/{playlist_id}/cover/delete")
 async def api_delete_cover(request: Request, playlist_id: str) -> Any:
     """
-    Delete cover file from storage and reset cover_asset_path to the database.
+    Delete the cover file from storage and reset cover_asset_path in the database.
     """
     user = get_current_user(request)
     if not user:
