@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  @import url('/static/css/manage/account_layout.css');
+
+  .pl-list { display:flex; flex-direction:column; gap:10px; }
+  .pl-row {
+    display:flex; align-items:center; gap:12px;
+    border:1px solid #ddd; border-radius:8px; background:#fff; padding:8px 10px;
+  }
+  .pl-cover { width:120px; height:68px; background:#f5f5f5 center/cover no-repeat; border-radius:6px; flex:0 0 120px; }
+  .pl-meta { flex: 1; }
+  .pl-title a { font-weight:600; color:#111; text-decoration:none; }
+  .pl-title a:hover { text-decoration:underline; }
+  .pl-sub { font-size:12px; color:#666; }
+  .pl-actions { display:flex; gap:8px; }
+  .btn { padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
+  .btn-danger { border-color:#e39999; background:#fff3f3; color:#a33; }
+  .btn:hover { background:#f7faff; }
+</style>
+
+<div class="manage-comments-layout">
+  {% include "account/left.html" %}
+  <div class="mc-main">
+    <div class="mc-top-bar">
+      <h1 class="mc-page-title">Your playlists</h1>
+    </div>
+
+    {% if playlists and playlists|length > 0 %}
+    <div class="pl-list">
+      {% for p in playlists %}
+      <div class="pl-row" data-playlist-id="{{ p['playlist_id'] }}">
+        <div class="pl-cover" style="background-image:url('{{ p['cover_url'] or '/static/img/playlist_default.webp' }}');"></div>
+        <div class="pl-meta">
+          <div class="pl-title"><a href="/playlists/{{ p['playlist_id'] }}/edit">{{ p['name'] }}</a></div>
+          <div class="pl-sub">{{ p['visibility'] }} • {{ p['items_count'] }} items</div>
+        </div>
+        <div class="pl-actions">
+          <button class="btn btn-danger btn-delete">Delete</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+      <p>No playlists yet.</p>
+    {% endif %}
+  </div>
+</div>
+
+<script>
+(function(){
+  function getCSRF(){
+    var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+  document.querySelectorAll('.pl-row .btn-delete').forEach(function(btn){
+    btn.addEventListener('click', async function(){
+      var row = btn.closest('.pl-row');
+      var plid = row ? row.getAttribute('data-playlist-id') : '';
+      if (!plid) return;
+      if (!confirm('Delete this playlist?')) return;
+      try {
+        await fetch('/playlists/' + encodeURIComponent(plid) + '/delete', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': getCSRF() }
+        });
+        row.remove();
+      } catch(e) {}
+    });
+  });
+})();
+</script>
+{% endblock %}

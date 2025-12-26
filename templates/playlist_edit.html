@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  @import url('/static/css/manage/account_layout.css');
+
+  .pl-head { display:flex; gap:16px; align-items:flex-start; margin: 18px 0; }
+  .pl-cover { width: 240px; height: 135px; background:#f5f5f5 center/cover no-repeat; border:1px solid #ddd; border-radius:8px; }
+  .pl-form { flex: 1; }
+  .pl-form .row { margin-bottom:8px; }
+  .pl-form input[type="text"] { width:100%; padding:8px; border:1px solid #ddd; border-radius:6px; }
+  .btn { padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
+  .btn-primary { border-color:#88aaff; background:#eef3ff; }
+  .btn-danger { border-color:#e39999; background:#fff3f3; color:#a33; }
+  .list { display:flex; flex-direction:column; gap:8px; }
+  .item { display:flex; gap:12px; align-items:center; border:1px solid #eee; border-radius:8px; padding:8px; }
+  .thumb { width: 200px; height: 112px; background:#f5f5f5 center/cover no-repeat; border-radius:6px; }
+  .meta { flex:1; }
+  .title { margin:0 0 4px; font-weight:600; }
+  .sub { margin:0; font-size:12px; color:#666; }
+</style>
+
+<div class="manage-comments-layout">
+  {% include "account/left.html" %}
+  <div class="mc-main">
+    <div class="mc-top-bar">
+      <h1 class="mc-page-title">Edit playlist</h1>
+    </div>
+
+    <section class="pl-head">
+      <div id="pl-cover" class="pl-cover" style="background-image:url('{{ cover_url or '/static/img/playlist_default.webp' }}');"></div>
+      <div class="pl-form">
+        <div class="row">
+          <label>Name</label>
+          <input type="text" id="pl-name" value="{{ playlist.name }}">
+        </div>
+        <div class="row" style="display:flex; gap:8px;">
+          <button id="pl-save" class="btn btn-primary">Save</button>
+          <label class="btn" for="pl-file">Upload cover</label>
+          <input type="file" id="pl-file" accept="image/*" style="display:none;">
+          <button id="pl-remove-cover" class="btn btn-danger" type="button">Remove cover</button>
+        </div>
+        <div class="row">
+          <span style="font-size:12px; color:#666;">Visibility: {{ playlist.visibility }} • {{ playlist.items_count }} items</span>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2 style="margin:12px 0;">Items</h2>
+      {% if items and items|length > 0 %}
+      <div class="list" id="pl-items">
+        {% for it in items %}
+        <div class="item" data-video-id="{{ it['video_id'] }}">
+          <div class="thumb" style="background-image:url('{{ it['thumb_anim_url'] or it['thumb_url'] or '/static/img/thumb_default.webp' }}');"></div>
+          <div class="meta">
+            <p class="title"><a href="/watch?v={{ it['video_id'] }}">{{ it['title'] }}</a></p>
+            <p class="sub">
+              {% if it['username'] %}
+                by <a href="/@{{ it['username'] }}">@{{ it['username'] }}</a>
+              {% else %}
+                by <a href="/c/{{ it['channel_id'] }}">{{ it['channel_id'] }}</a>
+              {% endif %}
+              • {{ it['video_created_at'] }}
+            </p>
+          </div>
+          <div>
+            <button class="btn btn-danger btn-remove">Remove</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+        <p>No items yet.</p>
+      {% endif %}
+    </section>
+  </div>
+</div>
+
+<script>
+(function(){
+  function getCSRF(){
+    var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
+    return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  var plid = "{{ playlist.playlist_id }}";
+  var nameInput = document.getElementById('pl-name');
+  var saveBtn = document.getElementById('pl-save');
+  var fileInput = document.getElementById('pl-file');
+  var coverDiv = document.getElementById('pl-cover');
+  var removeCoverBtn = document.getElementById('pl-remove-cover');
+
+  if (saveBtn && nameInput) {
+    saveBtn.addEventListener('click', async function(){
+      var name = (nameInput.value || '').trim();
+      if (!name) { nameInput.focus(); return; }
+      try {
+        await fetch('/playlists/' + encodeURIComponent(plid) + '/rename', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+          body: JSON.stringify({ name: name })
+        });
+      } catch(e) {}
+    });
+  }
+
+  if (fileInput && coverDiv) {
+    fileInput.addEventListener('change', async function(){
+      if (!fileInput.files || !fileInput.files[0]) return;
+      var fd = new FormData();
+      fd.append('file', fileInput.files[0]);
+      try {
+        var res = await fetch('/playlists/' + encodeURIComponent(plid) + '/cover', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': getCSRF() },
+          body: fd
+        });
+        var js = await res.json();
+        if (js && js.cover_url) {
+          coverDiv.style.backgroundImage = 'url(' + js.cover_url + ')';
+        }
+      } catch(e) {}
+      fileInput.value = '';
+    });
+  }
+
+  // Remove cover
+  if (removeCoverBtn && coverDiv) {
+    removeCoverBtn.addEventListener('click', async function(){
+      try {
+        await fetch('/playlists/' + encodeURIComponent(plid) + '/cover/delete', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': getCSRF() }
+        });
+        coverDiv.style.backgroundImage = 'url(/static/img/playlist_default.webp)';
+      } catch(e) {}
+    });
+  }
+
+  document.querySelectorAll('.item .btn-remove').forEach(function(btn){
+    btn.addEventListener('click', async function(){
+      var item = btn.closest('.item');
+      var vid = item ? item.getAttribute('data-video-id') : '';
+      if (!vid) return;
+      try {
+        await fetch('/playlists/' + encodeURIComponent(plid) + '/items/remove', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+          body: JSON.stringify({ video_id: vid })
+        });
+        item.remove();
+      } catch(e) {}
+    });
+  });
+
+})();
+</script>
+{% endblock %}

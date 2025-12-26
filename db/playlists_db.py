@@ -3,7 +3,6 @@ import asyncpg
 
 from utils.idgen_ut import gen_id
 
-
 WATCH_LATER_TYPE = "system_watch_later"
 FAVORITES_TYPE = "system_favorites"
 
@@ -140,7 +139,12 @@ async def list_user_playlists_min(
 ) -> List[Dict[str, Any]]:
     rows = await conn.fetch(
         """
-        SELECT playlist_id, name, type, visibility, items_count
+        SELECT playlist_id,
+               name,
+               type,
+               visibility,
+               items_count,
+               cover_asset_path  -- include cover for UI
         FROM playlists
         WHERE owner_uid = $1
         ORDER BY created_at DESC
@@ -148,5 +152,173 @@ async def list_user_playlists_min(
         """,
         owner_uid,
         limit,
+    )
+    return [dict(r) for r in rows]
+
+
+# -------- Owner/playlist helpers --------
+
+async def get_owned_playlist(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    owner_uid: str,
+) -> Optional[Dict[str, Any]]:
+    row = await conn.fetchrow(
+        """
+        SELECT playlist_id, owner_uid, name, description, visibility, type,
+               cover_asset_path, items_count, created_at, updated_at
+        FROM playlists
+        WHERE playlist_id = $1 AND owner_uid = $2
+        """,
+        playlist_id,
+        owner_uid,
+    )
+    return dict(row) if row else None
+
+
+async def get_playlist_owner_uid(conn: asyncpg.Connection, playlist_id: str) -> Optional[str]:
+    row = await conn.fetchrow(
+        "SELECT owner_uid FROM playlists WHERE playlist_id = $1",
+        playlist_id,
+    )
+    return row["owner_uid"] if row else None
+
+
+async def update_playlist_name(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    owner_uid: str,
+    name: str,
+) -> None:
+    await conn.execute(
+        """
+        UPDATE playlists
+        SET name = $3, updated_at = NOW()
+        WHERE playlist_id = $1 AND owner_uid = $2
+        """,
+        playlist_id,
+        owner_uid,
+        name,
+    )
+
+
+async def get_playlist_cover_path(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    owner_uid: str,
+) -> Optional[str]:
+    row = await conn.fetchrow(
+        """
+        SELECT cover_asset_path
+        FROM playlists
+        WHERE playlist_id = $1 AND owner_uid = $2
+        """,
+        playlist_id,
+        owner_uid,
+    )
+    return (row["cover_asset_path"] if row and row["cover_asset_path"] else None)
+
+
+async def set_playlist_cover_path(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    owner_uid: str,
+    rel_path: Optional[str],
+) -> None:
+    await conn.execute(
+        """
+        UPDATE playlists
+        SET cover_asset_path = $3, updated_at = NOW()
+        WHERE playlist_id = $1 AND owner_uid = $2
+        """,
+        playlist_id,
+        owner_uid,
+        rel_path,
+    )
+
+
+async def delete_playlist_by_owner(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    owner_uid: str,
+) -> None:
+    await conn.execute(
+        "DELETE FROM playlists WHERE playlist_id = $1 AND owner_uid = $2",
+        playlist_id,
+        owner_uid,
+    )
+
+
+async def remove_video_from_playlist(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    video_id: str,
+) -> None:
+    await conn.execute(
+        "DELETE FROM playlist_items WHERE playlist_id = $1 AND video_id = $2",
+        playlist_id,
+        video_id,
+    )
+
+
+async def reorder_playlist_items(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    order: List[str],
+) -> None:
+    pos = 0
+    for vid in order:
+        await conn.execute(
+            "UPDATE playlist_items SET position = $3 WHERE playlist_id = $1 AND video_id = $2",
+            playlist_id,
+            (vid or "").strip(),
+            pos,
+        )
+        pos += 1
+
+
+async def list_playlist_items_with_assets(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+) -> List[Dict[str, Any]]:
+    """
+    Return playlist items with joined video metadata and assets (as used in editor UI).
+    """
+    rows = await conn.fetch(
+        """
+        SELECT pi.playlist_id, pi.video_id, pi.position, pi.added_at,
+               v.title,
+               v.created_at AS video_created_at,
+               v.thumb_pref_offset AS thumb_pref_offset,
+               u.username,
+               u.channel_id,
+               vthumb.path AS thumb_asset_path,
+               vanim.path  AS thumb_anim_asset_path,
+               uava.path   AS avatar_asset_path
+        FROM playlist_items AS pi
+        JOIN videos AS v ON v.video_id = pi.video_id
+        JOIN users  AS u ON u.user_uid = v.author_uid
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_default'
+          LIMIT 1
+        ) vthumb ON true
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM video_assets
+          WHERE video_id = v.video_id AND asset_type = 'thumbnail_anim'
+          LIMIT 1
+        ) vanim ON true
+        LEFT JOIN LATERAL (
+          SELECT path
+          FROM user_assets
+          WHERE user_uid = v.author_uid AND asset_type = 'avatar'
+          LIMIT 1
+        ) uava ON true
+        WHERE pi.playlist_id = $1
+        ORDER BY pi.position ASC, pi.added_at ASC
+        """,
+        playlist_id,
     )
     return [dict(r) for r in rows]
