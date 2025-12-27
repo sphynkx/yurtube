@@ -247,7 +247,11 @@
       ["--icon-theater", "theater.svg"],
       ["--icon-full", "full.svg"],
       ["--icon-autoplay-on", "autoplay-on.svg"],
-      ["--icon-autoplay-off", "autoplay-off.svg"]
+      ["--icon-autoplay-off", "autoplay-off.svg"],
+      ["--icon-shuffle-on", "shuffle-on.svg"],
+      ["--icon-shuffle-off", "shuffle-off.svg"],
+      ["--icon-cycle-on", "cycle-on.svg"],
+      ["--icon-cycle-off", "cycle-off.svg"]
     ].forEach(function (p) {
       root.style.setProperty(p[0], 'url("' + iconBase + '/' + p[1] + '")');
     });
@@ -504,6 +508,75 @@
       hooks.textBox.textContent = overlayActive ? currentCueText() : "";
     }
 
+    // ====== Helpers for mask/fallback icons ======
+    var ICON_CHECK_CACHE = {};
+    function cssVarValue(name) {
+      try {
+        var cs = getComputedStyle(root);
+        var v = cs.getPropertyValue(name) || root.style.getPropertyValue(name) || "";
+        return String(v || "").trim();
+      } catch(_) { return ""; }
+    }
+    function extractUrlFromCssVar(val) {
+      var m = String(val).match(/url\(["']?([^"')]+)["']?\)/i);
+      return m && m[1] ? m[1] : null;
+    }
+    function assetExists(url) {
+      if (!url) return Promise.resolve(false);
+      if (ICON_CHECK_CACHE[url] !== undefined) return Promise.resolve(ICON_CHECK_CACHE[url]);
+      return fetch(url, { method: "GET", credentials: "same-origin", cache: "no-store" })
+        .then(function(r){ ICON_CHECK_CACHE[url] = !!r.ok; return ICON_CHECK_CACHE[url]; })
+        .catch(function(){ ICON_CHECK_CACHE[url] = false; return false; });
+    }
+    function applyIcon(button, varOn, varOff, isOn, fallbackEmoji) {
+      // Force fallback (fix svg-masks and remove it)
+      if (button && button.dataset && button.dataset.forceEmoji === "1") {
+        button.textContent = fallbackEmoji;
+        button.style.webkitMaskImage = "";
+        button.style.maskImage = "";
+        button.style.backgroundColor = "transparent";
+        button.style.color = "var(--yrp-icon-color)";
+        button.style.textIndent = "0";
+        button.dataset.maskApplied = "0";
+        return;
+      }
+
+      var varName = isOn ? varOn : varOff;
+      var val = cssVarValue(varName);
+      var url = extractUrlFromCssVar(val);
+      if (!url) {
+        button.style.webkitMaskImage = "";
+        button.style.maskImage = "";
+        button.textContent = fallbackEmoji;
+        button.style.backgroundColor = "transparent";
+        button.style.color = "var(--yrp-icon-color)";
+        button.style.textIndent = "0";
+        button.dataset.maskApplied = "0";
+        return;
+      }
+      assetExists(url).then(function(ok){
+        if (ok) {
+          button.textContent = "";
+          var iconVar = "var(" + varName + ")";
+          button.style.webkitMaskImage = iconVar;
+          button.style.maskImage = iconVar;
+          button.style.backgroundColor = "var(--yrp-icon-color)";
+          button.style.color = "";
+          button.style.textIndent = "-9999px";
+          button.dataset.maskApplied = "1";
+        } else {
+          button.style.webkitMaskImage = "";
+          button.style.maskImage = "";
+          button.textContent = fallbackEmoji;
+          button.style.backgroundColor = "transparent";
+          button.style.color = "var(--yrp-icon-color)";
+          button.style.textIndent = "0";
+          button.dataset.maskApplied = "0";
+        }
+      });
+    }
+    // ====== Helpers end ======
+
     function refreshSubtitlesBtn() {
       if (!btnSubtitles) return;
       var has = anySubtitleTracks();
@@ -670,7 +743,7 @@
       btnAutoplay.textContent = "";
       var iconVar = on ? "var(--icon-autoplay-on)" : "var(--icon-autoplay-off)";
       Object.assign(btnAutoplay.style, {
-        backgroundColor: "#6cc9fa",
+        backgroundColor: "currentColor",
         webkitMaskImage: iconVar,
         maskImage: iconVar,
         webkitMaskRepeat: "no-repeat",
@@ -678,7 +751,8 @@
         webkitMaskPosition: "center",
         maskPosition: "center",
         webkitMaskSize: "20px 20px",
-        maskSize: "20px 20px"
+        maskSize: "20px 20px",
+        opacity: on ? "1" : "0.6"
       });
     }
 
@@ -692,7 +766,7 @@
       btnPlay.textContent = "";
       var iconVar = playing ? "var(--icon-pause)" : "var(--icon-play)";
       Object.assign(btnPlay.style, {
-        backgroundColor: "#6cc9fa",
+        backgroundColor: "currentColor",
         webkitMaskImage: iconVar,
         maskImage: iconVar,
         webkitMaskRepeat: "no-repeat",
@@ -1065,6 +1139,191 @@
     btnPrev && btnPrev.addEventListener("click", function () { root.dispatchEvent(new CustomEvent("yrp-prev", { bubbles: true })); });
     btnNext && btnNext.addEventListener("click", function () { root.dispatchEvent(new CustomEvent("yrp-next", { bubbles: true })); });
 
+    (function playlistSupport(){
+      var url = new URL(window.location.href);
+      var playlistId = url.searchParams.get("p");
+      var currentVid = url.searchParams.get("v") || (root.getAttribute("data-video-id") || "");
+
+      if (!playlistId) {
+        if (btnPrev) btnPrev.style.display = "none";
+        if (btnNext) btnNext.style.display = "none";
+        var oldSh = root.querySelector(".yrp-shuffle");
+        var oldCy = root.querySelector(".yrp-cycle");
+        if (oldSh) oldSh.style.display = "none";
+        if (oldCy) oldCy.style.display = "none";
+        return;
+      } else {
+        if (btnPrev) btnPrev.style.display = "";
+        if (btnNext) btnNext.style.display = "";
+      }
+
+      function collectOrder(){
+        var items = [];
+        var right = document.querySelector("#upnext-block .rb-list");
+        var under = document.querySelector("#panel-upnext .upnext-list");
+        var anchors = [];
+        if (right) anchors = right.querySelectorAll("a.rb-item[href*='/watch']");
+        else if (under) anchors = under.querySelectorAll("a.rb-item[href*='/watch']");
+        anchors.forEach(function(a){
+          var href = a.getAttribute("href") || "";
+          var m = href.match(/[?&]v=([^&]+)/);
+          if (m && m[1]) items.push(decodeURIComponent(m[1]));
+        });
+        return items;
+      }
+
+      var order = collectOrder();
+      if (!order || order.length === 0) return;
+      var curIndex = order.indexOf(currentVid);
+      if (curIndex < 0) curIndex = 0;
+
+      function plKey(s){ return "pl:" + playlistId + ":" + s; }
+      var orderMode = (function(){ var v = load(plKey("order"), "direct"); return v === "shuffle" ? "shuffle" : "direct"; })();
+      var cycleOn  = (function(){ var v = load(plKey("cycle"), "0"); return v === true || v === "1"; })();
+
+      function saveOrderMode(mode){
+        orderMode = (mode === "shuffle") ? "shuffle" : "direct";
+        save(plKey("order"), orderMode);
+        refreshShuffleBtn();
+      }
+      function saveCycle(flag){
+        cycleOn = !!flag;
+        save(plKey("cycle"), cycleOn ? "1" : "0");
+        refreshCycleBtn();
+      }
+
+      function pickRandomIndex(excludeIdx){
+        if (order.length <= 1) return excludeIdx;
+        var tries = 0, rnd = excludeIdx;
+        while (tries < 6 && rnd === excludeIdx) { rnd = Math.floor(Math.random() * order.length); tries++; }
+        if (rnd === excludeIdx) rnd = (excludeIdx + 1) % order.length;
+        return rnd;
+      }
+      function nextIndex(){
+        if (orderMode === "shuffle") return pickRandomIndex(curIndex);
+        var ni = curIndex + 1;
+        if (ni >= order.length) return cycleOn ? 0 : -1;
+        return ni;
+      }
+      function prevIndex(){
+        if (orderMode === "shuffle") return pickRandomIndex(curIndex);
+        var pi = curIndex - 1;
+        if (pi < 0) return cycleOn ? (order.length - 1) : -1;
+        return pi;
+      }
+      function gotoIndex(idx){
+        idx = Math.max(0, Math.min(order.length - 1, idx));
+        var vidTarget = order[idx];
+        if (!vidTarget) return;
+
+        // Flush resume-timestamp for videos in playlist
+        try {
+          var m = load("resume", {});
+          if (m && m[vidTarget]) { delete m[vidTarget]; save("resume", m); }
+        } catch(_){}
+
+        var nu = new URL(window.location.href);
+        nu.searchParams.set("v", vidTarget);
+        nu.searchParams.set("p", playlistId);
+        window.location.href = nu.toString();
+      }
+
+      root.addEventListener("yrp-prev", function(){ var i = prevIndex(); if (i >= 0) gotoIndex(i); });
+      root.addEventListener("yrp-next", function(){ var i = nextIndex(); if (i >= 0) gotoIndex(i); });
+
+      // Shuffle/Cycle buttons
+      var btnShuffle = root.querySelector(".yrp-shuffle");
+      var btnCycle   = root.querySelector(".yrp-cycle");
+
+      if (!btnShuffle) {
+        btnShuffle = document.createElement("button");
+        btnShuffle.type = "button";
+        btnShuffle.className = "yrp-btn yrp-shuffle";
+        btnShuffle.title = "Shuffle playlist";
+        btnShuffle.setAttribute("aria-label", "Shuffle playlist");
+        Object.assign(btnShuffle.style, {
+          border: "none",
+          width: "var(--yrp-icon-button-width)",
+          height: "28px",
+          cursor: "pointer",
+          padding: "0",
+          marginLeft: "6px",
+          marginRight: "2px"
+        });
+      }
+      if (!btnCycle) {
+        btnCycle = document.createElement("button");
+        btnCycle.type = "button";
+        btnCycle.className = "yrp-btn yrp-cycle";
+        btnCycle.title = "Cycle playlist";
+        btnCycle.setAttribute("aria-label", "Cycle playlist");
+        Object.assign(btnCycle.style, {
+          border: "none",
+          width: "var(--yrp-icon-button-width)",
+          height: "28px",
+          cursor: "pointer",
+          padding: "0",
+          marginRight: "8px"
+        });
+      }
+
+      // Force emoji mode (replace to svg and remove)
+      btnShuffle.dataset.forceEmoji = "1";
+      btnCycle.dataset.forceEmoji = "1";
+
+      function refreshShuffleBtn(){
+        btnShuffle.setAttribute("aria-pressed", orderMode === "shuffle" ? "true" : "false");
+        applyIcon(btnShuffle, "--icon-shuffle-on", "--icon-shuffle-off", orderMode === "shuffle", "🔀");
+        btnShuffle.style.opacity = (orderMode === "shuffle") ? "1" : "0.55";
+        btnShuffle.style.display = "";
+      }
+      function refreshCycleBtn(){
+        btnCycle.setAttribute("aria-pressed", cycleOn ? "true" : "false");
+        applyIcon(btnCycle, "--icon-cycle-on", "--icon-cycle-off", !!cycleOn, "🔁");
+        btnCycle.style.opacity = cycleOn ? "1" : "0.55";
+        btnCycle.style.display = "";
+      }
+
+      refreshShuffleBtn();
+      refreshCycleBtn();
+
+      btnShuffle.addEventListener("click", function(){
+        saveOrderMode(orderMode === "shuffle" ? "direct" : "shuffle");
+      });
+      btnCycle.addEventListener("click", function(){
+        saveCycle(!cycleOn);
+      });
+
+      try {
+        var container = leftGrp || (btnNext && btnNext.parentNode) || root;
+        if (vol && container) {
+          container.insertBefore(btnShuffle, vol);
+          container.insertBefore(btnCycle, vol);
+        } else if (btnNext && container) {
+          container.insertBefore(btnShuffle, btnNext.nextSibling);
+          container.insertBefore(btnCycle, btnShuffle.nextSibling);
+        } else {
+          container.appendChild(btnShuffle);
+          container.appendChild(btnCycle);
+        }
+      } catch(_){}
+
+      video.addEventListener("ended", function(){
+        var i = nextIndex();
+        if (i >= 0) gotoIndex(i);
+      });
+
+      document.addEventListener("keydown", function(e){
+        var t = e.target, tag = t && t.tagName ? t.tagName.toUpperCase() : "";
+        if (t && (t.isContentEditable || tag === "INPUT" || tag === "TEXTAREA")) return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        var code = e.code || "";
+        if (code === "PageUp")   { e.preventDefault(); var i = prevIndex(); if (i >= 0) gotoIndex(i); }
+        else if (code === "PageDown") { e.preventDefault(); var j = nextIndex(); if (j >= 0) gotoIndex(j); }
+      });
+    })();
+    // === end of playlists block ===
+
     if (btnVol) {
       btnVol.addEventListener("click", function (e) {
         e.preventDefault();
@@ -1239,16 +1498,18 @@
       });
     });
 
-    ["mousemove", "pointermove", "mouseenter", "touchstart"].forEach(function (evName) {
-      root.addEventListener(evName, function () { try { root.focus(); } catch (_) {} showControls(); }, { passive: true });
-      video && video.addEventListener(evName, showControls, { passive: true });
-      centerPlay && centerPlay.addEventListener(evName, showControls, { passive: true });
-    });
-
     function onDocMove(e) {
       var r = root.getBoundingClientRect();
       if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) showControls();
     }
+    document.addEventListener("mousemove", onDocMove, { passive: true });
+    document.addEventListener("pointermove", onDocMove, { passive: true });
+
+    ["mousemove", "pointermove", "mouseenter", "mouseover", "touchstart"].forEach(function (evName) {
+      root.addEventListener(evName, function () { try { root.focus(); } catch (_) {} showControls(); }, { passive: true });
+      video && video.addEventListener(evName, showControls, { passive: true });
+      centerPlay && centerPlay.addEventListener(evName, showControls, { passive: true });
+    });
 
     function updateFsHoverBinding() {
       try {
@@ -1256,8 +1517,6 @@
           document.addEventListener("mousemove", onDocMove, { passive: true });
           document.addEventListener("pointermove", onDocMove, { passive: true });
         } else {
-          document.removeEventListener("mousemove", onDocMove);
-          document.removeEventListener("pointermove", onDocMove);
         }
       } catch (_) {}
     }

@@ -220,9 +220,8 @@
     var spritePop = null;
     var spriteDurationApprox = 0;
 
-    // SPRITES POSITION UPDATED constants
-    var CONTROL_ZONE_PX = 85;      // height of bottom edge (under controls)
-    var OFFSET_ABOVE    = 12;      // padding above bottom edge of video
+    var CONTROL_ZONE_PX = 85;
+    var OFFSET_ABOVE    = 12;
     var FALLBACK_W = 160;
     var FALLBACK_H = 90;
 
@@ -293,13 +292,10 @@
       if (!spritesVtt || !spriteCues.length) return;
       var rectVideo = video.getBoundingClientRect();
       var rectRoot = root.getBoundingClientRect();
-
-      // Show sprites only if cursor in bottom zone
       if (evt.clientY < rectVideo.bottom - CONTROL_ZONE_PX) {
         if (spritePop) spritePop.style.display = "none";
         return;
       }
-
       var pop = ensureSpritePop();
       var clientX = evt.clientX;
       var xInside = Math.max(rectVideo.left, Math.min(clientX, rectVideo.right));
@@ -333,28 +329,179 @@
 
       var offsetX = xInside - rectRoot.left - cw/2;
       offsetX = Math.max(rectVideo.left - rectRoot.left, Math.min(offsetX, rectVideo.right - rectRoot.left - cw));
-
       var bottomLine = rectVideo.bottom - rectRoot.top;
       var topPos = bottomLine - ch - OFFSET_ABOVE - (CONTROL_ZONE_PX * 0.35);
-
       if (topPos < 0) topPos = 0;
       pop.style.left = offsetX + "px";
       pop.style.top  = topPos + "px";
     }
 
     if (spritesVtt) {
-      video.addEventListener("loadedmetadata", function(){
-        loadSpritesVTT();
-      });
+      video.addEventListener("loadedmetadata", function(){ loadSpritesVTT(); });
       setTimeout(function(){ if(!spritesLoaded && !spritesLoadError) loadSpritesVTT(); }, 2500);
-
-      video.addEventListener("mousemove", function(e){
-        if (spritesLoaded) showSpritePreview(e);
-      });
-      video.addEventListener("mouseleave", function(){
-        if (spritePop) spritePop.style.display = "none";
-      });
+      video.addEventListener("mousemove", function(e){ if (spritesLoaded) showSpritePreview(e); });
+      video.addEventListener("mouseleave", function(){ if (spritePop) spritePop.style.display = "none"; });
     }
+
+    // --- Playlist navigation controls & integration ---
+    (function(){
+      var pl = (opts && opts.playlist) || null;
+      if (!pl || !Array.isArray(pl.items) || pl.items.length === 0 || !pl.id) {
+        // If UI has << >> in DOM, hide them when not in playlist mode
+        ["yrp-btn-prev","yrp-btn-next"].forEach(function(cls){
+          var el = root.querySelector("."+cls);
+          if (el) el.style.display = "none";
+        });
+        return;
+      }
+
+      var playlistId = String(pl.id);
+      var items = pl.items.slice();
+      var curIndex = Math.max(0, parseInt(pl.index || 0, 10) || 0);
+
+      function plKey(s){ return "pl:" + playlistId + ":" + s; }
+      var orderMode = localStorage.getItem(plKey("order")) || "direct"; // "direct" | "shuffle"
+      var cycleOn = (localStorage.getItem(plKey("cycle")) === "1");
+
+      function gotoIndex(idx){
+        idx = Math.max(0, Math.min(items.length - 1, idx));
+        var vid = items[idx];
+        if (!vid) return;
+        var u = new URL(window.location.href);
+        u.searchParams.set("v", vid);
+        u.searchParams.set("p", playlistId);
+        window.location.href = u.toString();
+      }
+
+      function pickRandomIndex(excludeIdx){
+        if (items.length <= 1) return excludeIdx;
+        var tries = 0;
+        var rnd = excludeIdx;
+        while (tries < 6 && rnd === excludeIdx) {
+          rnd = Math.floor(Math.random() * items.length);
+          tries++;
+        }
+        if (rnd === excludeIdx) rnd = (excludeIdx + 1) % items.length;
+        return rnd;
+      }
+
+      function nextIndex(){
+        if (orderMode === "shuffle") return pickRandomIndex(curIndex);
+        var ni = curIndex + 1;
+        if (ni >= items.length) return cycleOn ? 0 : -1;
+        return ni;
+      }
+      function prevIndex(){
+        if (orderMode === "shuffle") return pickRandomIndex(curIndex);
+        var pi = curIndex - 1;
+        if (pi < 0) return cycleOn ? (items.length - 1) : -1;
+        return pi;
+      }
+
+      // Integrate with existing UI buttons if present
+      var uiPrev = root.querySelector(".yrp-btn-prev");
+      var uiNext = root.querySelector(".yrp-btn-next");
+      if (uiPrev || uiNext) {
+        if (uiPrev) {
+          uiPrev.style.display = "";
+          uiPrev.title = uiPrev.title || "Previous in playlist";
+          uiPrev.setAttribute("aria-label", uiPrev.getAttribute("aria-label") || "Previous in playlist");
+          uiPrev.addEventListener("click", function(e){ e.preventDefault(); var i = prevIndex(); if (i >= 0) gotoIndex(i); });
+        }
+        if (uiNext) {
+          uiNext.style.display = "";
+          uiNext.title = uiNext.title || "Next in playlist";
+          uiNext.setAttribute("aria-label", uiNext.getAttribute("aria-label") || "Next in playlist");
+          uiNext.addEventListener("click", function(e){ e.preventDefault(); var i = nextIndex(); if (i >= 0) gotoIndex(i); });
+        }
+      }
+
+      // Overlay buttons (shuffle + cycle), and prev/next fallback if no native
+      var bar = document.createElement("div");
+      bar.className = "yrp-ext-controls";
+      bar.style.position = "absolute";
+      bar.style.right = "12px";
+      bar.style.bottom = "12px";
+      bar.style.display = "flex";
+      bar.style.gap = "8px";
+      bar.style.alignItems = "center";
+      bar.style.zIndex = "20";
+      bar.style.background = "rgba(255,255,255,.85)";
+      bar.style.border = "1px solid #ddd";
+      bar.style.borderRadius = "8px";
+      bar.style.padding = "6px 8px";
+      bar.style.backdropFilter = "saturate(1.2) blur(6px)";
+
+      function mkBtn(txt, title){
+        var b = document.createElement("button");
+        b.type = "button";
+        b.textContent = txt;
+        b.title = title || "";
+        b.setAttribute("aria-label", title || txt);
+        b.style.border = "1px solid #bbb";
+        b.style.background = "#fff";
+        b.style.borderRadius = "6px";
+        b.style.padding = "4px 8px";
+        b.style.cursor = "pointer";
+        b.style.fontSize = "13px";
+        b.style.lineHeight = "1";
+        b.addEventListener("mouseenter", function(){ b.style.background = "#f3f3f3"; });
+        b.addEventListener("mouseleave", function(){ b.style.background = "#fff"; });
+        return b;
+      }
+
+      var btnPrev = mkBtn("⏮", "Previous in playlist");
+      var btnNext = mkBtn("⏭", "Next in playlist");
+      var btnShuffle = mkBtn("🔀", "Shuffle");
+      var btnCycle = mkBtn("🔁", "Cycle playlist");
+
+      function syncStates(){
+        btnShuffle.style.fontWeight = (orderMode === "shuffle") ? "700" : "400";
+        btnCycle.style.fontWeight = (cycleOn ? "700" : "400");
+      }
+
+      // Show prev/next in overlay only if native not present
+      if (!uiPrev) bar.appendChild(btnPrev);
+      if (!uiNext) bar.appendChild(btnNext);
+      bar.appendChild(btnShuffle);
+      bar.appendChild(btnCycle);
+
+      btnPrev.addEventListener("click", function(){ var idx = prevIndex(); if (idx >= 0) gotoIndex(idx); });
+      btnNext.addEventListener("click", function(){ var idx = nextIndex(); if (idx >= 0) gotoIndex(idx); });
+      btnShuffle.addEventListener("click", function(){
+        orderMode = (orderMode === "shuffle") ? "direct" : "shuffle";
+        try { localStorage.setItem(plKey("order"), orderMode); } catch(_){}
+        syncStates();
+      });
+      btnCycle.addEventListener("click", function(){
+        cycleOn = !cycleOn;
+        try { localStorage.setItem(plKey("cycle"), cycleOn ? "1" : "0"); } catch(_){}
+        syncStates();
+      });
+
+      try {
+        var wrap = root.querySelector(".yrp-video-wrap") || root;
+        var pos = getComputedStyle(wrap).position;
+        if (pos === "static") wrap.style.position = "relative";
+        wrap.appendChild(bar);
+      } catch(_){ root.appendChild(bar); }
+
+      syncStates();
+
+      video.addEventListener("ended", function(){
+        var idx = nextIndex();
+        if (idx >= 0) gotoIndex(idx);
+      });
+
+      document.addEventListener("keydown", function(e){
+        var tag = e.target && e.target.tagName ? e.target.tagName.toUpperCase() : "";
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (tag === "INPUT" || tag === "TEXTAREA" || e.target.isContentEditable) return;
+        var code = e.code || "";
+        if (code === "PageUp") { e.preventDefault(); var idx = prevIndex(); if (idx >= 0) gotoIndex(idx); }
+        else if (code === "PageDown") { e.preventDefault(); var idx2 = nextIndex(); if (idx2 >= 0) gotoIndex(idx2); }
+      });
+    })();
 
     syncPlayingClass();
   }

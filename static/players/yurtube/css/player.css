@@ -378,3 +378,10 @@
   /* prevent default min-height artifacts */
   min-height: 0;
 }
+
+.yrp-btn.yrp-shuffle[data-mask-applied="0"],
+.yrp-btn.yrp-cycle[data-mask-applied="0"] {
+  background-color: transparent !important;
+  color: var(--yrp-icon-color) !important;
+  text-indent: 0 !important;
+}
