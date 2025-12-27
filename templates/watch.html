@@ -376,7 +376,7 @@ body[data-debug="1"] .watch-layout * { outline:1px dashed rgba(0, 100, 255, .15)
   {% if _has_right %}
   <aside class="watch-right" aria-label="Up next" id="watch-right">
     <div class="upnext-block" id="upnext-block">
-      <h3 style="margin:0 0 8px 0;">Up next</h3>
+      <h3 style="margin:0 0 8px 0;">{{ upnext_title|default('Up next') }}</h3>
       <div class="rb-list" style="display:flex;flex-direction:column;gap:10px;">
         {% for r in sidebar_list %}
         <a class="rb-item" href="/watch?v={{ r['video_id'] }}" style="display:flex;gap:8px;text-decoration:none;color:inherit;">

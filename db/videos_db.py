@@ -250,6 +250,8 @@ async def list_author_public_videos(
                v.duration_sec,
                v.storage_path,
                v.created_at,
+               v.views_count,
+               v.likes_count,
                v.thumb_pref_offset AS thumb_pref_offset,
                vthumb.path AS thumb_asset_path,
                vanim.path  AS thumb_anim_asset_path,

@@ -20,6 +20,8 @@ from utils.url_ut import build_storage_url
 
 from db.assets_db import get_thumbs_vtt_asset
 
+from db.playlists_db import get_playlist_brief
+
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.filters["dt"] = fmt_dt
@@ -105,7 +107,7 @@ def _embed_defaults_from_row(vrow: Dict[str, Any]) -> Dict[str, int]:
 
 
 @router.get("/watch", response_class=HTMLResponse)
-async def watch_page(request: Request, v: str) -> Any:
+async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -> Any:
     user = get_current_user(request)
     conn = await get_conn()
     try:
@@ -146,6 +148,7 @@ async def watch_page(request: Request, v: str) -> Any:
                 "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
                 "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
                 "allow_comments": False,
+                "upnext_title": "Up next",
             }
             headers = {"Cache-Control": "no-store"}
             return templates.TemplateResponse("watch.html", context, headers=headers)
@@ -195,9 +198,25 @@ async def watch_page(request: Request, v: str) -> Any:
         try:
             if getattr(settings, "RIGHTBAR_ENABLED", True):
                 limit = int(getattr(settings, "RIGHTBAR_LIMIT", 12) or 12)
-                recommended_videos = await fetch_rightbar_for_video(video["video_id"], user_uid, limit=limit)
+                # Playlist mode instead of recommendations
+                recommended_videos = await fetch_rightbar_for_video(video["video_id"], user_uid, limit=limit, playlist_id=p)
         except Exception:
             recommended_videos = []
+
+        # Right sidebar title: if set and available `p` - set playlist name
+        upnext_title = "Up next"
+        if p:
+            try:
+                brief = await get_playlist_brief(conn, p)
+            except Exception:
+                brief = None
+            if brief:
+                vis = str(brief.get("visibility") or "").strip().lower()
+                owner_uid = str(brief.get("owner_uid") or "")
+                if vis in ("public", "unlisted") or (user_uid and owner_uid == user_uid):
+                    name = (brief.get("name") or "").strip()
+                    if name:
+                        upnext_title = name
 
         allow_comments = video.get("allow_comments", True)
 
@@ -225,6 +244,7 @@ async def watch_page(request: Request, v: str) -> Any:
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
             "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
             "allow_comments": allow_comments,
+            "upnext_title": upnext_title,
         }
 
         # Link preload headers

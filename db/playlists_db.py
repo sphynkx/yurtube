@@ -290,6 +290,8 @@ async def list_playlist_items_with_assets(
                v.title,
                v.created_at AS video_created_at,
                v.thumb_pref_offset AS thumb_pref_offset,
+               v.views_count AS views_count,
+               v.likes_count AS likes_count,
                u.username,
                u.channel_id,
                vthumb.path AS thumb_asset_path,
@@ -347,3 +349,20 @@ async def update_playlist_visibility(
         vis,
     )
 
+
+async def get_playlist_brief(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+) -> Optional[Dict[str, Any]]:
+    """
+    Minimal info for showing playlist title in watch page.
+    """
+    row = await conn.fetchrow(
+        """
+        SELECT playlist_id, owner_uid, name, visibility, items_count
+        FROM playlists
+        WHERE playlist_id = $1
+        """,
+        playlist_id,
+    )
+    return dict(row) if row else None

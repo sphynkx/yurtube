@@ -13,6 +13,8 @@ from services.feed.trending_srv import fetch_trending
 from services.search.search_client_srch import get_backend
 from utils.url_ut import build_storage_url
 
+from db.playlists_db import list_playlist_items_with_assets
+
 # Right-bar recommendation logic:
 # Sources of candidates:
 # - Same author: other public videos by the same author (exclude current video).
@@ -143,9 +145,47 @@ def _apply_diversity(sorted_items: List[Dict[str, Any]], limit: int, max_same_au
     return out
 
 
-async def fetch_rightbar_for_video(video_id: str, user_uid: Optional[str], limit: int = 12) -> List[Dict[str, Any]]:
+async def fetch_rightbar_for_video(video_id: str, user_uid: Optional[str], limit: int = 12, playlist_id: Optional[str] = None) -> List[Dict[str, Any]]:
     if not getattr(settings, "RIGHTBAR_ENABLED", True):
         return []
+
+    if playlist_id:
+        try:
+            conn = await get_conn()
+            try:
+                rows = await list_playlist_items_with_assets(conn, playlist_id)
+            finally:
+                await release_conn(conn)
+        except Exception:
+            rows = []
+
+        out: List[Dict[str, Any]] = []
+        for it in rows[: max(1, min(int(limit or 12), 100))]:
+            vid = str(it.get("video_id") or "")
+            thumb_url = build_storage_url(it.get("thumb_asset_path")) if it.get("thumb_asset_path") else None
+            thumb_anim_url = build_storage_url(it.get("thumb_anim_asset_path")) if it.get("thumb_anim_asset_path") else None
+            avatar_url = build_storage_url(it.get("avatar_asset_path")) if it.get("avatar_asset_path") else None
+            author_name = (it.get("username") or "").strip() or (it.get("channel_id") or "")
+            uploaded_at = _uploaded_at_str(it.get("video_created_at"))
+            views_count = int(it.get("views_count") or 0)
+            likes_count = int(it.get("likes_count") or 0)
+            # Insert the "&p=<playlist_id>" into `video_id`, to allow template to form linkx like /watch?v=VID&p=PL
+            out.append(
+                {
+                    "video_id": f"{vid}&p={playlist_id}",
+                    "title": it.get("title") or "",
+                    "description": "",
+                    "author": author_name or "",
+                    "category": "",
+                    "views_count": views_count,
+                    "likes_count": likes_count,
+                    "uploaded_at": uploaded_at,
+                    "thumb_url": thumb_url,
+                    "thumb_url_anim": thumb_anim_url,
+                    "avatar_url": avatar_url,
+                }
+            )
+        return out
 
     limit = max(1, min(int(limit or 12), 24))
     tau_days = max(1, int(getattr(settings, "RIGHTBAR_TAU_DAYS", 7)))
@@ -324,7 +364,7 @@ async def fetch_rightbar_for_video(video_id: str, user_uid: Optional[str], limit
         vid = it["video_id"]
         r = by_id.get(vid, {})
         thumb_url = build_storage_url(r["thumb_asset_path"]) if r.get("thumb_asset_path") else None
-        thumb_anim_url = build_storage_url(r["thumb_anim_asset_path"]) if r.get("thumb_anim_asset_path") else None
+        thumb_anim_url = build_storage_url(r["thumb_asset_path"]) if r.get("thumb_asset_path") else None if not r.get("thumb_anim_asset_path") else build_storage_url(r["thumb_anim_asset_path"])
         avatar_url = build_storage_url(r["avatar_asset_path"]) if r.get("avatar_asset_path") else None
         author_name = (r.get("username") or "").strip() or (it.get("username") or "").strip() or (it.get("channel_id") or "")
         uploaded_at = _uploaded_at_str(r.get("created_at") or it.get("created_at"))
