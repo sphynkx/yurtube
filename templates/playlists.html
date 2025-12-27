@@ -36,7 +36,9 @@
           <div class="pl-sub">{{ p['visibility'] }} • {{ p['items_count'] }} items</div>
         </div>
         <div class="pl-actions">
-          <button class="btn btn-danger btn-delete">Delete</button>
+          {% if p['type'] != 'system_watch_later' and p['type'] != 'system_favorites' %}
+            <button class="btn btn-danger btn-delete">Delete</button>
+          {% endif %}
         </div>
       </div>
       {% endfor %}

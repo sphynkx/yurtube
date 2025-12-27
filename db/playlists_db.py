@@ -381,6 +381,7 @@ async def list_user_playlists_flat_with_first(
         SELECT
           p.playlist_id,
           p.name,
+          p.type,
           p.parent_id,
           p.visibility,
           p.items_count,

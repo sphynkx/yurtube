@@ -29,6 +29,8 @@ from db.playlists_db import (
     reorder_playlist_items,
     update_playlist_visibility,
     list_user_playlists_flat_with_first,
+    WATCH_LATER_TYPE,
+    FAVORITES_TYPE,
 )
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -228,6 +230,7 @@ async def api_my_playlists_tree(request: Request) -> Any:
         node = {
             "playlist_id": r.get("playlist_id"),
             "name": r.get("name") or "",
+            "type": r.get("type"),
             "parent_id": r.get("parent_id"),
             "visibility": r.get("visibility"),
             "items_count": int(r.get("items_count") or 0),
@@ -248,6 +251,14 @@ async def api_my_playlists_tree(request: Request) -> Any:
         for ch in nodes:
             sort_tree(ch.get("children") or [])
     sort_tree(roots)
+
+    # system playlists are first always!!
+    sys_order = {WATCH_LATER_TYPE: 0, FAVORITES_TYPE: 1}
+    sys_roots = [n for n in roots if (n.get("type") in sys_order)]
+    sys_roots.sort(key=lambda x: sys_order.get(x.get("type"), 99))
+    other_roots = [n for n in roots if (n.get("type") not in sys_order)]
+    other_roots.sort(key=lambda x: (x.get("name") or "").lower())
+    roots = sys_roots + other_roots
 
     return JSONResponse({"items": roots})
 
@@ -280,6 +291,17 @@ async def playlist_edit_page(request: Request, playlist_id: str) -> Any:
         sep = "&" if "?" in url else "?"
         return f"{url}{sep}v={v}"
 
+    def _fmt_full_dt(dt: Optional[Any]) -> Optional[str]:
+        try:
+            import datetime
+            if isinstance(dt, datetime.datetime):
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            if dt is not None:
+                return str(dt)
+        except Exception:
+            pass
+        return None
+
     items: List[Dict[str, Any]] = []
     for r in rows:
         it = dict(r)
@@ -288,6 +310,7 @@ async def playlist_edit_page(request: Request, playlist_id: str) -> Any:
         it["thumb_url"] = _with_ver(build_storage_url(thumb_path), ver) if thumb_path else None
         anim_asset = it.get("thumb_anim_asset_path")
         it["thumb_anim_url"] = _with_ver(build_storage_url(anim_asset), ver) if anim_asset else None
+        it["video_created_at_fmt"] = _fmt_full_dt(it.get("video_created_at"))
         items.append(it)
 
     cover_url = build_storage_url(pl.get("cover_asset_path")) if pl.get("cover_asset_path") else None
@@ -326,6 +349,13 @@ async def api_rename_playlist(request: Request, playlist_id: str) -> Any:
 
     conn = await get_conn()
     try:
+        pl = await get_owned_playlist(conn, playlist_id, user["user_uid"])
+        if not pl:
+            raise HTTPException(status_code=404, detail="not_found")
+        # Dont edit system playlists!!
+        if pl.get("type") in (WATCH_LATER_TYPE, FAVORITES_TYPE):
+            raise HTTPException(status_code=400, detail="system_playlist_immutable")
+
         await update_playlist_name(conn, playlist_id, user["user_uid"], name)
         return JSONResponse({"ok": True})
     finally:

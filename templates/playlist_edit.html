@@ -36,7 +36,7 @@
       <div class="pl-form">
         <div class="row">
           <label>Name</label>
-          <input type="text" id="pl-name" value="{{ playlist.name }}">
+          <input type="text" id="pl-name" value="{{ playlist.name }}" {% if playlist.type in ['system_watch_later','system_favorites'] %}disabled{% endif %}>
         </div>
         <div class="row" style="display:flex; gap:8px; align-items:center;">
           <label class="btn" for="pl-file">Upload cover</label>
@@ -81,7 +81,7 @@
               {% else %}
                 by <a href="/c/{{ it['channel_id'] }}">{{ it['channel_id'] }}</a>
               {% endif %}
-              • {{ it['video_created_at'] }}
+              • {{ it['video_created_at_fmt'] or it['video_created_at'] }}
             </p>
           </div>
           <div>
@@ -117,6 +117,7 @@
   async function renameIfNeeded(){
     var name = (nameInput && nameInput.value || '').trim();
     if (!name) return;
+    if (nameInput && nameInput.hasAttribute('disabled')) return;
     try {
       await fetch('/playlists/' + encodeURIComponent(plid) + '/rename', {
         method: 'POST',

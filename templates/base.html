@@ -13,7 +13,6 @@
   <link href="/static/css/notifications.css" rel="stylesheet">
 
 
-  {# Brand assets are passed in every template context (fallbacks already handled in settings) #}
   {% set _brand_logo = brand_logo_url %}
   {% if _brand_logo and (not _brand_logo.startswith('http') and not _brand_logo.startswith('/')) %}
     {% set _brand_logo = '/' ~ _brand_logo %}

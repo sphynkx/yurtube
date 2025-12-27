@@ -1,18 +1,3 @@
-<style>
-  .tm-section-title {
-    margin: 8px 0 6px;
-    font-size: 13px;
-    font-weight: 700;
-    color: #555;
-    letter-spacing: .2px;
-  }
-  /* Visual nesting for playlists tree */
-  #tm-playlists > li > ul.tm-list {
-    margin-left: 12px;
-    padding-left: 12px;
-    border-left: 1px solid #eee;
-  }
-</style>
 <div class="tm-inner">
   <nav class="tm-nav" aria-label="Primary">
     <ul class="tm-list">
@@ -30,9 +15,23 @@
   </nav>
 </div>
 
+<style>
+  .tm-section-title {
+    margin: 8px 0 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #555;
+    letter-spacing: .2px;
+  }
+  #tm-playlists > li > ul.tm-list {
+    margin-left: 12px;
+    padding-left: 12px;
+    border-left: 1px solid #eee;
+  }
+</style>
+
 <script>
 (function(){
-  // Render playlists tree for auth users
   var hasUser = {{ 'true' if current_user else 'false' }};
   if (!hasUser) return;
 
