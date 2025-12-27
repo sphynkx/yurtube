@@ -31,6 +31,7 @@ from db.playlists_db import (
     list_user_playlists_flat_with_first,
     WATCH_LATER_TYPE,
     FAVORITES_TYPE,
+    update_playlist_parent,
 )
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -204,7 +205,7 @@ async def playlists_page(request: Request) -> Any:
         "request": request,
         "current_user": user,
         "playlists": items,
-        "title": "Playlists",
+        "title": "My playlists",  # title changed
     }
     return templates.TemplateResponse("playlists.html", context)
 
@@ -227,6 +228,7 @@ async def api_my_playlists_tree(request: Request) -> Any:
     by_id: Dict[str, Dict[str, Any]] = {}
     roots: List[Dict[str, Any]] = []
     for r in flat:
+        cov = r.get("cover_asset_path")
         node = {
             "playlist_id": r.get("playlist_id"),
             "name": r.get("name") or "",
@@ -235,6 +237,7 @@ async def api_my_playlists_tree(request: Request) -> Any:
             "visibility": r.get("visibility"),
             "items_count": int(r.get("items_count") or 0),
             "first_video_id": r.get("first_video_id"),
+            "cover_url": build_storage_url(cov) if cov else "/static/img/playlist_default.webp",
             "children": [],
         }
         by_id[node["playlist_id"]] = node
@@ -252,7 +255,7 @@ async def api_my_playlists_tree(request: Request) -> Any:
             sort_tree(ch.get("children") or [])
     sort_tree(roots)
 
-    # system playlists are first always!!
+    # System playlists first
     sys_order = {WATCH_LATER_TYPE: 0, FAVORITES_TYPE: 1}
     sys_roots = [n for n in roots if (n.get("type") in sys_order)]
     sys_roots.sort(key=lambda x: sys_order.get(x.get("type"), 99))
@@ -352,7 +355,7 @@ async def api_rename_playlist(request: Request, playlist_id: str) -> Any:
         pl = await get_owned_playlist(conn, playlist_id, user["user_uid"])
         if not pl:
             raise HTTPException(status_code=404, detail="not_found")
-        # Dont edit system playlists!!
+        # System playlists cannot be renamed
         if pl.get("type") in (WATCH_LATER_TYPE, FAVORITES_TYPE):
             raise HTTPException(status_code=400, detail="system_playlist_immutable")
 
@@ -385,6 +388,78 @@ async def api_update_visibility(request: Request, playlist_id: str) -> Any:
     conn = await get_conn()
     try:
         await update_playlist_visibility(conn, playlist_id, user["user_uid"], visibility)
+        return JSONResponse({"ok": True})
+    finally:
+        await release_conn(conn)
+
+
+@router.post("/{playlist_id}/move")
+async def api_move_playlist(request: Request, playlist_id: str) -> Any:
+    """
+    Move a playlist under another playlist (set parent_id), or make it root with parent_id = null.
+    Body: { "parent_id": "<playlist_id>" | null }
+    Constraints:
+    - User must own both playlists.
+    - System playlists (watch_later, favorites) cannot be moved (as child), and cannot be parents.
+    - No cycles: parent_id cannot be a descendant of playlist_id.
+    """
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="auth_required")
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    parent_id = body.get("parent_id")
+    if parent_id is not None:
+        parent_id = str(parent_id or "").strip()
+        if parent_id == "":
+            parent_id = None
+
+    if not _validate_csrf(request):
+        raise HTTPException(status_code=403, detail="csrf_required")
+
+    conn = await get_conn()
+    try:
+        # Source must be owned, and not system type
+        src = await get_owned_playlist(conn, playlist_id, user["user_uid"])
+        if not src:
+            raise HTTPException(status_code=404, detail="not_found")
+        if src.get("type") in (WATCH_LATER_TYPE, FAVORITES_TYPE):
+            raise HTTPException(status_code=400, detail="system_playlist_immutable")
+
+        # If making root, just set parent_id null
+        if parent_id is None:
+            await update_playlist_parent(conn, playlist_id, user["user_uid"], None)
+            return JSONResponse({"ok": True})
+
+        # Target must exist, be owned, and not system type
+        tgt = await get_owned_playlist(conn, parent_id, user["user_uid"])
+        if not tgt:
+            raise HTTPException(status_code=404, detail="target_not_found")
+        if tgt.get("type") in (WATCH_LATER_TYPE, FAVORITES_TYPE):
+            raise HTTPException(status_code=400, detail="system_playlist_cannot_be_parent")
+
+        # Prevent self-parenting
+        if parent_id == playlist_id:
+            raise HTTPException(status_code=400, detail="invalid_parent")
+
+        # Prevent cycles: walk up from target to root; if encounter src -> cycle
+        seen = set()
+        walk_id = parent_id
+        while walk_id and walk_id not in seen:
+            seen.add(walk_id)
+            if walk_id == playlist_id:
+                raise HTTPException(status_code=400, detail="cycle_detected")
+            row = await conn.fetchrow(
+                "SELECT parent_id FROM playlists WHERE playlist_id = $1 AND owner_uid = $2",
+                walk_id,
+                user["user_uid"],
+            )
+            walk_id = row["parent_id"] if row else None
+
+        await update_playlist_parent(conn, playlist_id, user["user_uid"], parent_id)
         return JSONResponse({"ok": True})
     finally:
         await release_conn(conn)

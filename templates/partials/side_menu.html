@@ -23,7 +23,7 @@
     color: #555;
     letter-spacing: .2px;
   }
-  #tm-playlists > li > ul.tm-list {
+  #tm-playlists ul.tm-list {
     margin-left: 12px;
     padding-left: 12px;
     border-left: 1px solid #eee;
@@ -72,5 +72,16 @@
   }
 
   loadPlaylists();
+
+  // Expose a global reload hook for dynamic updates after DnD or other changes
+  try {
+    window.SideMenuPlaylists = window.SideMenuPlaylists || {};
+    window.SideMenuPlaylists.reload = loadPlaylists;
+  } catch(e) {}
+
+  // React to app-wide playlist change events
+  document.addEventListener('playlists:changed', function(){
+    try { window.SideMenuPlaylists && window.SideMenuPlaylists.reload && window.SideMenuPlaylists.reload(); } catch(e) {}
+  });
 })();
 </script>

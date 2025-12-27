@@ -5,11 +5,13 @@
 
   .pl-list { display:flex; flex-direction:column; gap:10px; }
   .pl-row {
+    position: relative;
     display:flex; align-items:center; gap:12px;
     border:1px solid #ddd; border-radius:8px; background:#fff; padding:8px 10px;
+    transition:background .12s ease, opacity .12s ease, outline-color .12s ease;
   }
   .pl-cover { width:120px; height:68px; background:#f5f5f5 center/cover no-repeat; border-radius:6px; flex:0 0 120px; }
-  .pl-meta { flex: 1; }
+  .pl-meta { flex: 1; min-width:0; }
   .pl-title a { font-weight:600; color:#111; text-decoration:none; }
   .pl-title a:hover { text-decoration:underline; }
   .pl-sub { font-size:12px; color:#666; }
@@ -17,35 +19,48 @@
   .btn { padding:6px 10px; border:1px solid #ccc; border-radius:6px; background:#fff; cursor:pointer; font-size:13px; }
   .btn-danger { border-color:#e39999; background:#fff3f3; color:#a33; }
   .btn:hover { background:#f7faff; }
+
+  /* Indentation for nested playlists */
+  .pl-row[data-level="0"] { margin-left: 0; }
+  .pl-row[data-level="1"] { margin-left: 16px; }
+  .pl-row[data-level="2"] { margin-left: 32px; }
+  .pl-row[data-level="3"] { margin-left: 48px; }
+  .pl-row[data-level="4"] { margin-left: 64px; }
+
+  /* Drag & Drop */
+  .pl-row[draggable="true"] { cursor: move; }
+  .pl-row.dragging { opacity: .6; }
+  .pl-row.drop-target { outline: 2px dashed #88aaff; outline-offset: 3px; }
+
+  /* Root drop-zone: fixed overlay shown during drag (below header, over the list width) */
+  .root-drop {
+    display:none;
+    position:fixed;
+    z-index: 2000;
+    padding:8px 10px;
+    text-align:center;
+    border:1px dashed #88aaff;
+    border-radius:8px;
+    background:#f7fbff;
+    color:#335;
+    font-size:13px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.08);
+  }
+  .root-drop.show { display:block; }
+  .root-drop.drop-target { background:#eef7ff; }
 </style>
 
 <div class="manage-comments-layout">
   {% include "account/left.html" %}
   <div class="mc-main">
     <div class="mc-top-bar">
-      <h1 class="mc-page-title">Your playlists</h1>
+      <h1 class="mc-page-title">My playlists</h1>
     </div>
 
-    {% if playlists and playlists|length > 0 %}
-    <div class="pl-list">
-      {% for p in playlists %}
-      <div class="pl-row" data-playlist-id="{{ p['playlist_id'] }}">
-        <div class="pl-cover" style="background-image:url('{{ p['cover_url'] or '/static/img/playlist_default.webp' }}');"></div>
-        <div class="pl-meta">
-          <div class="pl-title"><a href="/playlists/{{ p['playlist_id'] }}/edit">{{ p['name'] }}</a></div>
-          <div class="pl-sub">{{ p['visibility'] }} • {{ p['items_count'] }} items</div>
-        </div>
-        <div class="pl-actions">
-          {% if p['type'] != 'system_watch_later' and p['type'] != 'system_favorites' %}
-            <button class="btn btn-danger btn-delete">Delete</button>
-          {% endif %}
-        </div>
-      </div>
-      {% endfor %}
+    <div id="pl-root-drop" class="root-drop" aria-label="Drop here to make root">Drop here to make root</div>
+
+    <div class="pl-list" id="pl-list">
     </div>
-    {% else %}
-      <p>No playlists yet.</p>
-    {% endif %}
   </div>
 </div>
 
@@ -55,21 +70,259 @@
     var m = document.cookie.match(/(?:^|; )yt_csrf=([^;]*)/);
     return m ? decodeURIComponent(m[1]) : '';
   }
-  document.querySelectorAll('.pl-row .btn-delete').forEach(function(btn){
-    btn.addEventListener('click', async function(){
+
+  var SYS = { 'system_watch_later': 1, 'system_favorites': 1 };
+  var rootDrop = document.getElementById('pl-root-drop');
+  var listRoot = document.getElementById('pl-list');
+  var draggedRow = null;
+
+  // Maps for ancestry checks
+  var parentMap = {};      // playlist_id -> parent_id (or null)
+  var rootAncestorMap = {}; // playlist_id -> top-most ancestor id (or playlist_id if root)
+
+  function canBeDragged(row){
+    var tp = (row.getAttribute('data-type') || '').trim();
+    return !SYS[tp];
+  }
+  function canAcceptDrop(row){
+    var tp = (row.getAttribute('data-type') || '').trim();
+    return !SYS[tp];
+  }
+
+  // Build a flat ordered array from tree with depth levels, and fill parent/root maps
+  function flattenTree(nodes, level, parentId, out){
+    if (!Array.isArray(nodes)) return;
+    nodes.forEach(function(n){
+      var pid = parentId || null;
+      parentMap[n.playlist_id] = pid;
+      // compute root ancestor for n
+      var rootId = n.playlist_id;
+      var cur = n.playlist_id;
+      var seen = {};
+      while (cur && !seen[cur]) {
+        seen[cur] = 1;
+        var p = parentMap[cur];
+        if (!p) { rootId = cur; break; }
+        rootId = p;
+        cur = p;
+      }
+      rootAncestorMap[n.playlist_id] = rootId;
+
+      out.push({
+        playlist_id: n.playlist_id,
+        name: n.name || '',
+        type: n.type || '',
+        visibility: n.visibility || '',
+        items_count: n.items_count || 0,
+        cover_url: n.cover_url || '/static/img/playlist_default.webp',
+        level: level || 0
+      });
+      if (Array.isArray(n.children) && n.children.length) {
+        flattenTree(n.children, (level||0) + 1, n.playlist_id, out);
+      }
+    });
+  }
+
+  function renderRow(item){
+    var row = document.createElement('div');
+    row.className = 'pl-row';
+    row.setAttribute('data-playlist-id', item.playlist_id);
+    row.setAttribute('data-type', item.type || '');
+    row.setAttribute('data-level', String(item.level||0));
+    row.setAttribute('draggable', String(!SYS[item.type||'']));
+
+    var cover = document.createElement('div');
+    cover.className = 'pl-cover';
+    cover.style.backgroundImage = 'url(' + (item.cover_url || '/static/img/playlist_default.webp') + ')';
+
+    var meta = document.createElement('div');
+    meta.className = 'pl-meta';
+    var title = document.createElement('div');
+    title.className = 'pl-title';
+    var a = document.createElement('a');
+    a.href = '/playlists/' + encodeURIComponent(item.playlist_id) + '/edit';
+    a.textContent = item.name || '';
+    title.appendChild(a);
+    var sub = document.createElement('div');
+    sub.className = 'pl-sub';
+    sub.textContent = (item.visibility || '') + ' • ' + (item.items_count || 0) + ' items';
+    meta.appendChild(title);
+    meta.appendChild(sub);
+
+    var actions = document.createElement('div');
+    actions.className = 'pl-actions';
+    if (!SYS[item.type||'']) {
+      var btn = document.createElement('button');
+      btn.className = 'btn btn-danger btn-delete';
+      btn.textContent = 'Delete';
+      actions.appendChild(btn);
+    }
+
+    row.appendChild(cover);
+    row.appendChild(meta);
+    row.appendChild(actions);
+    return row;
+  }
+
+  function renderTreeInto(rootEl, tree){
+    if (!rootEl) return;
+    rootEl.innerHTML = '';
+    parentMap = {};
+    rootAncestorMap = {};
+    var flat = [];
+    flattenTree(tree, 0, null, flat);
+    flat.forEach(function(it){
+      rootEl.appendChild(renderRow(it));
+    });
+    installDnDHandlers(rootEl);
+  }
+
+  async function loadTree(){
+    try {
+      var res = await fetch('/playlists/api/my-tree', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      var js = await res.json();
+      renderTreeInto(listRoot, (js && js.items) || []);
+    } catch(e) {}
+  }
+
+  async function movePlaylist(childId, parentIdOrNull){
+    try {
+      var res = await fetch('/playlists/' + encodeURIComponent(childId) + '/move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': getCSRF() },
+        body: JSON.stringify({ parent_id: parentIdOrNull })
+      });
+      if (!res.ok) return;
+      await loadTree(); // dynamically refresh without full reload
+      // Notify dropdown menu to refresh
+      try {
+        document.dispatchEvent(new CustomEvent('playlists:changed'));
+      } catch(e) {}
+    } catch (e) {}
+  }
+
+  function sizeRootDrop(){
+    if (!rootDrop || !listRoot) return;
+    var header = document.querySelector('.site-header');
+    var hb = header ? header.getBoundingClientRect().bottom + window.scrollY : 56;
+    var rect = listRoot.getBoundingClientRect();
+    var left = rect.left + window.scrollX;
+    var width = rect.width;
+    rootDrop.style.left = Math.round(left) + 'px';
+    rootDrop.style.top = Math.round(hb + 8) + 'px';
+    rootDrop.style.width = Math.round(width) + 'px';
+  }
+
+  function installDnDHandlers(container){
+    // Delete via delegation
+    container.addEventListener('click', async function(e){
+      var btn = e.target.closest('.btn-delete');
+      if (!btn) return;
       var row = btn.closest('.pl-row');
       var plid = row ? row.getAttribute('data-playlist-id') : '';
       if (!plid) return;
       if (!confirm('Delete this playlist?')) return;
       try {
-        await fetch('/playlists/' + encodeURIComponent(plid) + '/delete', {
+        var res = await fetch('/playlists/' + encodeURIComponent(plid) + '/delete', {
           method: 'POST',
           headers: { 'X-CSRF-Token': getCSRF() }
         });
-        row.remove();
+        if (!res.ok) return;
+        await loadTree();
+        try { document.dispatchEvent(new CustomEvent('playlists:changed')); } catch(e) {}
       } catch(e) {}
     });
-  });
+
+    // Ensure draggable attribute reflects type
+    container.querySelectorAll('.pl-row').forEach(function(row){
+      row.setAttribute('draggable', String(canBeDragged(row)));
+    });
+
+    // document-level dragstart/dragend
+    document.addEventListener('dragstart', function(e){
+      var row = e.target.closest('.pl-row');
+      if (!row || !container.contains(row)) return;
+      if (!canBeDragged(row)) { try{ e.preventDefault(); }catch(_){ } return; }
+      draggedRow = row;
+      row.classList.add('dragging');
+      try { e.dataTransfer.setData('text/plain', row.getAttribute('data-playlist-id') || ''); } catch(_){}
+      try { e.dataTransfer.effectAllowed = 'move'; } catch(_){}
+      if (rootDrop) {
+        sizeRootDrop();
+        rootDrop.classList.add('show');
+      }
+    });
+
+    document.addEventListener('dragend', function(){
+      if (draggedRow) draggedRow.classList.remove('dragging');
+      draggedRow = null;
+      container.querySelectorAll('.pl-row.drop-target').forEach(function(el){ el.classList.remove('drop-target'); });
+      if (rootDrop) { rootDrop.classList.remove('drop-target'); rootDrop.classList.remove('show'); }
+    });
+
+    // per-row targets
+    container.querySelectorAll('.pl-row').forEach(function(row){
+      row.addEventListener('dragover', function(e){
+        if (!draggedRow) return;
+        if (row === draggedRow) return;
+        e.preventDefault();
+        row.classList.add('drop-target');
+        try { e.dataTransfer.dropEffect = 'move'; } catch(_){}
+      });
+      row.addEventListener('dragleave', function(){
+        row.classList.remove('drop-target');
+      });
+      row.addEventListener('drop', async function(e){
+        if (!draggedRow) return;
+        e.preventDefault();
+        row.classList.remove('drop-target');
+        if (row === draggedRow) return;
+
+        var childId = draggedRow.getAttribute('data-playlist-id') || '';
+        var targetId = row.getAttribute('data-playlist-id') || '';
+        if (!childId || !targetId) return;
+
+        // Alternative method: if drop onto the dragged's top-most ancestor (and that ancestor is root),
+        // then make the dragged playlist a root (parent_id = null).
+        var targetLevel = parseInt(row.getAttribute('data-level') || '0', 10) || 0;
+        var draggedRootAncestor = rootAncestorMap[childId];
+        if (targetLevel === 0 && targetId === draggedRootAncestor) {
+          await movePlaylist(childId, null);
+          return;
+        }
+
+        // Otherwise, treat as nesting under the drop target (if drop target can be parent)
+        if (!canAcceptDrop(row)) return; // system playlists cannot be parents
+        if (childId === targetId) return;
+        await movePlaylist(childId, targetId);
+      });
+    });
+
+    // root drop-zone
+    if (rootDrop) {
+      window.addEventListener('resize', function(){ if (rootDrop.classList.contains('show')) sizeRootDrop(); });
+      rootDrop.addEventListener('dragover', function(e){
+        if (!draggedRow) return;
+        e.preventDefault();
+        rootDrop.classList.add('drop-target');
+        try { e.dataTransfer.dropEffect = 'move'; } catch(_){}
+      });
+      rootDrop.addEventListener('dragleave', function(){
+        rootDrop.classList.remove('drop-target');
+      });
+      rootDrop.addEventListener('drop', async function(e){
+        if (!draggedRow) return;
+        e.preventDefault();
+        rootDrop.classList.remove('drop-target');
+        var childId = draggedRow.getAttribute('data-playlist-id') || '';
+        if (!childId) return;
+        await movePlaylist(childId, null);
+      });
+    }
+  }
+
+  loadTree();
 })();
 </script>
 {% endblock %}

@@ -166,7 +166,7 @@ async def get_owned_playlist(
     row = await conn.fetchrow(
         """
         SELECT playlist_id, owner_uid, name, description, visibility, type,
-               cover_asset_path, items_count, created_at, updated_at
+               cover_asset_path, items_count, created_at, updated_at, parent_id
         FROM playlists
         WHERE playlist_id = $1 AND owner_uid = $2
         """,
@@ -385,6 +385,7 @@ async def list_user_playlists_flat_with_first(
           p.parent_id,
           p.visibility,
           p.items_count,
+          p.cover_asset_path,
           (
             SELECT pi.video_id
             FROM playlist_items pi
@@ -401,3 +402,25 @@ async def list_user_playlists_flat_with_first(
         max(1, int(limit)),
     )
     return [dict(r) for r in rows]
+
+
+async def update_playlist_parent(
+    conn: asyncpg.Connection,
+    playlist_id: str,
+    owner_uid: str,
+    new_parent_id: Optional[str],
+) -> None:
+    """
+    Set parent_id for a playlist owned by owner_uid.
+    Pass None to make it a root playlist.
+    """
+    await conn.execute(
+        """
+        UPDATE playlists
+        SET parent_id = $3, updated_at = NOW()
+        WHERE playlist_id = $1 AND owner_uid = $2
+        """,
+        playlist_id,
+        owner_uid,
+        new_parent_id,
+    )
