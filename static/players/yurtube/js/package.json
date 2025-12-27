@@ -1,0 +1,14 @@
+{
+  "name": "yurtube-player",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.23.0"
+  },
+  "scripts": {
+    "build:dev": "node scripts/build.mjs",
+    "build:prod": "NODE_ENV=production node scripts/build.mjs --prod",
+    "build": "npm run build:dev",
+    "dev": "node scripts/build.mjs --watch"
+  }
+}

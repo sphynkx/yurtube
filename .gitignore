@@ -31,3 +31,10 @@ storage/*
 !storage/.gitkeep
 
 celerybeat-schedule
+
+# Build artifacts and local dependencies for player
+node_modules/
+player.js.map
+.build.watch.log
+.build.watch.pid
+package-lock.json
