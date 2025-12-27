@@ -144,7 +144,7 @@ async def list_user_playlists_min(
                type,
                visibility,
                items_count,
-               cover_asset_path  -- include cover for UI
+               cover_asset_path
         FROM playlists
         WHERE owner_uid = $1
         ORDER BY created_at DESC
@@ -366,3 +366,37 @@ async def get_playlist_brief(
         playlist_id,
     )
     return dict(row) if row else None
+
+
+async def list_user_playlists_flat_with_first(
+    conn: asyncpg.Connection,
+    owner_uid: str,
+    limit: int = 500,
+) -> List[Dict[str, Any]]:
+    """
+    Flat list of user's playlists with parent_id and first video id for quick linking.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT
+          p.playlist_id,
+          p.name,
+          p.parent_id,
+          p.visibility,
+          p.items_count,
+          (
+            SELECT pi.video_id
+            FROM playlist_items pi
+            WHERE pi.playlist_id = p.playlist_id
+            ORDER BY pi.position ASC, pi.added_at ASC
+            LIMIT 1
+          ) AS first_video_id
+        FROM playlists p
+        WHERE p.owner_uid = $1
+        ORDER BY p.name ASC
+        LIMIT $2
+        """,
+        owner_uid,
+        max(1, int(limit)),
+    )
+    return [dict(r) for r in rows]

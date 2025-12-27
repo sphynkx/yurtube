@@ -256,6 +256,12 @@
         panel.style.top = Math.round(hb)+'px';
         panel.style.left = '12px';
         overlay.style.setProperty('--overlay-top', Math.round(hb)+'px');
+
+        // Make dropdown panel scrollable inside of visible area.
+        var avail = Math.max(120, Math.round(window.innerHeight - hb));
+        panel.style.maxHeight = avail + 'px';
+        panel.style.overflowY = 'auto';
+        panel.style.webkitOverflowScrolling = 'touch';
       }
 
       function openPanel(){

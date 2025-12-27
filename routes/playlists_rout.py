@@ -28,6 +28,7 @@ from db.playlists_db import (
     remove_video_from_playlist,
     reorder_playlist_items,
     update_playlist_visibility,
+    list_user_playlists_flat_with_first,
 )
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -206,6 +207,51 @@ async def playlists_page(request: Request) -> Any:
     return templates.TemplateResponse("playlists.html", context)
 
 
+@router.get("/api/my-tree")
+async def api_my_playlists_tree(request: Request) -> Any:
+    """
+    Returns a tree-like list of the current user's playlists
+    with the first_video_id field for quick navigation: /watch?v=<first>&p=<plid>
+    """
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"items": []})
+    conn = await get_conn()
+    try:
+        flat = await list_user_playlists_flat_with_first(conn, user["user_uid"], limit=1000)
+    finally:
+        await release_conn(conn)
+
+    by_id: Dict[str, Dict[str, Any]] = {}
+    roots: List[Dict[str, Any]] = []
+    for r in flat:
+        node = {
+            "playlist_id": r.get("playlist_id"),
+            "name": r.get("name") or "",
+            "parent_id": r.get("parent_id"),
+            "visibility": r.get("visibility"),
+            "items_count": int(r.get("items_count") or 0),
+            "first_video_id": r.get("first_video_id"),
+            "children": [],
+        }
+        by_id[node["playlist_id"]] = node
+    for node in by_id.values():
+        pid = node.get("parent_id")
+        if pid and pid in by_id and pid != node["playlist_id"]:
+            by_id[pid]["children"].append(node)
+        else:
+            roots.append(node)
+
+    # Optional: sort children by name
+    def sort_tree(nodes: List[Dict[str, Any]]) -> None:
+        nodes.sort(key=lambda x: (x.get("name") or "").lower())
+        for ch in nodes:
+            sort_tree(ch.get("children") or [])
+    sort_tree(roots)
+
+    return JSONResponse({"items": roots})
+
+
 @router.get("/{playlist_id}/edit", response_class=HTMLResponse)
 async def playlist_edit_page(request: Request, playlist_id: str) -> Any:
     user = get_current_user(request)
@@ -324,6 +370,7 @@ async def api_upload_cover(request: Request, playlist_id: str, file: UploadFile 
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="auth_required")
+
     if not _validate_csrf(request):
         raise HTTPException(status_code=403, detail="csrf_required")
 
@@ -388,11 +435,12 @@ async def api_upload_cover(request: Request, playlist_id: str, file: UploadFile 
 @router.post("/{playlist_id}/cover/delete")
 async def api_delete_cover(request: Request, playlist_id: str) -> Any:
     """
-    Delete the cover file from storage and reset cover_asset_path in the database.
+    Delete the cover file from storage and reset cover_asset_path in the DB.
     """
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="auth_required")
+
     if not _validate_csrf(request):
         raise HTTPException(status_code=403, detail="csrf_required")
 
@@ -425,6 +473,7 @@ async def api_delete_playlist(request: Request, playlist_id: str) -> Any:
     user = get_current_user(request)
     if not user:
         raise HTTPException(status_code=401, detail="auth_required")
+
     if not _validate_csrf(request):
         raise HTTPException(status_code=403, detail="csrf_required")
 
