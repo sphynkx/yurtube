@@ -76,9 +76,12 @@
   var listRoot = document.getElementById('pl-list');
   var draggedRow = null;
 
-  // Maps for ancestry checks
+  // Ancestry maps
   var parentMap = {};      // playlist_id -> parent_id (or null)
   var rootAncestorMap = {}; // playlist_id -> top-most ancestor id (or playlist_id if root)
+
+  // Guard to avoid duplicate global event handlers across re-renders
+  var HANDLERS_INSTALLED = false;
 
   function canBeDragged(row){
     var tp = (row.getAttribute('data-type') || '').trim();
@@ -89,12 +92,13 @@
     return !SYS[tp];
   }
 
-  // Build a flat ordered array from tree with depth levels, and fill parent/root maps
+  // Build flattened array from tree with depth, fill parent/root maps
   function flattenTree(nodes, level, parentId, out){
     if (!Array.isArray(nodes)) return;
     nodes.forEach(function(n){
       var pid = parentId || null;
       parentMap[n.playlist_id] = pid;
+
       // compute root ancestor for n
       var rootId = n.playlist_id;
       var cur = n.playlist_id;
@@ -174,7 +178,8 @@
     flat.forEach(function(it){
       rootEl.appendChild(renderRow(it));
     });
-    installDnDHandlers(rootEl);
+    bindRowHandlers(rootEl);
+    installGlobalHandlersOnce(rootEl);
   }
 
   async function loadTree(){
@@ -194,11 +199,8 @@
         body: JSON.stringify({ parent_id: parentIdOrNull })
       });
       if (!res.ok) return;
-      await loadTree(); // dynamically refresh without full reload
-      // Notify dropdown menu to refresh
-      try {
-        document.dispatchEvent(new CustomEvent('playlists:changed'));
-      } catch(e) {}
+      await loadTree();
+      try { document.dispatchEvent(new CustomEvent('playlists:changed')); } catch(e) {}
     } catch (e) {}
   }
 
@@ -214,30 +216,35 @@
     rootDrop.style.width = Math.round(width) + 'px';
   }
 
-  function installDnDHandlers(container){
+  function installGlobalHandlersOnce(container){
+    if (HANDLERS_INSTALLED) return;
+
     // Delete via delegation
     container.addEventListener('click', async function(e){
       var btn = e.target.closest('.btn-delete');
       if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // prevent double-submit on same click
+      btn.disabled = true;
+
       var row = btn.closest('.pl-row');
       var plid = row ? row.getAttribute('data-playlist-id') : '';
-      if (!plid) return;
-      if (!confirm('Delete this playlist?')) return;
+      if (!plid) { btn.disabled = false; return; }
+      if (!confirm('Delete this playlist?')) { btn.disabled = false; return; }
       try {
         var res = await fetch('/playlists/' + encodeURIComponent(plid) + '/delete', {
           method: 'POST',
           headers: { 'X-CSRF-Token': getCSRF() }
         });
-        if (!res.ok) return;
+        // Always refresh tree and dropdown, even if backend returns 404 for already-deleted item
         await loadTree();
         try { document.dispatchEvent(new CustomEvent('playlists:changed')); } catch(e) {}
-      } catch(e) {}
-    });
-
-    // Ensure draggable attribute reflects type
-    container.querySelectorAll('.pl-row').forEach(function(row){
-      row.setAttribute('draggable', String(canBeDragged(row)));
-    });
+      } catch(e) {
+      } finally {
+        btn.disabled = false;
+      }
+    }, { passive: true });
 
     // document-level dragstart/dragend
     document.addEventListener('dragstart', function(e){
@@ -261,44 +268,6 @@
       if (rootDrop) { rootDrop.classList.remove('drop-target'); rootDrop.classList.remove('show'); }
     });
 
-    // per-row targets
-    container.querySelectorAll('.pl-row').forEach(function(row){
-      row.addEventListener('dragover', function(e){
-        if (!draggedRow) return;
-        if (row === draggedRow) return;
-        e.preventDefault();
-        row.classList.add('drop-target');
-        try { e.dataTransfer.dropEffect = 'move'; } catch(_){}
-      });
-      row.addEventListener('dragleave', function(){
-        row.classList.remove('drop-target');
-      });
-      row.addEventListener('drop', async function(e){
-        if (!draggedRow) return;
-        e.preventDefault();
-        row.classList.remove('drop-target');
-        if (row === draggedRow) return;
-
-        var childId = draggedRow.getAttribute('data-playlist-id') || '';
-        var targetId = row.getAttribute('data-playlist-id') || '';
-        if (!childId || !targetId) return;
-
-        // Alternative method: if drop onto the dragged's top-most ancestor (and that ancestor is root),
-        // then make the dragged playlist a root (parent_id = null).
-        var targetLevel = parseInt(row.getAttribute('data-level') || '0', 10) || 0;
-        var draggedRootAncestor = rootAncestorMap[childId];
-        if (targetLevel === 0 && targetId === draggedRootAncestor) {
-          await movePlaylist(childId, null);
-          return;
-        }
-
-        // Otherwise, treat as nesting under the drop target (if drop target can be parent)
-        if (!canAcceptDrop(row)) return; // system playlists cannot be parents
-        if (childId === targetId) return;
-        await movePlaylist(childId, targetId);
-      });
-    });
-
     // root drop-zone
     if (rootDrop) {
       window.addEventListener('resize', function(){ if (rootDrop.classList.contains('show')) sizeRootDrop(); });
@@ -320,6 +289,52 @@
         await movePlaylist(childId, null);
       });
     }
+
+    HANDLERS_INSTALLED = true;
+  }
+
+  function bindRowHandlers(container){
+    // Ensure draggable attribute reflects type
+    container.querySelectorAll('.pl-row').forEach(function(row){
+      row.setAttribute('draggable', String(canBeDragged(row)));
+    });
+
+    // Per-row targets (bind to freshly rendered rows)
+    container.querySelectorAll('.pl-row').forEach(function(row){
+      row.addEventListener('dragover', function(e){
+        if (!draggedRow) return;
+        if (row === draggedRow) return;
+        e.preventDefault();
+        row.classList.add('drop-target');
+        try { e.dataTransfer.dropEffect = 'move'; } catch(_){}
+      });
+      row.addEventListener('dragleave', function(){
+        row.classList.remove('drop-target');
+      });
+      row.addEventListener('drop', async function(e){
+        if (!draggedRow) return;
+        e.preventDefault();
+        row.classList.remove('drop-target');
+        if (row === draggedRow) return;
+
+        var childId = draggedRow.getAttribute('data-playlist-id') || '';
+        var targetId = row.getAttribute('data-playlist-id') || '';
+        if (!childId || !targetId) return;
+
+        // Alternative method: dropping onto top-most ancestor at level 0 makes root
+        var targetLevel = parseInt(row.getAttribute('data-level') || '0', 10) || 0;
+        var draggedRootAncestor = rootAncestorMap[childId];
+        if (targetLevel === 0 && targetId === draggedRootAncestor) {
+          await movePlaylist(childId, null);
+          return;
+        }
+
+        // Otherwise nest under the drop target (if allowed)
+        if (!canAcceptDrop(row)) return; // system playlists cannot be parents
+        if (childId === targetId) return;
+        await movePlaylist(childId, targetId);
+      });
+    });
   }
 
   loadTree();

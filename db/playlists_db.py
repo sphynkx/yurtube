@@ -144,7 +144,7 @@ async def list_user_playlists_min(
                type,
                visibility,
                items_count,
-               cover_asset_path
+               cover_asset_path  -- include cover for UI
         FROM playlists
         WHERE owner_uid = $1
         ORDER BY created_at DESC
@@ -422,5 +422,26 @@ async def update_playlist_parent(
         """,
         playlist_id,
         owner_uid,
+        new_parent_id,
+    )
+
+
+async def reparent_children_to(
+    conn: asyncpg.Connection,
+    owner_uid: str,
+    old_parent_id: str,
+    new_parent_id: Optional[str],
+) -> None:
+    """
+    Move all immediate children of old_parent_id under new_parent_id (or to root if None).
+    """
+    await conn.execute(
+        """
+        UPDATE playlists
+        SET parent_id = $3, updated_at = NOW()
+        WHERE owner_uid = $1 AND parent_id = $2
+        """,
+        owner_uid,
+        old_parent_id,
         new_parent_id,
     )

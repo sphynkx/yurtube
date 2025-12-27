@@ -32,6 +32,7 @@ from db.playlists_db import (
     WATCH_LATER_TYPE,
     FAVORITES_TYPE,
     update_playlist_parent,
+    reparent_children_to,
 )
 
 router = APIRouter(prefix="/playlists", tags=["playlists"])
@@ -205,7 +206,7 @@ async def playlists_page(request: Request) -> Any:
         "request": request,
         "current_user": user,
         "playlists": items,
-        "title": "My playlists",  # title changed
+        "title": "My playlists",
     }
     return templates.TemplateResponse("playlists.html", context)
 
@@ -582,12 +583,25 @@ async def api_delete_playlist(request: Request, playlist_id: str) -> Any:
     if not _validate_csrf(request):
         raise HTTPException(status_code=403, detail="csrf_required")
 
+    # Fetch playlist and reparent children to grandparent/root before deletion
     conn = await get_conn()
     try:
+        pl = await get_owned_playlist(conn, playlist_id, user["user_uid"])
+        if not pl:
+            raise HTTPException(status_code=404, detail="not_found")
+        if pl.get("type") in (WATCH_LATER_TYPE, FAVORITES_TYPE):
+            raise HTTPException(status_code=400, detail="system_playlist_immutable")
+
+        # Save cover path (to remove after)
         rel_path = await get_playlist_cover_path(conn, playlist_id, user["user_uid"])
+
+        # Move all immediate children under this playlist's parent (or root)
+        new_parent_id = pl.get("parent_id") or None
+        await reparent_children_to(conn, user["user_uid"], playlist_id, new_parent_id)
     finally:
         await release_conn(conn)
 
+    # Remove cover file from storage, if any
     if rel_path:
         storage: StorageClient = request.app.state.storage
         try:
@@ -597,60 +611,10 @@ async def api_delete_playlist(request: Request, playlist_id: str) -> Any:
         except Exception:
             pass
 
+    # Delete the playlist row
     conn = await get_conn()
     try:
         await delete_playlist_by_owner(conn, playlist_id, user["user_uid"])
-        return JSONResponse({"ok": True})
-    finally:
-        await release_conn(conn)
-
-
-@router.post("/{playlist_id}/items/remove")
-async def api_remove_item(request: Request, playlist_id: str) -> Any:
-    user = get_current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="auth_required")
-
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-    video_id = (body.get("video_id") or "").strip()
-    if not video_id:
-        raise HTTPException(status_code=400, detail="video_id_required")
-
-    if not _validate_csrf(request):
-        raise HTTPException(status_code=403, detail="csrf_required")
-
-    conn = await get_conn()
-    try:
-        await remove_video_from_playlist(conn, playlist_id, video_id)
-        return JSONResponse({"ok": True})
-    finally:
-        await release_conn(conn)
-
-
-@router.post("/{playlist_id}/items/reorder")
-async def api_reorder_items(request: Request, playlist_id: str) -> Any:
-    user = get_current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="auth_required")
-
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-
-    order = body.get("order") or []
-    if not isinstance(order, list) or not order:
-        raise HTTPException(status_code=400, detail="order_required")
-
-    if not _validate_csrf(request):
-        raise HTTPException(status_code=403, detail="csrf_required")
-
-    conn = await get_conn()
-    try:
-        await reorder_playlist_items(conn, playlist_id, [str(x) for x in order])
         return JSONResponse({"ok": True})
     finally:
         await release_conn(conn)
