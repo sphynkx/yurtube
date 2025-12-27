@@ -1268,8 +1268,8 @@
       }
 
       // Force emoji mode (replace to svg and remove)
-      btnShuffle.dataset.forceEmoji = "1";
-      btnCycle.dataset.forceEmoji = "1";
+      btnShuffle.dataset.forceEmoji = "0";
+      btnCycle.dataset.forceEmoji = "0";
 
       function refreshShuffleBtn(){
         btnShuffle.setAttribute("aria-pressed", orderMode === "shuffle" ? "true" : "false");
