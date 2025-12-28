@@ -23,4 +23,6 @@ setuptools >= 70.0.0
 aiofiles
 grpcio==1.66.1
 grpcio-tools==1.66.1
+grpcio-health-checking
+grpcio-reflection
 Pillow>=10.0.0

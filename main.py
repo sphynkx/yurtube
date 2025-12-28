@@ -1,12 +1,13 @@
 import os
+import logging
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from services.ytadmin.grpc_server_srv import app_grpc_server
 from services.monitor.uptime import uptime
-from services.ytadmin.client_srv import YTAdminClient
 
 from config.config import settings
 from config.ytstorage.ytstorage_remote_cfg import STORAGE_PROVIDER
@@ -30,16 +31,19 @@ app = FastAPI(
     openapi_url=openapi_url,
 )
 
-ytadmin_client = YTAdminClient()
+APP_GRPC_ENABLED = os.getenv("APP_GRPC_ENABLED", "1").lower() in ("1","true","yes","on")
 
 @app.on_event("startup")
-async def _startup():
+async def on_startup():
+    logging.basicConfig(level=logging.INFO)
     uptime.set_started()
-    await ytadmin_client.start()
+    if APP_GRPC_ENABLED:
+        await app_grpc_server.start()
 
 @app.on_event("shutdown")
-async def _shutdown():
-    await ytadmin_client.stop()
+async def on_shutdown():
+    if APP_GRPC_ENABLED:
+        await app_grpc_server.stop()
 
 
 from services.ytstorage.build_client_srv import build_storage_client
