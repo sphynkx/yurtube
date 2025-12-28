@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate stubs from storage.proto
+# Generate stubs from ytstorage.proto
 # Make sure that ytstorage is identical to one from ytstorage service!!
 
 cd "$(dirname "$0")"
