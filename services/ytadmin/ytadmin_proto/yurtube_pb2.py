@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ryurtube.proto\x12\x07ytadmin\"S\n\x0fServiceIdentity\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x0c\n\x04host\x18\x03 \x01(\t\x12\x0f\n\x07version\x18\x04 \x01(\t\"\xb1\x02\n\x11PushHealthRequest\x12*\n\x08identity\x18\x01 \x01(\x0b\x32\x18.ytadmin.ServiceIdentity\x12\x0f\n\x07healthy\x18\x02 \x01(\x08\x12\x36\n\x06\x63hecks\x18\x03 \x03(\x0b\x32&.ytadmin.PushHealthRequest.ChecksEntry\x12\x38\n\x07metrics\x18\x04 \x03(\x0b\x32\'.ytadmin.PushHealthRequest.MetricsEntry\x12\x0e\n\x06ts_iso\x18\x05 \x01(\t\x1a-\n\x0b\x43hecksEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a.\n\x0cMetricsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\"\xd4\x01\n\x12PushEffConfRequest\x12*\n\x08identity\x18\x01 \x01(\x0b\x32\x18.ytadmin.ServiceIdentity\x12\x37\n\x06\x63onfig\x18\x02 \x03(\x0b\x32\'.ytadmin.PushEffConfRequest.ConfigEntry\x12\x15\n\rredacted_keys\x18\x03 \x03(\t\x12\x13\n\x0b\x63onfig_hash\x18\x04 \x01(\t\x1a-\n\x0b\x43onfigEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"&\n\x07PushAck\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t2\x87\x01\n\x0b\x41\x64minIngest\x12:\n\nPushHealth\x12\x1a.ytadmin.PushHealthRequest\x1a\x10.ytadmin.PushAck\x12<\n\x0bPushEffConf\x12\x1b.ytadmin.PushEffConfRequest\x1a\x10.ytadmin.PushAckb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ryurtube.proto\x12\x07ytadmin\"S\n\x0fServiceIdentity\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x13\n\x0binstance_id\x18\x02 \x01(\t\x12\x0c\n\x04host\x18\x03 \x01(\t\x12\x0f\n\x07version\x18\x04 \x01(\t\"\xb1\x02\n\x11PushHealthRequest\x12*\n\x08identity\x18\x01 \x01(\x0b\x32\x18.ytadmin.ServiceIdentity\x12\x0f\n\x07healthy\x18\x02 \x01(\x08\x12\x36\n\x06\x63hecks\x18\x03 \x03(\x0b\x32&.ytadmin.PushHealthRequest.ChecksEntry\x12\x38\n\x07metrics\x18\x04 \x03(\x0b\x32\'.ytadmin.PushHealthRequest.MetricsEntry\x12\x0e\n\x06ts_iso\x18\x05 \x01(\t\x1a-\n\x0b\x43hecksEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\x1a.\n\x0cMetricsEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\x01:\x02\x38\x01\"\xd4\x01\n\x12PushEffConfRequest\x12*\n\x08identity\x18\x01 \x01(\x0b\x32\x18.ytadmin.ServiceIdentity\x12\x37\n\x06\x63onfig\x18\x02 \x03(\x0b\x32\'.ytadmin.PushEffConfRequest.ConfigEntry\x12\x15\n\rredacted_keys\x18\x03 \x03(\t\x12\x13\n\x0b\x63onfig_hash\x18\x04 \x01(\t\x1a-\n\x0b\x43onfigEntry\x12\x0b\n\x03key\x18\x01 \x01(\t\x12\r\n\x05value\x18\x02 \x01(\t:\x02\x38\x01\"&\n\x07PushAck\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x0f\n\x07message\x18\x02 \x01(\t\"\x11\n\x0fIdentityRequest2M\n\x08\x41ppProbe\x12\x41\n\x0bGetIdentity\x12\x18.ytadmin.IdentityRequest\x1a\x18.ytadmin.ServiceIdentity2\x87\x01\n\x0b\x41\x64minIngest\x12:\n\nPushHealth\x12\x1a.ytadmin.PushHealthRequest\x1a\x10.ytadmin.PushAck\x12<\n\x0bPushEffConf\x12\x1b.ytadmin.PushEffConfRequest\x1a\x10.ytadmin.PushAckb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -51,6 +51,10 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_PUSHEFFCONFREQUEST_CONFIGENTRY']._serialized_end=632
   _globals['_PUSHACK']._serialized_start=634
   _globals['_PUSHACK']._serialized_end=672
-  _globals['_ADMININGEST']._serialized_start=675
-  _globals['_ADMININGEST']._serialized_end=810
+  _globals['_IDENTITYREQUEST']._serialized_start=674
+  _globals['_IDENTITYREQUEST']._serialized_end=691
+  _globals['_APPPROBE']._serialized_start=693
+  _globals['_APPPROBE']._serialized_end=770
+  _globals['_ADMININGEST']._serialized_start=773
+  _globals['_ADMININGEST']._serialized_end=908
 # @@protoc_insertion_point(module_scope)

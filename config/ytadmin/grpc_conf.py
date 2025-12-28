@@ -13,6 +13,12 @@ def _get_int(name: str, default: int) -> int:
 
 @dataclass
 class GrpcConfig:
+    """
+    Parameters:
+    - host: interface on which the application listens (default 0.0.0.0).
+    - port: gRPC port (default 50051).
+    - tls_*: future-proof
+    """
     host: str = os.getenv("APP_GRPC_HOST", "0.0.0.0")
     port: int = _get_int("APP_GRPC_PORT", 50051)
 
