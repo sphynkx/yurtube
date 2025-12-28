@@ -1,0 +1,15 @@
+{
+  "name": "standard-player",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "esbuild": "^0.23.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "build:prod": "NODE_ENV=production node scripts/build.mjs --prod",
+    "build:player": "node scripts/build.mjs --target=player",
+    "build:embed": "node scripts/build.mjs --target=embed",
+    "dev": "node scripts/build.mjs --watch"
+  }
+}
