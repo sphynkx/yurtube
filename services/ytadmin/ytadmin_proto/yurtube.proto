@@ -1,5 +1,4 @@
 syntax = "proto3";
-
 package ytadmin;
 
 message ServiceIdentity {
@@ -30,7 +29,6 @@ message PushAck {
 }
 
 message IdentityRequest {}
-
 service AppProbe {
   rpc GetIdentity (IdentityRequest) returns (ServiceIdentity);
 }
