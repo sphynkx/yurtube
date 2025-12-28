@@ -6,9 +6,14 @@
     "esbuild": "^0.23.0"
   },
   "scripts": {
-    "build:dev": "node scripts/build.mjs",
+    "build": "node scripts/build.mjs",
     "build:prod": "NODE_ENV=production node scripts/build.mjs --prod",
-    "build": "npm run build:dev",
+
+    "build:player": "node scripts/build.mjs --target=player",
+    "build:embed": "node scripts/build.mjs --target=embed",
+    "build:prod:player": "NODE_ENV=production node scripts/build.mjs --prod --target=player",
+    "build:prod:embed": "NODE_ENV=production node scripts/build.mjs --prod --target=embed",
+
     "dev": "node scripts/build.mjs --watch"
   }
 }

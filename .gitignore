@@ -35,6 +35,7 @@ celerybeat-schedule
 # Build artifacts and local dependencies for player
 node_modules/
 player.js.map
+embed.js.map
 .build.watch.log
 .build.watch.pid
 package-lock.json
