@@ -55,9 +55,12 @@ class YTAdminConfig:
     tls_cert_path: Optional[str] = os.getenv("YTADMIN_TLS_CERT") or None
     tls_key_path: Optional[str] = os.getenv("YTADMIN_TLS_KEY") or None
 
-    service_name: str = os.getenv("SERVICE_NAME", "yurtube-app")
+    service_name: str = os.getenv("SERVICE_NAME", "YurTube")
     instance_id: str = os.getenv("SERVICE_INSTANCE_ID", "")
     version: str = os.getenv("SERVICE_VERSION", "")
+
+    identity_host: str = os.getenv("YTADMIN_IDENTITY_HOST", "127.0.0.1:50051")
+
 
     push_health_interval_sec: int = _get_int("YTADMIN_HEALTH_INTERVAL_SEC", 30)
     push_effconf_interval_sec: int = _get_int("YTADMIN_EFFCONF_INTERVAL_SEC", 300)
