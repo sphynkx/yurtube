@@ -1,4 +1,4 @@
-import { initAll } from './core.js';
+import { initAll } from './player.core.js';
 
 // Entry point: build into static/players/yurtube/js/player.js
 if (document.readyState === 'loading') {
