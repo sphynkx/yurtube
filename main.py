@@ -5,6 +5,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
+from services.monitor.uptime import uptime
+from services.ytadmin.client_srv import YTAdminClient
+
 from config.config import settings
 from config.ytstorage.ytstorage_remote_cfg import STORAGE_PROVIDER
 from config.ytstorage.ytstorage_cfg import APP_STORAGE_FS_ROOT
@@ -26,6 +29,18 @@ app = FastAPI(
     redoc_url=redoc_url,
     openapi_url=openapi_url,
 )
+
+ytadmin_client = YTAdminClient()
+
+@app.on_event("startup")
+async def _startup():
+    uptime.set_started()
+    await ytadmin_client.start()
+
+@app.on_event("shutdown")
+async def _shutdown():
+    await ytadmin_client.stop()
+
 
 from services.ytstorage.build_client_srv import build_storage_client
 from config.config import settings

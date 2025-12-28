@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional
 
 
@@ -17,6 +17,29 @@ def _get_int(name: str, default: int) -> int:
         return int(v) if v is not None else default
     except Exception:
         return default
+
+
+DEFAULT_WHITELIST = ["APP_MODE", "DEBUG", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "REDIS_HOST", "REDIS_PORT"]
+DEFAULT_REDACT   = ["SECRET_KEY", "DB_PASSWORD", "REDIS_PASSWORD", "JWT_SECRET", "API_KEY"]
+
+
+def _env_list(name: str, default_values: List[str]) -> List[str]:
+    """
+    Returns a list from the environment variable `name`, if set,
+    otherwise, a copy of default_values. Values are normalized and empty ones are discarded.
+    """
+    v = os.getenv(name)
+    if v is None or not str(v).strip():
+        return list(default_values)
+    return [s.strip() for s in str(v).split(",") if s.strip()]
+
+
+def _default_effconf_whitelist() -> List[str]:
+    return _env_list("YTADMIN_EFFCONF_WHITELIST", DEFAULT_WHITELIST)
+
+
+def _default_effconf_redact() -> List[str]:
+    return _env_list("YTADMIN_EFFCONF_REDACT", DEFAULT_REDACT)
 
 
 @dataclass
@@ -40,19 +63,8 @@ class YTAdminConfig:
     push_effconf_interval_sec: int = _get_int("YTADMIN_EFFCONF_INTERVAL_SEC", 300)
 
     effconf_enable: bool = _get_bool("YTADMIN_EFFCONF_ENABLE", True)
-    effconf_whitelist: List[str] = (
-        os.getenv("YTADMIN_EFFCONF_WHITELIST", "APP_MODE,DEBUG,DB_HOST,DB_PORT,DB_NAME,DB_USER,REDIS_HOST,REDIS_PORT")
-        .split(",")
-        if os.getenv("YTADMIN_EFFCONF_WHITELIST")
-        else ["APP_MODE", "DEBUG", "DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "REDIS_HOST", "REDIS_PORT"]
-    )
-    # List of masking keys (secrets)
-    effconf_redact_keys: List[str] = (
-        os.getenv("YTADMIN_EFFCONF_REDACT", "SECRET_KEY,DB_PASSWORD,REDIS_PASSWORD,JWT_SECRET,API_KEY")
-        .split(",")
-        if os.getenv("YTADMIN_EFFCONF_REDACT")
-        else ["SECRET_KEY", "DB_PASSWORD", "REDIS_PASSWORD", "JWT_SECRET", "API_KEY"]
-    )
+    effconf_whitelist: List[str] = field(default_factory=_default_effconf_whitelist)
+    effconf_redact_keys: List[str] = field(default_factory=_default_effconf_redact)
 
 
 def load_config() -> YTAdminConfig:

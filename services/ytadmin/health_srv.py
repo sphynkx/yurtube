@@ -1,7 +1,7 @@
 from __future__ import annotations
 import time
 from typing import Dict, Any, Tuple, Optional
-
+from services.monitor.uptime import uptime
 
 # TODO: implement some real checks
 def check_db() -> Tuple[bool, Optional[str]]:
@@ -38,7 +38,8 @@ def collect_health() -> Dict[str, Any]:
             "cache": "ok" if ok_cache else (msg_cache or "fail"),
         },
         "metrics": {
-            "uptime_sec": float(0),  # TODO: implement uptime for app
+            "uptime_sec": float(uptime.uptime_sec()),
+            "uptime_started_iso": uptime.started_iso(),
             "queue_depth": float(0),
         },
         "healthy": healthy,

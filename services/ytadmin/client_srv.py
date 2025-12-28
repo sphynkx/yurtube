@@ -4,11 +4,11 @@ import grpc
 from typing import Optional, List
 
 from config.ytadmin.ytadmin_cfg import load_config
-from service.ytadmin.health_srv import collect_health
-from service.ytadmin.effconf_srv import collect_effective_config
+from services.ytadmin.health_srv import collect_health
+from services.ytadmin.effconf_srv import collect_effective_config
 
 try:
-    from service.ytadmin.ytadmin_proto import ytadmin_pb2, ytadmin_pb2_grpc  # type: ignore
+    from services.ytadmin.ytadmin_proto import ytadmin_pb2, ytadmin_pb2_grpc  # type: ignore
 except Exception:
     ytadmin_pb2 = None
     ytadmin_pb2_grpc = None
