@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package grpc.health.v1;
+
+message InfoRequest {
+  string selector = 1; // optional: "basic", "full", etc.
+}
+
+// Note: grpcurl prints JSON using camelCase, so "app_name" will appear as "appName".
+message InfoResponse {
+  string app_name = 1;        // e.g., "YurTube"
+  string instance_id = 2;     // e.g., "main-1"
+  string host = 3;            // e.g., "127.0.0.1:50051"
+  string version = 4;         // e.g., "1.0.0"
+  string uptime = 5;          // seconds as a string, e.g., "777"
+  map<string, string> labels = 6;   // arbitrary labels, e.g., {"env":"prod"}
+  map<string, double> metrics = 7;  // metrics, e.g., {"cpu":0.12,"latency_ms":5.4}
+}
+
+service Info {
+  rpc All(InfoRequest) returns (InfoResponse);
+}
