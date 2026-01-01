@@ -344,7 +344,7 @@ Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one i
 
 
 ### Admin panel (external)
-Optional service for manage and monitor all YurTube app family. Recommend to install on some separate server and not configure for external access. any modifications on any apps side is not needed. Details see in [ytadmin repo](https://github.com/sphynkx/ytadmin).
+Optional service for manage and monitor all YurTube app family. Recommend to install on some separate server and not configure for external access. Details see in [ytadmin repo](https://github.com/sphynkx/ytadmin).
 
 
 ## Run the app manually
