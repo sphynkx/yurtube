@@ -24,6 +24,7 @@ Application is WIP now. Available base functional:
 * Comments by [separate microservice](https://github.com/sphynkx/ytcomments)
 * Notifications system
 * Unified extendable storage system (by [separate microservice](https://github.com/sphynkx/ytstorage))
+* Admin panel as [separate microservice](https://github.com/sphynkx/ytadmin) for monitor and manage all YurTube app family.
 
 Design notes
 * Modular by default: swap or externalize services through config without code changes
@@ -339,6 +340,10 @@ After install need to configure ytstorage params:
 - `STORAGE_REMOTE_TOKEN` - set token same as on service side
 
 Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one in `ytstorage` installation. Otherwise you need regenerate proto files.. Just run `gen_proto.sh` in the same dir.
+
+
+### Admin panel (external)
+Optional service for manage and monitor all YurTube app family. Recommend to install on some separate server and not configure for external access. any modifications on any apps side is not needed. Details see in [ytadmin repo](https://github.com/sphynkx/ytadmin).
 
 
 ## Run the app manually
