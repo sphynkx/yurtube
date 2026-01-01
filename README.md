@@ -24,7 +24,7 @@ Application is WIP now. Available base functional:
 * Comments by [separate microservice](https://github.com/sphynkx/ytcomments)
 * Notifications system
 * Unified extendable storage system (by [separate microservice](https://github.com/sphynkx/ytstorage))
-* Admin panel as [separate microservice](https://github.com/sphynkx/ytadmin) for monitor and manage all YurTube app family.
+* Admin panel for monitor and manage all YurTube app family (by [separate microservice](https://github.com/sphynkx/ytadmin)).
 
 Design notes
 * Modular by default: swap or externalize services through config without code changes
@@ -38,6 +38,7 @@ For a minimal version with limited functionality, installing this app is suffici
 * [ytcomments](https://github.com/sphynkx/ytcomments) - service for comments
 * [ytsprites](https://github.com/sphynkx/ytsprites) - service for WebVTT sprites generation
 * [ytstorage](https://github.com/sphynkx/ytstorage) - service for external storage systems
+* [ytadmin](https://github.com/sphynkx/ytadmin) - admin panel as external service
 
 These could be installed and configured separately. About this see below in the appropriate sections.
 
