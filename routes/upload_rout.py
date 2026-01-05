@@ -266,7 +266,7 @@ async def upload_video(
     category_id: Optional[str] = Form(None),
     is_age_restricted: bool = Form(False),
     is_made_for_kids: bool = Form(False),
-    generate_captions_flag: Optional[int] = Form(0),  # rename to avoid shadowing the function generate_captions(...)
+    generate_captions_flag: Optional[int] = Form(0, alias="generate_captions"),  # rename to avoid shadowing the function generate_captions(...)
     captions_lang: str = Form("auto"),
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
@@ -548,17 +548,54 @@ async def upload_video(
         lang_req = (captions_lang or "auto").strip().lower()
         if want_caps:
             try:
-                # generation by local path to the original
-                rel_vtt, meta = await generate_captions(
-                    video_id=video_id,
-                    storage_rel=storage_rel,
-                    src_path=original_abs_path,
-                    lang=lang_req or "auto",
-                )
-                await set_video_captions(conn, video_id, rel_vtt, meta.get("lang") or lang_req, meta)
-                print(f"[UPLOAD] captions generated video_id={video_id} lang={meta.get('lang')}")
+                async def _caption_worker():
+                    import tempfile as _tf
+                    import shutil as _sh
+
+                    tmp_local_dir = None
+                    src_for_caps = original_abs_path
+                    if not is_local_mode:
+                        tmp_local_dir = _tf.mkdtemp(prefix="ytcaps_")
+                        src_for_caps = os.path.join(tmp_local_dir, original_name)
+                        reader_ctx_local = storage_client.open_reader(original_rel_path)
+                        if inspect.isawaitable(reader_ctx_local):
+                            reader_ctx_local = await reader_ctx_local
+                        if hasattr(reader_ctx_local, "__aiter__") or hasattr(reader_ctx_local, "__anext__"):
+                            async for _chunk in reader_ctx_local:
+                                if _chunk:
+                                    with open(src_for_caps, "ab") as _lf:
+                                        _lf.write(_chunk)
+                        else:
+                            for _chunk in reader_ctx_local:
+                                if _chunk:
+                                    with open(src_for_caps, "ab") as _lf:
+                                        _lf.write(_chunk)
+                    try:
+                        rel_vtt, meta = await generate_captions(
+                            video_id=video_id,
+                            storage_rel=storage_rel,
+                            src_path=src_for_caps,
+                            lang=lang_req or "auto",
+                            storage_client=storage_client,
+                        )
+                        conn2 = await get_conn()
+                        try:
+                            await set_video_captions(conn2, video_id, rel_vtt, meta.get("lang") or lang_req, meta)
+                        finally:
+                            await release_conn(conn2)
+                        print(f"[UPLOAD] captions generated video_id={video_id} lang={meta.get('lang')}")
+                    except Exception as e:
+                        print(f"[UPLOAD] captions generation failed video_id={video_id}: {e}")
+                    finally:
+                        if tmp_local_dir and os.path.isdir(tmp_local_dir):
+                            try:
+                                _sh.rmtree(tmp_local_dir)
+                            except Exception:
+                                pass
+
+                asyncio.create_task(_caption_worker())
             except Exception as e:
-                print(f"[UPLOAD] captions generation failed video_id={video_id}: {e}")
+                print(f"[UPLOAD] captions background scheduling failed video_id={video_id}: {e}")
         else:
             print(f"[UPLOAD] captions generation skipped video_id={video_id}")
 
