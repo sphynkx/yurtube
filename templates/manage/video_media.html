@@ -4,9 +4,9 @@
 
 <div class="manage-comments-layout">
   {% include "account/left.html" %}
-  <main class="mc-main" data-video-id="{{ video_id }}">
+  <main class="mc-main">
     <div class="mc-top-bar">
-      <h1 class="mc-page-title">Media: Sprites & Subtitles</h1>
+      <h1 class="mc-page-title">Media tools</h1>
       <div class="mc-back-link">
         <a href="/manage">Back to My Videos</a>
       </div>
@@ -108,6 +108,9 @@ NOTE: Captions generation may take a long time.
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit">Delete captions</button>
         </form>
+        <div style="margin-top:10px;">
+          <a class="btn" href="/manage/video/{{ video_id }}/translations">Open Translations</a>
+        </div>
       {% else %}
         <p>No primary captions track (generate first).</p>
         <form id="form-start-captions" action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">

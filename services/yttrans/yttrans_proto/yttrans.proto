@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package yttrans.v1;
+
+import "google/protobuf/struct.proto";
+
+// List of available langs - for app's template.
+message ListLanguagesRequest {}
+message ListLanguagesResponse {
+  repeated string target_langs = 1;   // ex.: ["en","ru","uk","de"]
+  string default_source_lang = 2;     // "auto" or some lang if it nkown
+  google.protobuf.Struct meta = 3;    // any other data
+}
+
+message SubmitTranslateRequest {
+  string video_id = 1;
+  string src_vtt = 2;                 // content of captions.vtt (UTF-8)
+  string src_lang = 3;                // lang code or "auto"
+  repeated string target_langs = 4;   // langs list for translations (BCP 47)
+  google.protobuf.Struct options = 5; // options: { "engine":"deepl", "quality":"high", ... }
+}
+message JobAck {
+  string job_id = 1;
+  bool accepted = 2;
+  string message = 3;
+  google.protobuf.Struct meta = 4;    // { "queue":"...", "eta_sec":123 }
+}
+
+message GetStatusRequest {
+  string job_id = 1;
+}
+message Status {
+  enum State {
+    STATE_UNSPECIFIED = 0;
+    QUEUED = 1;
+    RUNNING = 2;
+    DONE = 3;
+    FAILED = 4;
+  }
+  string job_id = 1;
+  string video_id = 2;
+  State state = 3;
+  int32 percent = 4;                  // 0..100
+  string message = 5;                 // status/error desc
+  google.protobuf.Struct meta = 6;    // { "engine":"...", "chunks":N, "tokens":M, ... }
+}
+
+message GetResultRequest {
+  string job_id = 1;
+}
+message TranslationEntry {
+  string lang = 1;                    // "ru", "en-US", ...
+  string vtt = 2;                     // translations content (UTF-8)
+}
+message TranslationsResult {
+  string video_id = 1;
+  string default_lang = 2;            // usually = src_lang
+  repeated TranslationEntry entries = 3;
+  google.protobuf.Struct meta = 4;    // { "source_lang":"ru", "engine":"...", "quality":"...", "duration_ms": ... }
+}
+
+service Translator {
+  rpc ListLanguages (ListLanguagesRequest) returns (ListLanguagesResponse);
+  rpc SubmitTranslate (SubmitTranslateRequest) returns (JobAck);
+  rpc GetStatus (GetStatusRequest) returns (Status);
+  rpc GetResult (GetResultRequest) returns (TranslationsResult);
+}

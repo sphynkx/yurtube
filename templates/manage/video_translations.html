@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block content %}
+<link rel="stylesheet" href="/static/css/manage/account_layout.css">
+
+<div class="manage-comments-layout">
+  {% include "account/left.html" %}
+  <main class="mc-main">
+    <div class="mc-top-bar">
+      <h1 class="mc-page-title">Translations</h1>
+      <div class="mc-back-link">
+        <a href="/manage/video/{{ video_id }}/media">Back to Media</a>
+      </div>
+    </div>
+
+    {% if not has_captions %}
+      <div class="alert alert-error" style="margin-top:10px;">
+        Primary captions file not found. Generate captions first.
+      </div>
+      <p style="margin-top:10px;">
+        Go to <a href="/manage/video/{{ video_id }}/media">Media tools</a> and generate captions.
+      </p>
+    {% else %}
+      <section style="margin-top:16px;">
+        <h2>Available target languages</h2>
+        {% if yttrans_meta and yttrans_meta.error %}
+          <div class="alert alert-error" style="margin-bottom:10px;">
+            Failed to fetch languages: {{ yttrans_meta.error }}
+          </div>
+        {% endif %}
+        {% if target_langs %}
+          <div style="font-size:12px; color:#555; margin-bottom:6px;">
+            Default source language: <code>{{ default_source_lang }}</code>
+          </div>
+          <form id="form-translations" action="#" method="post" onsubmit="return false;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <ul id="langs-list" style="list-style:none; padding:0;">
+              {% for lang in target_langs %}
+                <li style="margin-bottom:6px;">
+                  <label>
+                    <input type="checkbox" name="lang" value="{{ lang }}">
+                    {{ lang }}
+                  </label>
+                </li>
+              {% endfor %}
+            </ul>
+            <div style="margin-top:8px;">
+              <button type="button" disabled title="MVP: generation not implemented yet">Generate (MVP disabled)</button>
+              <button type="button" disabled style="margin-left:8px;" title="MVP: deletion not implemented yet">Delete (MVP disabled)</button>
+              <span id="trans-status" style="margin-left:10px;font-size:12px;color:#555;"></span>
+            </div>
+          </form>
+        {% else %}
+          <p>No languages reported by the translation service.</p>
+        {% endif %}
+      </section>
+    {% endif %}
+  </main>
+</div>
+
+{% endblock %}
