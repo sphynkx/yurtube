@@ -54,6 +54,11 @@ class TranslatorStub(object):
                 request_serializer=yttrans__pb2.GetResultRequest.SerializeToString,
                 response_deserializer=yttrans__pb2.TranslationsResult.FromString,
                 _registered_method=True)
+        self.GetPartialResult = channel.unary_unary(
+                '/yttrans.v1.Translator/GetPartialResult',
+                request_serializer=yttrans__pb2.GetPartialResultRequest.SerializeToString,
+                response_deserializer=yttrans__pb2.PartialTranslationsResult.FromString,
+                _registered_method=True)
 
 
 class TranslatorServicer(object):
@@ -83,6 +88,14 @@ class TranslatorServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetPartialResult(self, request, context):
+        """partial progress while RUNNING.
+        Must NOT fail with FAILED_PRECONDITION for RUNNING; it should return ready_langs so far.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_TranslatorServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -105,6 +118,11 @@ def add_TranslatorServicer_to_server(servicer, server):
                     servicer.GetResult,
                     request_deserializer=yttrans__pb2.GetResultRequest.FromString,
                     response_serializer=yttrans__pb2.TranslationsResult.SerializeToString,
+            ),
+            'GetPartialResult': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetPartialResult,
+                    request_deserializer=yttrans__pb2.GetPartialResultRequest.FromString,
+                    response_serializer=yttrans__pb2.PartialTranslationsResult.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -215,6 +233,33 @@ class Translator(object):
             '/yttrans.v1.Translator/GetResult',
             yttrans__pb2.GetResultRequest.SerializeToString,
             yttrans__pb2.TranslationsResult.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetPartialResult(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/yttrans.v1.Translator/GetPartialResult',
+            yttrans__pb2.GetPartialResultRequest.SerializeToString,
+            yttrans__pb2.PartialTranslationsResult.FromString,
             options,
             channel_credentials,
             insecure,
