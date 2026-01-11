@@ -300,6 +300,34 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   let menuFixedMinHeight = 0;
   let menuBound = false;
 
+  // --- English language display helpers ---
+  let _langNamesEn = null;
+  function _getLangNamesEn() {
+    if (_langNamesEn) return _langNamesEn;
+    try {
+      if (typeof Intl !== 'undefined' && Intl.DisplayNames) {
+        _langNamesEn = new Intl.DisplayNames(['en'], { type: 'language' });
+      }
+    } catch {}
+    return _langNamesEn;
+  }
+  function langDisplayNameEn(code, fallbackLabel) {
+    const raw = String(code || '').trim();
+    if (!raw) return String(fallbackLabel || '');
+    if (raw.toLowerCase() === 'auto') return 'Auto';
+
+    // for Intl.DisplayNames we pass primary language subtag only
+    const base = raw.split('-', 1)[0].toLowerCase();
+    try {
+      const dn = _getLangNamesEn();
+      if (dn && typeof dn.of === 'function') {
+        const name = dn.of(base);
+        if (name) return name.charAt(0).toUpperCase() + name.slice(1);
+      }
+    } catch {}
+    return String(fallbackLabel || raw);
+  }
+
   function subtitleTracks() {
     try {
       return video.textTracks ? Array.prototype.filter.call(video.textTracks, function (tr) {
@@ -341,9 +369,11 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   function trackInfoList() {
     const subs = subtitleTracks();
     return subs.map(function (tr, i) {
-      var lang = (tr.language || '').toLowerCase();
-      var label = String(tr.label || lang || ('Lang ' + (i+1)));
-      return { index: i, lang: lang, label: label };
+      // IMPORTANT: use srclang fallback (most browsers don't populate TextTrack.language reliably)
+      const code = String(tr.language || tr.srclang || '').toLowerCase();
+      const rawLabel = String(tr.label || code || ('Lang ' + (i + 1)));
+      const label = langDisplayNameEn(code, rawLabel);
+      return { index: i, lang: code, label: label };
     });
   }
   function findTrackIndexByLang(code) {
@@ -421,25 +451,19 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     } catch {}
   }
 
-function withSubmenuChevron(btn) {
-  // indicate submenu with right aligned triangle via CSS
-  try {
-    btn.classList.add('has-submenu');
-  } catch {}
-}
+  function withSubmenuChevron(btn) {
+    try { btn.classList.add('has-submenu'); } catch {}
+  }
 
   function normalizeQualitySectionTypography() {
     if (!menu) return;
-    // Make "Quality (future)" look like other items: convert title into a disabled menu-item button
     try {
       const secQ = menu.querySelector('.yrp-menu-section[data-section="quality"]');
       if (!secQ) return;
 
-      // remove old title if exists
       const oldTitle = secQ.querySelector('.yrp-menu-title');
       if (oldTitle) oldTitle.parentNode && oldTitle.parentNode.removeChild(oldTitle);
 
-      // if already normalized, do nothing
       if (secQ.querySelector('.yrp-menu-item.quality-future')) return;
 
       const btn = document.createElement('button');
@@ -467,19 +491,14 @@ function withSubmenuChevron(btn) {
     menu.innerHTML = menuMainHTML;
     menuView = 'main';
 
-    // remove old speed grid section entirely
     try {
       const secSpeed = menu.querySelector('.yrp-menu-section[data-section="speed"]');
       if (secSpeed && secSpeed.parentNode) secSpeed.parentNode.removeChild(secSpeed);
     } catch {}
 
-    // remove "Subtitles (future)" placeholder section
     removeFutureSubtitlesSection();
-
-    // normalize quality to match menu item typography
     normalizeQualitySectionTypography();
 
-    // insert our main entries at top
     injectSpeedEntryIntoMain();
     injectLanguagesEntryIntoMain();
     injectSubtitlesEntryIntoMain();
@@ -534,13 +553,11 @@ function withSubmenuChevron(btn) {
   }
 
   function buildScrollableListContainer(backBtn) {
-    // we keep fixed menu height, so use internal scroller for long lists
     const wrap = document.createElement('div');
     wrap.className = 'yrp-menu-scroll';
     Object.assign(wrap.style, {
       overflowY: 'auto',
       overflowX: 'hidden',
-      // remaining height after back button
       maxHeight: 'calc(100% - 40px)',
       paddingRight: '2px'
     });
@@ -561,13 +578,12 @@ function withSubmenuChevron(btn) {
     styleBackButton(back);
     menu.appendChild(back);
 
-    // scrollable list
     const sc = buildScrollableListContainer(back);
     menu.appendChild(sc);
 
     const list = trackInfoList();
     const cur = chooseActiveTrack();
-    const curLang = (cur && cur.language) ? String(cur.language).toLowerCase() : '';
+    const curLang = (cur && (cur.language || cur.srclang)) ? String(cur.language || cur.srclang).toLowerCase() : '';
 
     const sorted = list.slice().sort(function (a, b) {
       const aa = (a.lang || '').toLowerCase();
@@ -583,7 +599,10 @@ function withSubmenuChevron(btn) {
       it.className = 'yrp-menu-item';
       it.setAttribute('data-action', 'select-lang');
       it.setAttribute('data-lang', ti.lang || '');
-      it.textContent = ti.label + (ti.lang === curLang ? ' ✓' : '');
+
+      const suffix = ti.lang ? ` (${ti.lang})` : '';
+      it.textContent = ti.label + suffix + (ti.lang === curLang ? ' ✓' : '');
+
       ensureTransparentMenuButton(it);
       sc.appendChild(it);
     });
@@ -1263,7 +1282,7 @@ function withSubmenuChevron(btn) {
     function refreshCycleBtn(){
       btnCycle.setAttribute("aria-pressed", cycleOn ? "true" : "false");
       applyIcon(btnCycle, "--icon-cycle-on", "--icon-cycle-off", !!cycleOn, "🔁");
-      btnCycle.style.opacity = cycleOn ? "1" : "0.55";
+      btnCycle.style.opacity = "1";
       btnCycle.style.display = "";
     }
 
