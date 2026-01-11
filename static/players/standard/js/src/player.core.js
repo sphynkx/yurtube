@@ -115,25 +115,96 @@ function mountOne(host, tpl, PLAYER_BASE) {
     } catch(e){ d('caption track append failed', e); }
   }
 
-  function ensureTextTracksMode() {
+  // ---- language selection + persistence (standard) ----
+  const prefLang = (function(){ try { return String(localStorage.getItem('subtitle_lang') || ''); } catch (_) { return ''; } })();
+
+  function subtitleTracks() {
     try {
-      const tt = video.textTracks;
+      return video.textTracks ? Array.prototype.filter.call(video.textTracks, function (tr) {
+        return tr.kind === 'subtitles' || tr.kind === 'captions';
+      }) : [];
+    } catch { return []; }
+  }
+
+  function trackInfoList() {
+    const subs0 = subtitleTracks();
+    return subs0.map(function (tr, i) {
+      const lang = String(tr.language || tr.srclang || '').toLowerCase();
+      const label = String(tr.label || lang || ('Lang ' + (i+1)));
+      return { index: i, lang: lang, label: label, track: tr };
+    });
+  }
+
+  function findTrackIndexByLang(code) {
+    const c = String(code || '').toLowerCase();
+    const list = trackInfoList();
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].lang === c) return list[i].index;
+      if (list[i].label.toLowerCase() === c) return list[i].index;
+    }
+    return -1;
+  }
+
+  function applySelectedTrackIndex(idx) {
+    const list = subtitleTracks();
+    if (!list.length) return;
+    const want = Math.max(0, Math.min(idx, list.length - 1));
+
+    for (let i = 0; i < list.length; i++) {
+      // standard uses native rendering => 'showing' for the selected track
+      list[i].mode = (i === want) ? 'showing' : 'disabled';
+    }
+  }
+
+  function applySelectedLang(code) {
+    const idx = findTrackIndexByLang(code);
+    if (idx >= 0) {
+      applySelectedTrackIndex(idx);
+      try { localStorage.setItem('subtitle_lang', String(code || '')); } catch (_){}
+    }
+  }
+
+  function detectAndPersistUserSelectedLang() {
+    // If user changes subtitle via native controls, textTracks will reflect it as mode=showing
+    try {
+      const list = subtitleTracks();
+      for (let i = 0; i < list.length; i++) {
+        const tr = list[i];
+        if (tr.mode === 'showing') {
+          const lang = String(tr.language || tr.srclang || '').toLowerCase();
+          if (lang) {
+            try { localStorage.setItem('subtitle_lang', lang); } catch (_){}
+          }
+          return;
+        }
+      }
+    } catch {}
+  }
+
+  function ensureTextTracksMode() {
+    // Keep old behavior as fallback, but prefer saved language if present.
+    try {
+      const tt = subtitleTracks();
       if (!tt || tt.length === 0) return;
+
+      if (prefLang) {
+        const idxPref = findTrackIndexByLang(prefLang);
+        if (idxPref >= 0) {
+          applySelectedTrackIndex(idxPref);
+          return;
+        }
+      }
+
       const want = !!(opts && opts.subtitles === true);
       let anyShown = false;
       for (let i = 0; i < tt.length; i++) {
         const tr = tt[i];
-        if (tr.kind === 'subtitles' || tr.kind === 'captions') {
-          const show = want || (tr.language === (captionLang || tr.srclang));
-          if (!anyShown && show) { tr.mode = 'showing'; anyShown = true; }
-          else tr.mode = 'hidden';
-        }
+        const show = want || (String(tr.language || tr.srclang || '') === (captionLang || tr.srclang));
+        if (!anyShown && show) { tr.mode = 'showing'; anyShown = true; }
+        else tr.mode = 'disabled';
       }
       if (!anyShown) {
-        for (let i = 0; i < tt.length; i++) {
-          const tr = tt[i];
-          if (tr.kind === 'subtitles' || tr.kind === 'captions') { tr.mode = 'showing'; break; }
-        }
+        for (let i = 0; i < tt.length; i++) { tt[i].mode = 'showing'; break; }
       }
     } catch {}
   }
@@ -154,13 +225,17 @@ function mountOne(host, tpl, PLAYER_BASE) {
 
   video.addEventListener('loadedmetadata', function(){
     ensureTextTracksMode();
+
     try {
-      const tt = video.textTracks;
+      const tt = subtitleTracks();
       for (let i = 0; i < tt.length; i++) {
         const tr = tt[i];
-        tr.addEventListener && tr.addEventListener('load', ensureTextTracksMode);
+        tr.addEventListener && tr.addEventListener('cuechange', detectAndPersistUserSelectedLang);
       }
     } catch {}
+
+    // also catch toggles that don't fire cuechange
+    video.addEventListener('timeupdate', throttle(detectAndPersistUserSelectedLang, 800), { passive: true });
   });
 
   let toggleLock = false;
