@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 import os
 import json
+import inspect
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -21,6 +22,7 @@ from utils.url_ut import build_storage_url
 from db.assets_db import get_thumbs_vtt_asset
 
 from db.playlists_db import get_playlist_brief
+from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -106,6 +108,33 @@ def _embed_defaults_from_row(vrow: Dict[str, Any]) -> Dict[str, int]:
     return {"autoplay": 1 if ap else 0, "mute": 1 if mu else 0, "loop": 1 if lo else 0, "start": max(0, st)}
 
 
+async def _load_translations_langs(storage_client: StorageClient, storage_rel: str) -> List[str]:
+    rel = os.path.join(storage_rel.strip("/"), "captions", "translations.meta.json")
+    ex = storage_client.exists(rel)
+    if inspect.isawaitable(ex):
+        ex = await ex
+    if not ex:
+        return []
+    try:
+        reader = storage_client.open_reader(rel)
+        if inspect.isawaitable(reader):
+            reader = await reader
+        data = b""
+        if hasattr(reader, "__aiter__") or hasattr(reader, "__anext__"):
+            async for chunk in reader:
+                if chunk:
+                    data += chunk
+        else:
+            for chunk in reader:
+                if chunk:
+                    data += chunk
+        meta = json.loads((data.decode("utf-8", "ignore") or "{}"))
+        langs = meta.get("langs") or []
+        return [str(x).strip() for x in langs if str(x).strip()]
+    except Exception:
+        return []
+
+
 @router.get("/watch", response_class=HTMLResponse)
 async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -> Any:
     user = get_current_user(request)
@@ -118,7 +147,6 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
         caption_lang: str = video.get("captions_lang") if video and video.get("captions_lang") else "auto"
 
         if not row:
-            # Video not found
             subtitles: List[Dict[str, Any]] = []
             player_options: Dict[str, Any] = {"autoplay": False, "muted": False, "loop": False, "start": 0}
             embed_url = f"{_base_url(request)}/embed?v={v}"
@@ -153,7 +181,6 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
             headers = {"Cache-Control": "no-store"}
             return templates.TemplateResponse("watch.html", context, headers=headers)
 
-        # Video found
         user_uid: Optional[str] = user["user_uid"] if user else None
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
@@ -162,18 +189,15 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
         except Exception:
             pass
 
-        # Build web URL for video via abs path
         video_src = build_storage_url(video["storage_path"].strip("/").rstrip("/") + "/original.webm")
         poster_url = build_storage_url(video["thumb_asset_path"]) if video.get("thumb_asset_path") else None
         thumb_anim_url = build_storage_url(video["thumb_anim_asset_path"]) if video.get("thumb_anim_asset_path") else None
         avatar_url = build_storage_url(video["avatar_asset_path"]) if video.get("avatar_asset_path") else None
         video["avatar_url"] = avatar_url
 
-        # Options for embed player
         opts = _embed_defaults_from_row(video)
 
         subtitles: List[Dict[str, Any]] = []
-        # Options for base player
         player_options: Dict[str, Any] = {
             "autoplay": False,
             "muted": False,
@@ -194,16 +218,28 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
         sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
         sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
 
+        # translations -> subtitles
+        storage_client: StorageClient = request.app.state.storage
+        langs = await _load_translations_langs(storage_client, video["storage_path"])
+        if langs:
+            cap_dir = video["storage_path"].strip("/").rstrip("/") + "/captions"
+            for code in langs:
+                rel = f"{cap_dir}/{code}.vtt"
+                subtitles.append({
+                    "label": code,
+                    "srclang": code,
+                    "src": build_storage_url(rel),
+                    "default": False,
+                })
+
         recommended_videos: List[Dict[str, Any]] = []
         try:
             if getattr(settings, "RIGHTBAR_ENABLED", True):
                 limit = int(getattr(settings, "RIGHTBAR_LIMIT", 12) or 12)
-                # Playlist mode instead of recommendations
                 recommended_videos = await fetch_rightbar_for_video(video["video_id"], user_uid, limit=limit, playlist_id=p)
         except Exception:
             recommended_videos = []
 
-        # Right sidebar title: if set and available `p` - set playlist name
         upnext_title = "Up next"
         if p:
             try:
@@ -247,7 +283,6 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
             "upnext_title": upnext_title,
         }
 
-        # Link preload headers
         link_entries: List[str] = []
         def _add_link(url: Optional[str], rel: str, as_type: str) -> None:
             if url:
@@ -323,7 +358,6 @@ async def embed_page(
         await add_view(conn, video_id=v, user_uid=user_uid, duration_sec=0)
         await increment_video_views_counter(conn, video_id=v)
 
-        # Build web URL for video via abs path
         video_src = build_storage_url(video["storage_path"].strip("/").rstrip("/") + "/original.webm")
         poster_url = build_storage_url(video["thumb_asset_path"]) if video.get("thumb_asset_path") else None
 
@@ -337,6 +371,20 @@ async def embed_page(
 
         sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
         sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
+
+        # translations -> subtitles
+        storage_client: StorageClient = request.app.state.storage
+        langs = await _load_translations_langs(storage_client, video["storage_path"])
+        if langs:
+            cap_dir = video["storage_path"].strip("/").rstrip("/") + "/captions"
+            for code in langs:
+                rel = f"{cap_dir}/{code}.vtt"
+                subtitles.append({
+                    "label": code,
+                    "srclang": code,
+                    "src": build_storage_url(rel),
+                    "default": False,
+                })
 
         context = {
             "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -358,7 +406,6 @@ async def embed_page(
             "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
         }
 
-        # Link preload for embed
         link_entries: List[str] = []
         def _add_link(url: Optional[str], rel: str, as_type: str) -> None:
             if url:

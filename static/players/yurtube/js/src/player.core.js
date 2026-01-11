@@ -72,7 +72,6 @@ function mountOne(host, tpl, BASE) {
   if (spritesVtt) root.setAttribute('data-sprites-vtt', spritesVtt);
   video.setAttribute('playsinline', '');
 
-  // Force native kind to "captions" for PiP stability in main player
   if (Array.isArray(subs)) {
     subs.forEach(function (t) {
       if (!t || !t.src) return;
@@ -137,7 +136,6 @@ function mountOne(host, tpl, BASE) {
   const centerLogo = root.querySelector('.yrp-center-logo');
   if (centerLogo) centerLogo.setAttribute('src', BASE + '/img/logo.png');
 
-  // Custom captions overlay (draggable)
   const overlay = document.createElement('div');
   overlay.className = 'yrp-captions-layer';
   Object.assign(overlay.style, {
@@ -293,6 +291,9 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   let overlayActive = true;
   let activeTrackIndex = 0;
 
+  let prefLang = (function(){ try { return String(localStorage.getItem('subtitle_lang') || ''); } catch (_) { return ''; } })();
+  let langsPanel = null;
+
   function subtitleTracks() {
     try {
       return video.textTracks ? Array.prototype.filter.call(video.textTracks, function (tr) {
@@ -331,7 +332,102 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     hooks.textBox.textContent = overlayActive ? currentCueText() : '';
   }
 
-  // ====== Helpers for mask/fallback icons ======
+  function trackInfoList() {
+    const subs = subtitleTracks();
+    return subs.map(function (tr, i) {
+      var lang = (tr.language || '').toLowerCase();
+      var label = String(tr.label || lang || ('Lang ' + (i+1)));
+      return { index: i, lang: lang, label: label };
+    });
+  }
+  function findTrackIndexByLang(code) {
+    const c = String(code || '').toLowerCase();
+    const list = trackInfoList();
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].lang === c) return list[i].index;
+      if (list[i].label.toLowerCase() === c) return list[i].index;
+    }
+    return -1;
+  }
+  function selectSubtitleLang(code) {
+    const idx = findTrackIndexByLang(code);
+    if (idx >= 0) {
+      activeTrackIndex = idx;
+      overlayActive = true;
+      applyPageModes();
+      updateOverlayText();
+      try { localStorage.setItem('subtitle_lang', String(code || '')); } catch (_){}
+      refreshLanguagesEntry();
+      refreshLangsPanel();
+      refreshSubtitlesBtn && refreshSubtitlesBtn();
+    }
+  }
+
+  function ensureLangsPanel() {
+    if (langsPanel && langsPanel.parentNode) return langsPanel;
+    langsPanel = document.createElement('div');
+    langsPanel.className = 'yrp-menu yrp-menu-langs';
+    langsPanel.hidden = true;
+    langsPanel.style.zIndex = '30';
+    if (menu && menu.parentNode) menu.parentNode.appendChild(langsPanel);
+    else root.appendChild(langsPanel);
+    return langsPanel;
+  }
+  function positionLangsPanel() {
+    if (!langsPanel || !menu) return;
+    const rw = root.getBoundingClientRect();
+    const mw = menu.getBoundingClientRect();
+    langsPanel.style.position = 'absolute';
+    langsPanel.style.left = (mw.left - rw.left) + 'px';
+    langsPanel.style.top = (mw.top - rw.top) + 'px';
+  }
+  function openLangsPanel() {
+    ensureLangsPanel();
+    positionLangsPanel();
+    refreshLangsPanel();
+    menu.hidden = true;
+    langsPanel.hidden = false;
+    root.classList.add('vol-open');
+    showControls();
+  }
+  function closeLangsPanel() {
+    if (langsPanel) langsPanel.hidden = true;
+  }
+  function refreshLangsPanel() {
+    if (!langsPanel) return;
+    while (langsPanel.firstChild) langsPanel.removeChild(langsPanel.firstChild);
+    var title = document.createElement('div');
+    title.className = 'yrp-menu-title';
+    title.textContent = 'Languages';
+    langsPanel.appendChild(title);
+    var list = trackInfoList();
+    var cur = chooseActiveTrack();
+    var curLang = (cur && cur.language) ? String(cur.language).toLowerCase() : '';
+    list.forEach(function (ti) {
+      var it = document.createElement('div');
+      it.className = 'yrp-menu-item';
+      it.setAttribute('data-lang', ti.lang || '');
+      it.textContent = ti.label + (ti.lang === curLang ? ' ✓' : '');
+      langsPanel.appendChild(it);
+    });
+    var back = document.createElement('div');
+    back.className = 'yrp-menu-item';
+    back.setAttribute('data-action', 'back');
+    back.textContent = 'Back';
+    langsPanel.appendChild(back);
+  }
+  function refreshLanguagesEntry() {
+    if (!menu) return;
+    var btn = menu.querySelector('.yrp-menu-item.open-langs');
+    if (!btn) {
+      btn = document.createElement('div');
+      btn.className = 'yrp-menu-item open-langs';
+      btn.setAttribute('data-action', 'open-langs');
+      btn.textContent = 'Languages';
+      menu.appendChild(btn);
+    }
+  }
+
   function applyIcon(button, varOn, varOff, isOn, fallbackEmoji) {
     const varName = isOn ? varOn : varOff;
     const cs = getComputedStyle(root);
@@ -357,9 +453,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     button.style.textIndent = '-9999px';
     button.dataset.maskApplied = '1';
   }
-  // ====== Helpers end ======
 
-  // Sprites: absolute URL resolution
   function ensureSpritePop() {
     if (spritePop) return spritePop;
     if (!progress) return null;
@@ -568,7 +662,6 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     tooltip.hidden = false;
   }
 
-  // Resume position
   (function resumePosition() {
     const vid = root.getAttribute('data-video-id') || '';
     if (!vid) return;
@@ -609,7 +702,6 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     video.addEventListener('ended', function () { const m = load('resume', {}); delete m[vid]; save('resume', m); });
   })();
 
-  // Theater integration (internal + page layout)
   (function theaterInit() {
     function applyTheater(flag) {
       root.classList.toggle('yrp-theater', flag);
@@ -644,7 +736,6 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     }
   })();
 
-  // Events
   video.addEventListener('loadedmetadata', function () {
     if (startAt > 0) {
       try { video.currentTime = Math.min(startAt, Math.floor(video.duration || startAt)); } catch {}
@@ -655,6 +746,11 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     refreshVolIcon();
     refreshAutoplayBtn();
     refreshPlayBtn();
+
+    if (prefLang) {
+      const idxPref = findTrackIndexByLang(prefLang);
+      if (idxPref >= 0) activeTrackIndex = idxPref;
+    }
 
     chooseActiveTrack();
     applyPageModes();
@@ -672,6 +768,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       tb.style.maxWidth = Math.max(minW, Math.floor(avail - pad)) + 'px';
     }
     logTracks('after loadedmetadata');
+
+    refreshLanguagesEntry();
   });
 
   function logTracks(prefix) {
@@ -958,7 +1056,6 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       else if (code === "PageDown") { e.preventDefault(); var j = nextIndex(); if (j >= 0) gotoIndex(j); }
     });
   })();
-  // === end of playlists block ===
 
   if (btnVol) {
     btnVol.addEventListener('click', function (e) {
@@ -1032,8 +1129,11 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       if (open) {
         menu.hidden = true;
         btnSettings.setAttribute('aria-expanded', 'false');
+        closeLangsPanel();
       } else {
         hideMenus();
+        refreshLanguagesEntry();
+        positionLangsPanel();
         menu.hidden = false;
         btnSettings.setAttribute('aria-expanded', 'true');
       }
@@ -1050,12 +1150,42 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
           video.playbackRate = sp;
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
+          return;
+        }
+        const act = target.getAttribute('data-action') || '';
+        if (act === 'open-langs') {
+          openLangsPanel();
+          return;
         }
       }
     });
 
     document.addEventListener('click', function (e) {
-      if (!menu.hidden && !menu.contains(e.target) && e.target !== btnSettings) menu.hidden = true;
+      if (!menu.hidden && !menu.contains(e.target) && e.target !== btnSettings) {
+        menu.hidden = true;
+        btnSettings.setAttribute('aria-expanded', 'false');
+      }
+      if (langsPanel && !langsPanel.hidden && !langsPanel.contains(e.target) && e.target !== btnSettings) {
+        closeLangsPanel();
+        btnSettings.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    root.addEventListener('click', function (e) {
+      if (langsPanel && !langsPanel.hidden) {
+        const t = e.target;
+        const lang = t && t.getAttribute && t.getAttribute('data-lang');
+        const act = t && t.getAttribute && t.getAttribute('data-action');
+        if (lang) {
+          selectSubtitleLang(lang);
+          closeLangsPanel();
+          btnSettings.setAttribute('aria-expanded', 'false');
+        } else if (act === 'back') {
+          closeLangsPanel();
+          menu.hidden = false;
+          btnSettings.setAttribute('aria-expanded', 'true');
+        }
+      }
     });
   }
 
@@ -1092,6 +1222,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     }
     const ctx = root.querySelector('.yrp-context');
     if (ctx) ctx.hidden = true;
+    closeLangsPanel();
     root.classList.remove('vol-open');
   }
 
