@@ -17,6 +17,10 @@
       var li = items[i];
       var code = li.getAttribute('data-lang') || '';
       var has = langs.indexOf(code) >= 0;
+
+      // highlight blocks that have translation
+      li.classList.toggle('lang-has-file', !!has);
+
       var edit = li.querySelector('.lang-edit');
       var dl = li.querySelector('.lang-dl');
       if (edit) {

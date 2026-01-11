@@ -40,7 +40,9 @@
             <ul id="langs-list" style="list-style:none; padding:0; display:flex; flex-wrap:wrap; gap:10px;">
               {% for lang in target_langs %}
                 {% set has_file = (existing_langs and (lang in existing_langs)) %}
-                <li data-lang="{{ lang }}" style="border:1px solid #ddd; padding:6px 8px; border-radius:6px;">
+                <li data-lang="{{ lang }}"
+                    class="{{ 'lang-has-file' if has_file else '' }}"
+                    style="border:1px solid #ddd; padding:6px 8px; border-radius:6px;">
                   <label style="display:flex; align-items:center; gap:8px;">
                     <input type="checkbox" name="lang" value="{{ lang }}">
                     <span style="font-weight:600;">{{ lang }}</span>
@@ -76,6 +78,12 @@
 
 <style>
   .disabled { pointer-events: none; opacity: 0.45; }
+
+  /* highlight langs that already have translation file */
+  #langs-list li.lang-has-file {
+    background: #e8ffea; /* light green */
+    border-color: #bde8c1;
+  }
 </style>
 <script src="/static/js/translations_status.js"></script>
 {% endblock %}
