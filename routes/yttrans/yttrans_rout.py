@@ -50,19 +50,16 @@ def _lang_display_name_en(code: str) -> str:
     if not c:
         return ""
     try:
-        # Lazy import so app can still start even if Babel isn't installed (will fallback to code)
         from babel.core import Locale  # type: ignore
         loc_code = c.replace("-", "_")
         try:
             loc = Locale.parse(loc_code)
         except Exception:
-            # try language-only fallback: "pt_BR" -> "pt"
             base = loc_code.split("_", 1)[0]
             loc = Locale.parse(base)
         name = loc.get_display_name("en")
         if not name:
             return c
-        # capitalize first letter
         return name[:1].upper() + name[1:]
     except Exception:
         return c
@@ -113,12 +110,48 @@ async def _read_translations_meta(storage_client: StorageClient, storage_rel: st
     if inspect.isawaitable(ex):
         ex = await ex
     if not ex:
-        return {"video_id": "", "source_lang": "", "default_lang": "", "langs": [], "engine": "", "updated_at": "", "format_version": 1}
+        return {
+            "video_id": "",
+            "source_lang": "",
+            "default_lang": "",
+            "langs": [],
+            "engine": "",
+            "updated_at": "",
+            "format_version": 1,
+            "job_id": "",
+            "job_state": "",
+            "job_message": "",
+        }
     try:
         txt = await _read_text(storage_client, rel, encoding="utf-8")
-        return json.loads(txt or "{}")
+        meta = json.loads(txt or "{}")
+        if not isinstance(meta, dict):
+            meta = {}
+        # backwards compat defaults
+        meta.setdefault("video_id", "")
+        meta.setdefault("source_lang", "")
+        meta.setdefault("default_lang", "")
+        meta.setdefault("langs", [])
+        meta.setdefault("engine", "")
+        meta.setdefault("updated_at", "")
+        meta.setdefault("format_version", 1)
+        meta.setdefault("job_id", "")
+        meta.setdefault("job_state", "")
+        meta.setdefault("job_message", "")
+        return meta
     except Exception:
-        return {"video_id": "", "source_lang": "", "default_lang": "", "langs": [], "engine": "", "updated_at": "", "format_version": 1}
+        return {
+            "video_id": "",
+            "source_lang": "",
+            "default_lang": "",
+            "langs": [],
+            "engine": "",
+            "updated_at": "",
+            "format_version": 1,
+            "job_id": "",
+            "job_state": "",
+            "job_message": "",
+        }
 
 
 async def _write_translations_meta(storage_client: StorageClient, storage_rel: str, meta: Dict[str, Any]) -> None:
@@ -168,7 +201,6 @@ async def video_translations_page(request: Request, video_id: str) -> Any:
         except Exception:
             existing_langs = []
 
-        # Convert to view-model: [{code,name}, ...]
         target_langs_view: List[Dict[str, str]] = []
         for code in (langs or []):
             c = (code or "").strip()
@@ -247,16 +279,41 @@ async def translations_generate(
         print(f"[YTTRANS] submit failed video_id={video_id}: {e}")
         return RedirectResponse(url=f"/manage/video/{video_id}/translations", status_code=303)
 
+    # Persist job id immediately so UI can poll progress while RUNNING
+    try:
+        trans_meta = await _read_translations_meta(storage_client, storage_rel)
+        trans_meta["video_id"] = video_id
+        trans_meta["job_id"] = job_id
+        trans_meta["job_state"] = "running"
+        trans_meta["job_message"] = ""
+        import time
+        trans_meta["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        await _write_translations_meta(storage_client, storage_rel, trans_meta)
+    except Exception as e:
+        print(f"[YTTRANS] meta job_id write failed video_id={video_id}: {e}")
+
     async def _bg_worker():
         print(f"[YTTRANS] job queued video_id={video_id} job_id={job_id} langs={target_langs}")
         try:
+            st: Dict[str, Any] = {"state": "running"}
             for _ in range(300):
                 st = await get_status(job_id)
-                if st["state"] in ("done", "failed"):
+                if st.get("state") in ("done", "failed"):
                     break
                 await asyncio.sleep(1.0)
 
-            if st["state"] != "done":
+            try:
+                trans_meta2 = await _read_translations_meta(storage_client, storage_rel)
+                trans_meta2["job_id"] = job_id
+                trans_meta2["job_state"] = st.get("state") or trans_meta2.get("job_state") or ""
+                trans_meta2["job_message"] = st.get("message") or trans_meta2.get("job_message") or ""
+                import time
+                trans_meta2["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                await _write_translations_meta(storage_client, storage_rel, trans_meta2)
+            except Exception:
+                pass
+
+            if st.get("state") != "done":
                 print(f"[YTTRANS] job failed video_id={video_id} job_id={job_id} msg={st.get('message')}")
                 return
 
@@ -286,6 +343,9 @@ async def translations_generate(
                 trans_meta["default_lang"] = "auto"
             trans_meta["video_id"] = video_id
             trans_meta["engine"] = meta.get("engine") or trans_meta.get("engine") or ""
+            trans_meta["job_id"] = job_id
+            trans_meta["job_state"] = "done"
+            trans_meta["job_message"] = ""
             import time
             trans_meta["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             await _write_translations_meta(storage_client, storage_rel, trans_meta)
@@ -376,4 +436,99 @@ async def translations_status(request: Request, video_id: str = Query(...)) -> A
     meta = await _read_translations_meta(storage_client, storage_rel)
     langs = list(meta.get("langs") or [])
     default_lang = meta.get("default_lang") or ""
-    return JSONResponse({"ok": True, "langs": langs, "default_lang": default_lang})
+    job_id = meta.get("job_id") or ""
+    job_state = meta.get("job_state") or ""
+    job_message = meta.get("job_message") or ""
+    return JSONResponse({
+        "ok": True,
+        "langs": langs,
+        "default_lang": default_lang,
+        "job_id": job_id,
+        "job_state": job_state,
+        "job_message": job_message,
+    })
+
+
+@router.get("/internal/yttrans/translations/progress")
+async def translations_progress(request: Request, video_id: str = Query(...)) -> Any:
+    """
+    Return incremental progress for translations while job is running.
+
+    DEBUG fields included:
+    - percent (from GetStatus)
+    - entries_count (from GetResult)
+    - result_error (if GetResult failed)
+    """
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+
+    conn = await get_conn()
+    try:
+        owned = await get_owned_video(conn, video_id, user["user_uid"])
+        if not owned:
+            return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+        storage_rel = owned["storage_path"].rstrip("/")
+    finally:
+        await release_conn(conn)
+
+    storage_client: StorageClient = request.app.state.storage
+    meta = await _read_translations_meta(storage_client, storage_rel)
+
+    saved_langs = list(meta.get("langs") or [])
+    job_id = (meta.get("job_id") or "").strip()
+
+    if not job_id:
+        return JSONResponse({
+            "ok": True,
+            "job_id": "",
+            "state": meta.get("job_state") or "",
+            "message": meta.get("job_message") or "",
+            "percent": -1,
+            "langs": saved_langs,
+            "default_lang": meta.get("default_lang") or "",
+            "entries_count": 0,
+            "result_error": "",
+        })
+
+    # status
+    try:
+        st = await get_status(job_id)
+        state = st.get("state") or ""
+        message = st.get("message") or ""
+        percent = int(st.get("percent", -1))
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": f"status_failed:{e}"}, status_code=502)
+
+    # incremental result
+    inc_langs: List[str] = []
+    entries_count = 0
+    result_error = ""
+    default_lang = meta.get("default_lang") or ""
+
+    try:
+        _vid, _default_lang, entries, _meta2 = await get_result(job_id)
+        if _default_lang:
+            default_lang = _default_lang
+        entries_count = len(entries or [])
+        for lang_code, _vtt_text in (entries or []):
+            if lang_code:
+                inc_langs.append(str(lang_code))
+    except Exception as e:
+        # DO NOT swallow: report it so we see why incremental doesn't work
+        result_error = f"{type(e).__name__}: {e}"
+        inc_langs = []
+        entries_count = 0
+
+    merged = sorted(set([l for l in saved_langs if l] + [l for l in inc_langs if l]))
+    return JSONResponse({
+        "ok": True,
+        "job_id": job_id,
+        "state": state,
+        "message": message,
+        "percent": percent,
+        "langs": merged,
+        "default_lang": default_lang,
+        "entries_count": entries_count,
+        "result_error": result_error,
+    })

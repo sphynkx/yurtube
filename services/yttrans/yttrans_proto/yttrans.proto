@@ -59,9 +59,29 @@ message TranslationsResult {
   google.protobuf.Struct meta = 4;    // { "source_lang":"ru", "engine":"...", "quality":"...", "duration_ms": ... }
 }
 
+// incremental progress (ready languages)
+message GetPartialResultRequest {
+  string job_id = 1;
+}
+
+message PartialTranslationsResult {
+  string job_id = 1;
+  string video_id = 2;
+  Status.State state = 3;             // QUEUED/RUNNING/DONE/FAILED
+  int32 percent = 4;                  // 0..100 (best-effort)
+  string message = 5;                 // status/error desc
+  repeated string ready_langs = 6;    // langs that are ready right now
+  int32 total_langs = 7;              // how many langs were requested (if known)
+  google.protobuf.Struct meta = 8;    // optional extra info
+}
+
 service Translator {
   rpc ListLanguages (ListLanguagesRequest) returns (ListLanguagesResponse);
   rpc SubmitTranslate (SubmitTranslateRequest) returns (JobAck);
   rpc GetStatus (GetStatusRequest) returns (Status);
   rpc GetResult (GetResultRequest) returns (TranslationsResult);
+
+  // partial progress while RUNNING.
+  // Must NOT fail with FAILED_PRECONDITION for RUNNING; it should return ready_langs so far.
+  rpc GetPartialResult (GetPartialResultRequest) returns (PartialTranslationsResult);
 }
