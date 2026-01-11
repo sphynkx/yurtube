@@ -385,3 +385,22 @@
   color: var(--yrp-icon-color) !important;
   text-indent: 0 !important;
 }
+/* submenu chevron (right aligned) */
+.yrp-menu-item.has-submenu {
+  position: relative;
+  padding-right: 22px; /* room for chevron */
+}
+
+.yrp-menu-item.has-submenu::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-left: 6px solid rgba(255,255,255,0.75);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  pointer-events: none;
+}

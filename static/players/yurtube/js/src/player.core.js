@@ -421,13 +421,12 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     } catch {}
   }
 
-  function withSubmenuChevron(btn) {
-    // indicate submenu with right-side triangle
-    try {
-      btn.textContent = String(btn.textContent || '').replace(/\s*▸\s*$/, '');
-      btn.textContent = btn.textContent + ' ▸';
-    } catch {}
-  }
+function withSubmenuChevron(btn) {
+  // indicate submenu with right aligned triangle via CSS
+  try {
+    btn.classList.add('has-submenu');
+  } catch {}
+}
 
   function normalizeQualitySectionTypography() {
     if (!menu) return;
