@@ -82,6 +82,32 @@ function mountOne(host, tpl, PLAYER_BASE) {
   const DEBUG = /\byrpdebug=1\b/i.test(location.search) || !!(opts && opts.debug);
   function d(){ if (!DEBUG) return; try { console.debug.apply(console, ['[STD]'].concat([].slice.call(arguments))); } catch {} }
 
+  // --- English label helper for native track menu ---
+  let _langNamesEn = null;
+  function _getLangNamesEn() {
+    if (_langNamesEn) return _langNamesEn;
+    try {
+      if (typeof Intl !== 'undefined' && Intl.DisplayNames) {
+        _langNamesEn = new Intl.DisplayNames(['en'], { type: 'language' });
+      }
+    } catch {}
+    return _langNamesEn;
+  }
+  function langDisplayNameEn(code, fallbackLabel) {
+    const raw = String(code || '').trim();
+    if (!raw) return String(fallbackLabel || '');
+    if (raw.toLowerCase() === 'auto') return 'Auto';
+    const base = raw.split('-', 1)[0].toLowerCase();
+    try {
+      const dn = _getLangNamesEn();
+      if (dn && typeof dn.of === 'function') {
+        const name = dn.of(base);
+        if (name) return name.charAt(0).toUpperCase() + name.slice(1);
+      }
+    } catch {}
+    return String(fallbackLabel || raw);
+  }
+
   if (centerLogo) centerLogo.setAttribute('src', PLAYER_BASE + '/img/logo.png');
 
   if (source) source.setAttribute('src', src);
@@ -97,7 +123,12 @@ function mountOne(host, tpl, PLAYER_BASE) {
       const tr = document.createElement('track');
       tr.setAttribute('kind', 'subtitles');
       if (t.srclang) tr.setAttribute('srclang', String(t.srclang));
-      if (t.label) tr.setAttribute('label', String(t.label));
+
+      // IMPORTANT: make native menu show nice english name
+      const code = String(t.srclang || '').toLowerCase();
+      const rawLabel = String(t.label || code || 'Subtitles');
+      tr.setAttribute('label', langDisplayNameEn(code, rawLabel) + (code ? ` (${code})` : ''));
+
       tr.setAttribute('src', String(t.src));
       if (t.default) tr.setAttribute('default', '');
       video.appendChild(tr);
@@ -109,7 +140,11 @@ function mountOne(host, tpl, PLAYER_BASE) {
       ctr.setAttribute('kind', 'subtitles');
       ctr.setAttribute('src', captionVtt);
       ctr.setAttribute('srclang', captionLang || 'auto');
-      ctr.setAttribute('label', captionLang || 'Original');
+
+      const code2 = String(captionLang || 'auto').toLowerCase();
+      const raw2 = String(captionLang || 'Original');
+      ctr.setAttribute('label', langDisplayNameEn(code2, raw2) + (code2 ? ` (${code2})` : ''));
+
       ctr.setAttribute('default', '');
       video.appendChild(ctr);
     } catch(e){ d('caption track append failed', e); }
