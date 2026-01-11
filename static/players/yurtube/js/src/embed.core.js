@@ -160,6 +160,32 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
   const prefLang = (function(){ try { return String(localStorage.getItem('subtitle_lang') || ''); } catch (_) { return ''; } })();
   const prefSpeed = (function(){ try { return parseFloat(localStorage.getItem('playback_speed') || ''); } catch (_) { return NaN; } })();
 
+  // --- English language display helpers ---
+  let _langNamesEn = null;
+  function _getLangNamesEn() {
+    if (_langNamesEn) return _langNamesEn;
+    try {
+      if (typeof Intl !== 'undefined' && Intl.DisplayNames) {
+        _langNamesEn = new Intl.DisplayNames(['en'], { type: 'language' });
+      }
+    } catch {}
+    return _langNamesEn;
+  }
+  function langDisplayNameEn(code, fallbackLabel) {
+    const raw = String(code || '').trim();
+    if (!raw) return String(fallbackLabel || '');
+    if (raw.toLowerCase() === 'auto') return 'Auto';
+    const base = raw.split('-', 1)[0].toLowerCase();
+    try {
+      const dn = _getLangNamesEn();
+      if (dn && typeof dn.of === 'function') {
+        const name = dn.of(base);
+        if (name) return name.charAt(0).toUpperCase() + name.slice(1);
+      }
+    } catch {}
+    return String(fallbackLabel || raw);
+  }
+
   // Captions overlay (draggable, pointer events)
   function createCaptionsOverlay(container) {
     const layer = document.createElement('div');
@@ -289,9 +315,11 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
   function trackInfoList() {
     const subs = subtitleTracks();
     return subs.map(function (tr, i) {
-      const lang = String(tr.language || tr.srclang || '').toLowerCase();
-      const label = String(tr.label || lang || ('Lang ' + (i+1)));
-      return { index: i, lang: lang, label: label };
+      // IMPORTANT: TextTrack.language is unreliable, prefer srclang fallback
+      const code = String(tr.language || tr.srclang || '').toLowerCase();
+      const rawLabel = String(tr.label || code || ('Lang ' + (i + 1)));
+      const label = langDisplayNameEn(code, rawLabel);
+      return { index: i, lang: code, label: label };
     });
   }
   function findTrackIndexByLang(code) {
@@ -671,7 +699,8 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
       it.className = 'yrp-menu-item';
       it.setAttribute('data-action', 'select-lang');
       it.setAttribute('data-lang', ti.lang || '');
-      it.textContent = ti.label + (ti.lang === curLang ? ' ✓' : '');
+      const suffix = ti.lang ? ` (${ti.lang})` : '';
+      it.textContent = ti.label + suffix + (ti.lang === curLang ? ' ✓' : '');
       ensureTransparentMenuButton(it);
       sc.appendChild(it);
     });
