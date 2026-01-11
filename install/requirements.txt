@@ -26,3 +26,4 @@ grpcio-tools==1.66.1
 grpcio-health-checking
 grpcio-reflection
 Pillow>=10.0.0
+Babel>=2.12

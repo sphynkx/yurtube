@@ -39,18 +39,21 @@
 
             <ul id="langs-list" style="list-style:none; padding:0; display:flex; flex-wrap:wrap; gap:10px;">
               {% for lang in target_langs %}
-                {% set has_file = (existing_langs and (lang in existing_langs)) %}
-                <li data-lang="{{ lang }}"
+                {% set code = lang.code %}
+                {% set label = lang.name %}
+                {% set has_file = (existing_langs and (code in existing_langs)) %}
+                <li data-lang="{{ code }}"
                     class="{{ 'lang-has-file' if has_file else '' }}"
                     style="border:1px solid #ddd; padding:6px 8px; border-radius:6px;">
                   <label style="display:flex; align-items:center; gap:8px;">
-                    <input type="checkbox" name="lang" value="{{ lang }}">
-                    <span style="font-weight:600;">{{ lang }}</span>
+                    <input type="checkbox" name="lang" value="{{ code }}">
+                    <span style="font-weight:600;">{{ label }}</span>
+                    <span style="font-size:11px; opacity:.75;">({{ code }})</span>
                     <a class="lang-edit {{ '' if has_file else 'disabled' }}"
-                       href="{{ '' if not has_file else '/manage/video/' ~ video_id ~ '/vtt/edit?rel_vtt=captions/' ~ lang ~ '.vtt' }}"
+                       href="{{ '' if not has_file else '/manage/video/' ~ video_id ~ '/vtt/edit?rel_vtt=captions/' ~ code ~ '.vtt' }}"
                        title="Edit" aria-label="Edit" style="font-size:14px; line-height:1; margin-left:4px;">✏️</a>
                     <a class="lang-dl {{ '' if has_file else 'disabled' }}"
-                       href="{{ '' if not has_file else '/manage/video/' ~ video_id ~ '/vtt/download?rel_vtt=captions/' ~ lang ~ '.vtt' }}"
+                       href="{{ '' if not has_file else '/manage/video/' ~ video_id ~ '/vtt/download?rel_vtt=captions/' ~ code ~ '.vtt' }}"
                        title="Download" aria-label="Download" style="font-size:14px; line-height:1; margin-left:4px;">&#128190;</a>
                   </label>
                 </li>

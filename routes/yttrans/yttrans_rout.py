@@ -41,6 +41,33 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
         return False
 
 
+def _lang_display_name_en(code: str) -> str:
+    """
+    Convert BCP47/ISO code (e.g. 'en', 'pt-BR', 'zh-Hans') to English display name using Babel.
+    Falls back to the code itself if unknown / Babel missing.
+    """
+    c = (code or "").strip()
+    if not c:
+        return ""
+    try:
+        # Lazy import so app can still start even if Babel isn't installed (will fallback to code)
+        from babel.core import Locale  # type: ignore
+        loc_code = c.replace("-", "_")
+        try:
+            loc = Locale.parse(loc_code)
+        except Exception:
+            # try language-only fallback: "pt_BR" -> "pt"
+            base = loc_code.split("_", 1)[0]
+            loc = Locale.parse(base)
+        name = loc.get_display_name("en")
+        if not name:
+            return c
+        # capitalize first letter
+        return name[:1].upper() + name[1:]
+    except Exception:
+        return c
+
+
 async def _read_text(storage_client: StorageClient, rel_path: str, encoding: str = "utf-8") -> str:
     reader_ctx = storage_client.open_reader(rel_path)
     if inspect.isawaitable(reader_ctx):
@@ -141,6 +168,14 @@ async def video_translations_page(request: Request, video_id: str) -> Any:
         except Exception:
             existing_langs = []
 
+        # Convert to view-model: [{code,name}, ...]
+        target_langs_view: List[Dict[str, str]] = []
+        for code in (langs or []):
+            c = (code or "").strip()
+            if not c:
+                continue
+            target_langs_view.append({"code": c, "name": _lang_display_name_en(c)})
+
         csrf_token = _get_csrf_cookie(request)
         return templates.TemplateResponse(
             "manage/video_translations.html",
@@ -149,7 +184,7 @@ async def video_translations_page(request: Request, video_id: str) -> Any:
                 "current_user": user,
                 "video_id": video_id,
                 "has_captions": has_captions,
-                "target_langs": langs,
+                "target_langs": target_langs_view,
                 "default_source_lang": default_src,
                 "yttrans_meta": meta,
                 "existing_langs": existing_langs,
