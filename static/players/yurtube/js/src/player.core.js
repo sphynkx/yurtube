@@ -389,16 +389,19 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   function wrappedBuildLangsMenuView() {
     buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
     menuManager.setView('langs');
+    menuManager.constrainToPlayerHeight(2/3); // Limit to 2/3 of player height
   }
 
   function wrappedBuildSpeedMenuView() {
     buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
     menuManager.setView('speed');
+    menuManager.constrainToPlayerHeight(2/3); // Limit to 2/3 of player height
   }
 
   function wrappedBuildSubtitlesMenuView() {
     buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
     menuManager.setView('subs');
+    menuManager.constrainToPlayerHeight(2/3); // Limit to 2/3 of player height
   }
 
   function applyIcon(button, varOn, varOff, isOn, fallbackEmoji) {

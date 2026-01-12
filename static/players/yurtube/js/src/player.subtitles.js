@@ -163,7 +163,7 @@ export function buildLangsMenuView(menu, video, activeTrackIndex, styleBackButto
   styleBackButton(back);
   menu.appendChild(back);
 
-  const sc = buildScrollableListContainer(back);
+  const sc = buildScrollableListContainer(back, menu);
   menu.appendChild(sc);
 
   const list = trackInfoList(video);

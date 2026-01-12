@@ -43,14 +43,38 @@ export function withSubmenuChevron(btn) {
 
 /**
  * Build a scrollable container for menu lists
+ * @param {HTMLElement} backBtn - The back button element (optional, used for height calculation)
+ * @param {HTMLElement} menu - The menu element (optional, used to get player context)
  */
-export function buildScrollableListContainer(backBtn) {
+export function buildScrollableListContainer(backBtn, menu) {
   const wrap = document.createElement('div');
   wrap.className = 'yrp-menu-scroll';
+  
+  // Calculate max height: leave room for back button (40px) and menu padding
+  let maxHeight = 'calc(100% - 40px)';
+  
+  // If we have menu context, try to limit to 2/3 of player height
+  if (menu) {
+    try {
+      const playerContainer = menu.closest('.yrp-container');
+      if (playerContainer) {
+        const videoWrap = playerContainer.querySelector('.yrp-video-wrap');
+        if (videoWrap) {
+          const playerHeight = videoWrap.getBoundingClientRect().height;
+          // 2/3 of player height minus controls (34px) minus back button (40px) minus padding (12px)
+          const maxScrollHeight = Math.floor(playerHeight * 2 / 3) - 34 - 40 - 12;
+          if (maxScrollHeight > 100) {
+            maxHeight = maxScrollHeight + 'px';
+          }
+        }
+      }
+    } catch {}
+  }
+  
   Object.assign(wrap.style, {
     overflowY: 'auto',
     overflowX: 'hidden',
-    maxHeight: 'calc(100% - 40px)',
+    maxHeight: maxHeight,
     paddingRight: '2px'
   });
   return wrap;
@@ -214,6 +238,9 @@ export class MenuManager {
     this.ensureMainSnapshot();
     this.menu.innerHTML = this.menuMainHTML;
     this.menuView = 'main';
+    
+    // Reset any height constraints when opening main view
+    this.menu.style.maxHeight = '';
 
     try {
       const secSpeed = this.menu.querySelector('.yrp-menu-section[data-section="speed"]');
@@ -228,5 +255,28 @@ export class MenuManager {
       callbacks.injectLanguages && callbacks.injectLanguages();
       callbacks.injectSubtitles && callbacks.injectSubtitles();
     }
+  }
+
+  /**
+   * Constrain menu height to a fraction of player height
+   * @param {number} fraction - Fraction of player height (default 2/3)
+   */
+  constrainToPlayerHeight(fraction = 2/3) {
+    if (!this.menu) return;
+    try {
+      const playerContainer = this.menu.closest('.yrp-container');
+      if (playerContainer) {
+        const videoWrap = playerContainer.querySelector('.yrp-video-wrap');
+        if (videoWrap) {
+          const playerHeight = videoWrap.getBoundingClientRect().height;
+          // Account for controls height (34px) and some padding
+          const maxMenuHeight = Math.floor(playerHeight * fraction) - 34;
+          if (maxMenuHeight > 100) {
+            this.menu.style.maxHeight = maxMenuHeight + 'px';
+            this.menu.style.overflowY = 'hidden'; // The scroll is in the container inside
+          }
+        }
+      }
+    } catch {}
   }
 }
