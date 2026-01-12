@@ -73,14 +73,54 @@ export function buildScrollableListContainer(backBtn, menu) {
   }
   
   Object.assign(wrap.style, {
-    overflowY: 'auto',
+    overflowY: 'scroll', // Use 'scroll' instead of 'auto' to always show scrollbar track
     overflowX: 'hidden',
     maxHeight: maxHeight,
-    paddingRight: '2px',
+    height: 'auto',
+    paddingRight: '4px',
     // Ensure the container can receive mouse events and scroll
     pointerEvents: 'auto',
-    position: 'relative'
+    position: 'relative',
+    // Explicitly set display to ensure proper layout
+    display: 'block',
+    // Force scrollbar visibility with webkit styles
+    WebkitOverflowScrolling: 'touch'
   });
+  
+  // Add explicit scrollbar styling for webkit browsers
+  const style = document.createElement('style');
+  style.textContent = `
+    .yrp-menu-scroll::-webkit-scrollbar {
+      width: 8px;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.05);
+      border-radius: 4px;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.3);
+      border-radius: 4px;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.5);
+    }
+    .yrp-menu-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.3) rgba(255,255,255,0.05);
+    }
+  `;
+  // Only add style once
+  if (!document.querySelector('#yrp-menu-scroll-style')) {
+    style.id = 'yrp-menu-scroll-style';
+    document.head.appendChild(style);
+  }
+  
+  // Prevent scroll events from bubbling to parent (page)
+  wrap.addEventListener('wheel', function(e) {
+    e.stopPropagation();
+    // Allow default scroll behavior within the container
+  }, { passive: true });
+  
   return wrap;
 }
 
