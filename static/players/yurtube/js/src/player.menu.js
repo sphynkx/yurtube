@@ -50,11 +50,10 @@ export function buildScrollableListContainer(backBtn, menu) {
   const wrap = document.createElement('div');
   wrap.className = 'yrp-menu-scroll';
   
-  // Calculate max height: leave room for back button and menu padding
-  // The back button is typically 28-32px + margins, so we use 45px to be safe
-  let maxHeight = 'calc(100% - 45px)';
+  // Calculate absolute pixel height for the scrollable area
+  let maxHeightPx = 300; // Reasonable default
   
-  // If we have menu context, try to limit to 2/3 of player height
+  // If we have menu context, calculate based on player height
   if (menu) {
     try {
       const playerContainer = menu.closest('.yrp-container');
@@ -62,27 +61,33 @@ export function buildScrollableListContainer(backBtn, menu) {
         const videoWrap = playerContainer.querySelector('.yrp-video-wrap');
         if (videoWrap) {
           const playerHeight = videoWrap.getBoundingClientRect().height;
-          // 2/3 of player height minus controls (34px) minus back button (~40px) minus padding (16px)
-          const maxScrollHeight = Math.floor(playerHeight * 2 / 3) - 34 - 40 - 16;
-          if (maxScrollHeight > 100) {
-            maxHeight = maxScrollHeight + 'px';
+          // 2/3 of player height minus controls (34px) minus back button (50px) minus padding (20px)
+          const calculated = Math.floor(playerHeight * 2 / 3) - 34 - 50 - 20;
+          if (calculated > 150) { // Minimum reasonable height
+            maxHeightPx = calculated;
           }
         }
       }
     } catch {}
   }
   
+  // Set explicit pixel height
   Object.assign(wrap.style, {
-    overflowY: 'scroll', // Use 'scroll' instead of 'auto' to always show scrollbar track
+    overflowY: 'scroll', // Always show scrollbar track
     overflowX: 'hidden',
-    maxHeight: maxHeight,
+    maxHeight: maxHeightPx + 'px',
+    minHeight: '100px', // Minimum to ensure some content is visible
     height: 'auto',
-    paddingRight: '4px',
+    paddingRight: '8px', // Space for scrollbar
+    paddingLeft: '2px',
+    marginTop: '4px',
     // Ensure the container can receive mouse events and scroll
     pointerEvents: 'auto',
     position: 'relative',
     // Explicitly set display to ensure proper layout
     display: 'block',
+    // Box sizing to include padding in height calculations
+    boxSizing: 'border-box',
     // Force scrollbar visibility with webkit styles
     WebkitOverflowScrolling: 'touch'
   });
@@ -90,23 +95,32 @@ export function buildScrollableListContainer(backBtn, menu) {
   // Add explicit scrollbar styling for webkit browsers
   const style = document.createElement('style');
   style.textContent = `
-    .yrp-menu-scroll::-webkit-scrollbar {
-      width: 8px;
-    }
-    .yrp-menu-scroll::-webkit-scrollbar-track {
-      background: rgba(255,255,255,0.05);
-      border-radius: 4px;
-    }
-    .yrp-menu-scroll::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.3);
-      border-radius: 4px;
-    }
-    .yrp-menu-scroll::-webkit-scrollbar-thumb:hover {
-      background: rgba(255,255,255,0.5);
-    }
     .yrp-menu-scroll {
       scrollbar-width: thin;
-      scrollbar-color: rgba(255,255,255,0.3) rgba(255,255,255,0.05);
+      scrollbar-color: rgba(255,255,255,0.4) rgba(255,255,255,0.1);
+    }
+    .yrp-menu-scroll::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.1);
+      border-radius: 5px;
+      margin: 2px;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.4);
+      border-radius: 5px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.6);
+      background-clip: padding-box;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-thumb:active {
+      background: rgba(255,255,255,0.8);
+      background-clip: padding-box;
     }
   `;
   // Only add style once
@@ -116,10 +130,19 @@ export function buildScrollableListContainer(backBtn, menu) {
   }
   
   // Prevent scroll events from bubbling to parent (page)
+  // Use non-passive to allow preventDefault if needed
   wrap.addEventListener('wheel', function(e) {
-    e.stopPropagation();
-    // Allow default scroll behavior within the container
-  }, { passive: true });
+    const atTop = wrap.scrollTop === 0;
+    const atBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 1;
+    
+    // Only stop propagation if we're actually scrolling within bounds
+    if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) {
+      e.stopPropagation();
+    } else if (!atTop && !atBottom) {
+      // In the middle, always capture
+      e.stopPropagation();
+    }
+  }, { passive: false });
   
   return wrap;
 }
