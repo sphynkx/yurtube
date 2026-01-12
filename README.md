@@ -6,6 +6,7 @@ Highlights
 * Uploading and editing videos with automatic thumbnails, animated previews
 * Sprites generation
 * Generation and display captions
+* Generation and display captions translations
 * Watch and embed videos
 * Search by two search engines
 * Comments with like/dislike and persistent user votes
@@ -20,6 +21,7 @@ Application is WIP now. Available base functional:
   * generation of animated previews
   * Sprites generation (by [separate microservice](https://github.com/sphynkx/ytsprites))
   * Captions generation (by [separate microservice](https://github.com/sphynkx/ytcms))
+* Translate captions on much of languages (by [separate microservice](https://github.com/sphynkx/yttrans))
 * Two Search engines ([Manticore](https://manticoresearch.com/) and Postgres FTS)
 * Comments by [separate microservice](https://github.com/sphynkx/ytcomments)
 * Notifications system
@@ -294,6 +296,15 @@ This is separate service based on gRPC+protobuf and faster-whisper. It installs 
 At app config you need to set IP address (`YTCMS_HOST`) and port (`YTCMS_PORT`) of `ytcms` service, `YTCMS_TOKEN` same as on service side. Also make sure that file `services/ytcms/ytcms_proto/captions.proto` is identical with one at `ytcms` service. If not - you have to regenerate stubs:
 ```bash
 cd services/ytcms_proto
+./gen_proto.sh
+```
+
+
+### Caption translation service (external)
+This is separate service based on gRPC+protobuf and different translation providers. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/yttrans) for details about it's install and configuration.
+At app config you need to set IP address (`YTTRANS_HOST`) and port (`YTTRANS_PORT`) of `ytcms` service, `YTTRANS_TOKEN` same as on service side. Also make sure that file `services/yttrans/yttrans_proto/yttrans.proto` is identical with one at `yttrans` service. If not - you have to regenerate stubs:
+```bash
+cd services/yttrans_proto
 ./gen_proto.sh
 ```
 
