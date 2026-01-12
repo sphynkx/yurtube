@@ -1,13 +1,12 @@
 from __future__ import annotations
 import grpc
-import asyncio
 from typing import Tuple, List, Dict, Any, Optional
 
 from config.yttrans.yttrans_cfg import load_yttrans_config
 
 try:
     from services.yttrans.yttrans_proto import yttrans_pb2, yttrans_pb2_grpc  # type: ignore
-except Exception as e:
+except Exception:
     yttrans_pb2 = None
     yttrans_pb2_grpc = None
 
@@ -19,7 +18,9 @@ async def list_languages() -> Tuple[List[str], str, Dict[str, Any]]:
     """
     cfg = load_yttrans_config()
     if yttrans_pb2 is None or yttrans_pb2_grpc is None:
-        raise RuntimeError("yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto")
+        raise RuntimeError(
+            "yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto"
+        )
 
     target = f"{cfg.host}:{cfg.port}"
     channel = grpc.aio.insecure_channel(target)
@@ -46,13 +47,21 @@ async def list_languages() -> Tuple[List[str], str, Dict[str, Any]]:
         await channel.close()
 
 
-async def submit_translate(video_id: str, src_vtt: str, src_lang: str, target_langs: List[str], options: Optional[Dict[str, Any]] = None) -> str:
+async def submit_translate(
+    video_id: str,
+    src_vtt: str,
+    src_lang: str,
+    target_langs: List[str],
+    options: Optional[Dict[str, Any]] = None,
+) -> str:
     """
     Submit translation job and return job_id.
     """
     cfg = load_yttrans_config()
     if yttrans_pb2 is None or yttrans_pb2_grpc is None:
-        raise RuntimeError("yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto")
+        raise RuntimeError(
+            "yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto"
+        )
 
     target = f"{cfg.host}:{cfg.port}"
     channel = grpc.aio.insecure_channel(target)
@@ -64,9 +73,9 @@ async def submit_translate(video_id: str, src_vtt: str, src_lang: str, target_la
             src_lang=src_lang or "auto",
             target_langs=list(target_langs or []),
         )
-        # options via Struct (optional)
         if options:
             from google.protobuf.struct_pb2 import Struct  # type: ignore
+
             s = Struct()
             s.update(options)
             req.options.CopyFrom(s)  # type: ignore
@@ -88,7 +97,9 @@ async def get_status(job_id: str) -> Dict[str, Any]:
     """
     cfg = load_yttrans_config()
     if yttrans_pb2 is None or yttrans_pb2_grpc is None:
-        raise RuntimeError("yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto")
+        raise RuntimeError(
+            "yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto"
+        )
 
     target = f"{cfg.host}:{cfg.port}"
     channel = grpc.aio.insecure_channel(target)
@@ -100,7 +111,6 @@ async def get_status(job_id: str) -> Dict[str, Any]:
             md.append(("authorization", f"Bearer {cfg.token}"))
         resp = await stub.GetStatus(req, metadata=md)  # type: ignore
 
-        # resp.state is enum; map to string
         state_map = {0: "idle", 1: "queued", 2: "running", 3: "done", 4: "failed"}
         state = state_map.get(getattr(resp, "state", 0), "idle")
         percent = int(getattr(resp, "percent", -1))
@@ -119,14 +129,71 @@ async def get_status(job_id: str) -> Dict[str, Any]:
         await channel.close()
 
 
+async def get_partial_result(job_id: str) -> Dict[str, Any]:
+    """
+    Get partial progress (ready_langs) while job is QUEUED/RUNNING/DONE/FAILED.
+
+    Returns dict:
+      {job_id, video_id, state, percent, message, ready_langs, total_langs, meta}
+    """
+    cfg = load_yttrans_config()
+    if yttrans_pb2 is None or yttrans_pb2_grpc is None:
+        raise RuntimeError(
+            "yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto"
+        )
+
+    target = f"{cfg.host}:{cfg.port}"
+    channel = grpc.aio.insecure_channel(target)
+    try:
+        stub = yttrans_pb2_grpc.TranslatorStub(channel)  # type: ignore
+        req = yttrans_pb2.GetPartialResultRequest(job_id=job_id)  # type: ignore
+        md = []
+        if cfg.token:
+            md.append(("authorization", f"Bearer {cfg.token}"))
+        resp = await stub.GetPartialResult(req, metadata=md)  # type: ignore
+
+        state_map = {0: "idle", 1: "queued", 2: "running", 3: "done", 4: "failed"}
+        state = state_map.get(getattr(resp, "state", 0), "idle")
+        percent = int(getattr(resp, "percent", -1))
+        message = getattr(resp, "message", "")
+        video_id = getattr(resp, "video_id", "")
+
+        ready_langs = list(getattr(resp, "ready_langs", []) or [])
+        total_langs = int(getattr(resp, "total_langs", 0) or 0)
+
+        meta: Dict[str, Any] = {}
+        try:
+            if hasattr(resp, "meta") and resp.meta is not None:
+                meta = dict(resp.meta)
+        except Exception:
+            meta = {}
+
+        return {
+            "job_id": getattr(resp, "job_id", "") or job_id,
+            "video_id": video_id,
+            "state": state,
+            "percent": percent,
+            "message": message,
+            "ready_langs": ready_langs,
+            "total_langs": total_langs,
+            "meta": meta,
+        }
+    finally:
+        await channel.close()
+
+
 async def get_result(job_id: str) -> Tuple[str, str, List[Tuple[str, str]], Dict[str, Any]]:
     """
     Get job result:
     Returns (video_id, default_lang, entries[(lang, vtt)], meta)
+
+    IMPORTANT: GetResult is one-shot by contract. Caller must call it only once.
     """
     cfg = load_yttrans_config()
     if yttrans_pb2 is None or yttrans_pb2_grpc is None:
-        raise RuntimeError("yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto")
+        raise RuntimeError(
+            "yttrans protobuf stubs not found. Generate stubs from services/yttrans/yttrans_proto/yttrans.proto"
+        )
 
     target = f"{cfg.host}:{cfg.port}"
     channel = grpc.aio.insecure_channel(target)

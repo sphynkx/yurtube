@@ -1,0 +1,12 @@
+.disabled { pointer-events: none; opacity: 0.45; }
+a.disabled { cursor: default; }
+
+/* green must win */
+#langs-list li.lang-has-file { background: #e8ffea; border-color: #bde8c1; }
+#langs-list li.lang-ready { outline: 2px solid rgba(255, 200, 0, 0.8); outline-offset: 2px; background: rgba(255, 200, 0, 0.08); }
+
+#langs-list li.lang-has-file.lang-ready {
+background: #e8ffea !important;
+outline: none !important;
+border-color: #bde8c1 !important;
+}

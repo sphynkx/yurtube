@@ -2,8 +2,20 @@
   function $(sel, root){ return (root||document).querySelector(sel); }
   function $all(sel, root){ return (root||document).querySelectorAll(sel); }
 
+  function norm(code){ return String(code || '').trim().toLowerCase(); }
+  function toSet(arr){
+    var s = {};
+    if (!Array.isArray(arr)) return s;
+    for (var i=0; i<arr.length; i++){
+      var c = norm(arr[i]);
+      if (c) s[c] = true;
+    }
+    return s;
+  }
+
   var root = $('.manage-comments-layout');
   if (!root) return;
+
   var videoId = root.getAttribute('data-video-id') || '';
   if (!videoId) return;
 
@@ -11,60 +23,62 @@
   if (!list) return;
 
   var statusEl = $('#trans-status');
+  function setStatusText(t){ if (statusEl) statusEl.textContent = t || ''; }
 
-  function setStatusText(t){
-    if (!statusEl) return;
-    statusEl.textContent = t || '';
-  }
+  function updateUI(readyLangs, writtenLangs) {
+    var writtenSet = toSet(writtenLangs);
+    var readySet = toSet(readyLangs);
 
-  function updateUI(langs) {
-    var items = $all('li[data-lang]', list);
-    for (var i = 0; i < items.length; i++) {
-      var li = items[i];
-      var code = li.getAttribute('data-lang') || '';
-      var has = langs.indexOf(code) >= 0;
+    var items = $all('#langs-list li[data-lang]', list);
 
-      li.classList.toggle('lang-has-file', !!has);
+    // hard reset transient ready every tick
+    for (var i=0; i<items.length; i++){
+      items[i].classList.remove('lang-ready');
+    }
+
+    for (var j=0; j<items.length; j++){
+      var li = items[j];
+      var codeRaw = li.getAttribute('data-lang') || '';
+      var code = norm(codeRaw);
+
+      var isWritten = !!writtenSet[code];
+      var isReadyOnly = !!readySet[code] && !isWritten;
+
+      li.classList.toggle('lang-has-file', isWritten);
+      if (isReadyOnly) li.classList.add('lang-ready');
 
       var edit = li.querySelector('.lang-edit');
       var dl = li.querySelector('.lang-dl');
+
       if (edit) {
-        if (has) {
+        if (isWritten) {
           edit.classList.remove('disabled');
-          if (!edit.getAttribute('href') || edit.getAttribute('href') === '') {
-            edit.setAttribute('href', '/manage/video/' + encodeURIComponent(videoId) +
-              '/vtt/edit?rel_vtt=' + encodeURIComponent('captions/' + code + '.vtt'));
-          }
+          edit.setAttribute(
+            'href',
+            '/manage/video/' + encodeURIComponent(videoId) +
+              '/vtt/edit?rel_vtt=' + encodeURIComponent('captions/' + codeRaw + '.vtt')
+          );
         } else {
           edit.classList.add('disabled');
-          edit.setAttribute('href', '');
+          // IMPORTANT: remove href entirely so it's not a link
+          edit.removeAttribute('href');
         }
       }
+
       if (dl) {
-        if (has) {
+        if (isWritten) {
           dl.classList.remove('disabled');
-          if (!dl.getAttribute('href') || dl.getAttribute('href') === '') {
-            dl.setAttribute('href', '/manage/video/' + encodeURIComponent(videoId) +
-              '/vtt/download?rel_vtt=' + encodeURIComponent('captions/' + code + '.vtt'));
-          }
+          dl.setAttribute(
+            'href',
+            '/manage/video/' + encodeURIComponent(videoId) +
+              '/vtt/download?rel_vtt=' + encodeURIComponent('captions/' + codeRaw + '.vtt')
+          );
         } else {
           dl.classList.add('disabled');
-          dl.setAttribute('href', '');
+          dl.removeAttribute('href');
         }
       }
     }
-  }
-
-  var known = {};
-  function mergeLangs(langs) {
-    if (!Array.isArray(langs)) return;
-    var changed = false;
-    for (var i = 0; i < langs.length; i++) {
-      var c = String(langs[i] || '').trim();
-      if (!c) continue;
-      if (!known[c]) { known[c] = true; changed = true; }
-    }
-    if (changed) updateUI(Object.keys(known));
   }
 
   function pollProgress() {
@@ -77,28 +91,31 @@
     }).then(function(j){
       if (!(j && j.ok)) throw new Error('bad_progress_payload');
 
-      if (Array.isArray(j.langs)) mergeLangs(j.langs);
+      var state = String(j.state || '').toLowerCase();
+      var ready = Array.isArray(j.ready_langs) ? j.ready_langs : [];
+      var written = Array.isArray(j.langs_written) ? j.langs_written : [];
+
+      // show yellow only while job is active
+      if (!(state === 'running' || state === 'queued')) {
+        ready = [];
+      }
+
+      updateUI(ready, written);
 
       var p = (typeof j.percent === 'number' && j.percent >= 0) ? (j.percent + '%') : '';
-      var ec = (typeof j.entries_count === 'number') ? (' entries:' + j.entries_count) : '';
-      var st = (j.state || '');
-      var err = (j.result_error ? (' result_error=' + j.result_error) : '');
-      setStatusText(st + (p ? ' ' + p : '') + ec + err);
+      var totalN = (typeof j.total_langs === 'number' && j.total_langs > 0) ? j.total_langs : 0;
+      var msg = String(j.message || '');
+
+      var t = state || '';
+      if (p) t += ' ' + p;
+      t += ' ready ' + ready.length + (totalN ? '/' + totalN : '');
+      if (msg) t += ' — ' + msg;
+      setStatusText(t);
     }).catch(function(e){
       setStatusText('progress error: ' + (e && e.message ? e.message : String(e || '')));
-      // fallback to old behavior
-      fetch('/internal/yttrans/translations/status?video_id=' + encodeURIComponent(videoId), {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' }
-      }).then(function(r){
-        if (!r.ok) throw new Error('status_http_' + r.status);
-        return r.json();
-      }).then(function(j){
-        if (j && j.ok && Array.isArray(j.langs)) mergeLangs(j.langs);
-      }).catch(function(_){});
     });
   }
 
-  setInterval(pollProgress, 2000);
+  setInterval(pollProgress, 1000);
   pollProgress();
 })();

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
 <link rel="stylesheet" href="/static/css/manage/account_layout.css">
+<link rel="stylesheet" href="/static/css/manage//video_translations.css">
 
 <div class="manage-comments-layout" data-video-id="{{ video_id }}">
   {% include "account/left.html" %}
@@ -79,14 +80,5 @@
   </main>
 </div>
 
-<style>
-  .disabled { pointer-events: none; opacity: 0.45; }
-
-  /* highlight langs that already have translation file */
-  #langs-list li.lang-has-file {
-    background: #e8ffea; /* light green */
-    border-color: #bde8c1;
-  }
-</style>
 <script src="/static/js/translations_status.js"></script>
 {% endblock %}
