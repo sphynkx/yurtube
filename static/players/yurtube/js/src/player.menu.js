@@ -50,8 +50,9 @@ export function buildScrollableListContainer(backBtn, menu) {
   const wrap = document.createElement('div');
   wrap.className = 'yrp-menu-scroll';
   
-  // Calculate max height: leave room for back button (40px) and menu padding
-  let maxHeight = 'calc(100% - 40px)';
+  // Calculate max height: leave room for back button and menu padding
+  // The back button is typically 28-32px + margins, so we use 45px to be safe
+  let maxHeight = 'calc(100% - 45px)';
   
   // If we have menu context, try to limit to 2/3 of player height
   if (menu) {
@@ -61,8 +62,8 @@ export function buildScrollableListContainer(backBtn, menu) {
         const videoWrap = playerContainer.querySelector('.yrp-video-wrap');
         if (videoWrap) {
           const playerHeight = videoWrap.getBoundingClientRect().height;
-          // 2/3 of player height minus controls (34px) minus back button (40px) minus padding (12px)
-          const maxScrollHeight = Math.floor(playerHeight * 2 / 3) - 34 - 40 - 12;
+          // 2/3 of player height minus controls (34px) minus back button (~40px) minus padding (16px)
+          const maxScrollHeight = Math.floor(playerHeight * 2 / 3) - 34 - 40 - 16;
           if (maxScrollHeight > 100) {
             maxHeight = maxScrollHeight + 'px';
           }
@@ -75,7 +76,10 @@ export function buildScrollableListContainer(backBtn, menu) {
     overflowY: 'auto',
     overflowX: 'hidden',
     maxHeight: maxHeight,
-    paddingRight: '2px'
+    paddingRight: '2px',
+    // Ensure the container can receive mouse events and scroll
+    pointerEvents: 'auto',
+    position: 'relative'
   });
   return wrap;
 }
@@ -273,7 +277,7 @@ export class MenuManager {
           const maxMenuHeight = Math.floor(playerHeight * fraction) - 34;
           if (maxMenuHeight > 100) {
             this.menu.style.maxHeight = maxMenuHeight + 'px';
-            this.menu.style.overflowY = 'hidden'; // The scroll is in the container inside
+            // Don't set overflowY here - let the scrollable container inside handle it
           }
         }
       }
