@@ -1,4 +1,388 @@
-(()=>{function Bt(t){(!isFinite(t)||t<0)&&(t=0),t=Math.floor(t);let r=Math.floor(t/3600),a=Math.floor(t%3600/60),s=t%60,c=l=>(l<10?"0":"")+l;return r>0?`${r}:${c(a)}:${c(s)}`:`${a}:${c(s)}`}function j(t,r,a){return t<r?r:t>a?a:t}function xe(t){let r=parseFloat(String(t||"").trim());return isFinite(r)?r:0}function we(t,r){let a=0,s=!1,c=null;return function(...l){c=l;let y=Date.now();!a||y-a>=r?(a=y,t.apply(null,c)):s||(s=!0,setTimeout(()=>{s=!1,t.apply(null,c)},r-(y-a)))}}function Nt(t,r,a){let s=t.getAttribute(r);if(!s)return a;try{return JSON.parse(s)}catch(c){return a}}function Ht(t){if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t).catch(function(){});else{let r=document.createElement("textarea");r.value=t,r.style.position="fixed",r.style.left="-9999px",document.body.appendChild(r),r.select();try{document.execCommand("copy")}catch(a){}document.body.removeChild(r)}}var Se="yrp:";function Le(){try{return localStorage.setItem("__t","1"),localStorage.removeItem("__t"),!0}catch(t){return!1}}function K(t,r){if(!Le())return r;try{let a=localStorage.getItem(Se+t);return a?JSON.parse(a):r}catch(a){return r}}function Q(t,r){if(Le())try{localStorage.setItem(Se+t,JSON.stringify(r))}catch(a){}}var ke="/static/img/fallback_video_notfound.gif";function Ce(t,r,a){let s=!1,c=null;function l(n){if(!s){s=!0,a&&a("fallback: applying",n);try{r?r.setAttribute("src",ke):t.src=ke,t.load()}catch(U){}}}function y(){c&&(clearTimeout(c),c=null)}t.addEventListener("loadstart",function(){y(),c=setTimeout(function(){!s&&t.readyState<1&&l("watchdog-timeout")},4e3)}),["loadeddata","canplay","canplaythrough","play","playing"].forEach(function(n){t.addEventListener(n,y)}),t.addEventListener("error",function(){s||l("error-event")}),setTimeout(function(){let n=r?r.getAttribute("src")||"":t.currentSrc||t.src||"";!s&&!n&&l("empty-src")},0)}var Rt=null;function Ue(){if(Rt)return Rt;try{typeof Intl!="undefined"&&Intl.DisplayNames&&(Rt=new Intl.DisplayNames(["en"],{type:"language"}))}catch(t){}return Rt}function We(t,r){let a=String(t||"").trim();if(!a)return String(r||"");if(a.toLowerCase()==="auto")return"Auto";let s=a.split("-",1)[0].toLowerCase();try{let c=Ue();if(c&&typeof c.of=="function"){let l=c.of(s);if(l)return l.charAt(0).toUpperCase()+l.slice(1)}}catch(c){}return String(r||a)}function wt(t){try{return t.textTracks?Array.prototype.filter.call(t.textTracks,function(r){return r.kind==="subtitles"||r.kind==="captions"}):[]}catch(r){return[]}}function St(t){return wt(t).length>0}function Vt(t,r){let a=wt(t);if(a.length===0)return null;let s=r<0||r>=a.length?0:r;return a[s]}function Lt(t,r,a){wt(t).forEach(function(c,l){c.mode=l===r&&a?"hidden":"disabled"})}function Ke(t,r){let a=Vt(t,r);if(!a||!a.cues)return"";let s=t.currentTime||0;for(let c=0;c<a.cues.length;c++){let l=a.cues[c];if(s>=l.startTime&&s<=l.endTime)return(l.text||"").replace(/\r/g,"")}return""}function Ee(t){return wt(t).map(function(a,s){let c=String(a.language||a.srclang||"").toLowerCase(),l=String(a.label||c||"Lang "+(s+1)),y=We(c,l);return{index:s,lang:c,label:y}})}function Zt(t,r){let a=String(r||"").toLowerCase(),s=Ee(t);for(var c=0;c<s.length;c++)if(s[c].lang===a||s[c].label.toLowerCase()===a)return s[c].index;return-1}function Ae(t,r,a,s){if(!t)return;for(;t.firstChild;)t.removeChild(t.firstChild);let c=document.createElement("button");c.type="button",c.className="yrp-menu-item",c.setAttribute("data-action","back"),c.textContent="\u2190 Back",a(c),t.appendChild(c);let l=document.createElement("button");l.type="button",l.className="yrp-menu-item",l.setAttribute("data-action","subs-on"),l.textContent="On"+(r?" \u2713":""),s(l),t.appendChild(l);let y=document.createElement("button");y.type="button",y.className="yrp-menu-item",y.setAttribute("data-action","subs-off"),y.textContent="Off"+(r?"":" \u2713"),s(y),t.appendChild(y)}function Me(t,r,a,s,c,l){if(!t)return;for(;t.firstChild;)t.removeChild(t.firstChild);let y=document.createElement("button");y.type="button",y.className="yrp-menu-item",y.setAttribute("data-action","back"),y.textContent="\u2190 Back",s(y),t.appendChild(y);let n=l(y,t);t.appendChild(n);let U=Ee(r),T=Vt(r,a),_=T&&(T.language||T.srclang)?String(T.language||T.srclang).toLowerCase():"",C=U.slice().sort(function(w,E){let F=(w.lang||"").toLowerCase(),Y=(E.lang||"").toLowerCase();return F==="auto"&&Y!=="auto"?-1:Y==="auto"&&F!=="auto"?1:(w.label||"").localeCompare(E.label||"")});if(C.forEach(function(w){let E=document.createElement("button");E.type="button",E.className="yrp-menu-item",E.setAttribute("data-action","select-lang"),E.setAttribute("data-lang",w.lang||"");let F=w.lang?` (${w.lang})`:"",Y=w.index===a||w.lang&&_&&w.lang===_;E.textContent=w.label+F+(Y?" \u2713":""),c(E),n.appendChild(E)}),!C.length){let w=document.createElement("div");w.className="yrp-menu-title",w.style.marginTop="6px",w.style.fontSize="12px",w.style.opacity="0.8",w.textContent="No subtitle tracks",n.appendChild(w)}}function pt(t,r,a){if(!t)return;let s=St(r);t.disabled=!s,t.style.visibility=s?"visible":"hidden",t.classList.toggle("no-tracks",!s),t.classList.toggle("has-tracks",s),t.classList.toggle("active",s&&a),t.classList.toggle("disabled-track",s&&!a),t.setAttribute("aria-pressed",a?"true":"false")}function ft(t,r,a,s){!t||!t.textBox||(t.textBox.textContent=s?Ke(r,a):"")}function te(t,r,a){let c=wt(t).map(function(l,y){return{i:y,mode:l.mode,label:l.label,srclang:l.language||l.srclang,cues:l.cues?l.cues.length:0,kind:l.kind}});r(a,c)}function rt(t){try{t.style.background="transparent",t.style.backgroundColor="transparent",t.style.border="none",t.style.boxShadow="none",t.style.color="inherit",t.style.textAlign="left",t.style.width="100%",t.style.display="block"}catch(r){}}function Ot(t){rt(t);try{t.style.background="rgba(255,255,255,0.12)",t.style.backgroundColor="rgba(255,255,255,0.12)",t.style.borderRadius="4px",t.style.fontWeight="700",t.style.marginBottom="6px",t.style.paddingLeft="8px",t.style.paddingRight="8px"}catch(r){}}function Dt(t){try{t.classList.add("has-submenu")}catch(r){}}function Te(t,r){let a=document.createElement("div");a.className="yrp-menu-scroll";let s=300;if(r)try{let l=r.closest(".yrp-container");if(l){let y=l.querySelector(".yrp-video-wrap");if(y){let n=y.getBoundingClientRect().height,U=Math.floor(n*2/3)-34-50-20;U>150&&(s=U)}}}catch(l){}Object.assign(a.style,{overflowY:"scroll",overflowX:"hidden",maxHeight:s+"px",minHeight:"100px",height:"auto",paddingRight:"8px",paddingLeft:"2px",marginTop:"4px",pointerEvents:"auto",position:"relative",display:"block",boxSizing:"border-box",WebkitOverflowScrolling:"touch"});let c=document.createElement("style");return c.textContent=`
+(() => {
+  // src/util.js
+  function fmtTime(sec) {
+    if (!isFinite(sec) || sec < 0) sec = 0;
+    sec = Math.floor(sec);
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor(sec % 3600 / 60);
+    const s = sec % 60;
+    const pad = (x) => (x < 10 ? "0" : "") + x;
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+  }
+  function clamp(v, min, max) {
+    return v < min ? min : v > max ? max : v;
+  }
+  function cssPxToNum(s) {
+    const v = parseFloat(String(s || "").trim());
+    return isFinite(v) ? v : 0;
+  }
+  function throttle(fn, ms) {
+    let t = 0, pend = false, lastArgs = null;
+    return function(...args) {
+      lastArgs = args;
+      const now = Date.now();
+      if (!t || now - t >= ms) {
+        t = now;
+        fn.apply(null, lastArgs);
+      } else if (!pend) {
+        pend = true;
+        setTimeout(() => {
+          pend = false;
+          fn.apply(null, lastArgs);
+        }, ms - (now - t));
+      }
+    };
+  }
+  function parseJSONAttr(el, name, fallback) {
+    const s = el.getAttribute(name);
+    if (!s) return fallback;
+    try {
+      return JSON.parse(s);
+    } catch (_) {
+      return fallback;
+    }
+  }
+  function copyText(s) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(s).catch(function() {
+      });
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = s;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand("copy");
+      } catch (_) {
+      }
+      document.body.removeChild(ta);
+    }
+  }
+
+  // src/storage.js
+  var STORE = "yrp:";
+  function canLS() {
+    try {
+      localStorage.setItem("__t", "1");
+      localStorage.removeItem("__t");
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  function load(key, def) {
+    if (!canLS()) return def;
+    try {
+      const s = localStorage.getItem(STORE + key);
+      return s ? JSON.parse(s) : def;
+    } catch (e) {
+      return def;
+    }
+  }
+  function save(key, val) {
+    if (!canLS()) return;
+    try {
+      localStorage.setItem(STORE + key, JSON.stringify(val));
+    } catch (e) {
+    }
+  }
+
+  // src/fallback.js
+  var FALLBACK_SRC = "/static/img/fallback_video_notfound.gif";
+  function installFallbackGuards(video, sourceEl, onDebug) {
+    let applied = false, watchdog = null;
+    function applyFallback(reason) {
+      if (applied) return;
+      applied = true;
+      onDebug && onDebug("fallback: applying", reason);
+      try {
+        if (sourceEl) sourceEl.setAttribute("src", FALLBACK_SRC);
+        else video.src = FALLBACK_SRC;
+        video.load();
+      } catch (e) {
+      }
+    }
+    function clearWatchdog() {
+      if (watchdog) {
+        clearTimeout(watchdog);
+        watchdog = null;
+      }
+    }
+    video.addEventListener("loadstart", function() {
+      clearWatchdog();
+      watchdog = setTimeout(function() {
+        if (!applied && video.readyState < 1) applyFallback("watchdog-timeout");
+      }, 4e3);
+    });
+    ["loadeddata", "canplay", "canplaythrough", "play", "playing"].forEach(function(ev) {
+      video.addEventListener(ev, clearWatchdog);
+    });
+    video.addEventListener("error", function() {
+      if (!applied) applyFallback("error-event");
+    });
+    setTimeout(function() {
+      const src = sourceEl ? sourceEl.getAttribute("src") || "" : video.currentSrc || video.src || "";
+      if (!applied && !src) applyFallback("empty-src");
+    }, 0);
+  }
+
+  // src/player.subtitles.js
+  var _langNamesEn = null;
+  function _getLangNamesEn() {
+    if (_langNamesEn) return _langNamesEn;
+    try {
+      if (typeof Intl !== "undefined" && Intl.DisplayNames) {
+        _langNamesEn = new Intl.DisplayNames(["en"], { type: "language" });
+      }
+    } catch (e) {
+    }
+    return _langNamesEn;
+  }
+  function langDisplayNameEn(code, fallbackLabel) {
+    const raw = String(code || "").trim();
+    if (!raw) return String(fallbackLabel || "");
+    if (raw.toLowerCase() === "auto") return "Auto";
+    const base = raw.split("-", 1)[0].toLowerCase();
+    try {
+      const dn = _getLangNamesEn();
+      if (dn && typeof dn.of === "function") {
+        const name = dn.of(base);
+        if (name) return name.charAt(0).toUpperCase() + name.slice(1);
+      }
+    } catch (e) {
+    }
+    return String(fallbackLabel || raw);
+  }
+  function subtitleTracks(video) {
+    try {
+      return video.textTracks ? Array.prototype.filter.call(video.textTracks, function(tr) {
+        return tr.kind === "subtitles" || tr.kind === "captions";
+      }) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  function anySubtitleTracks(video) {
+    return subtitleTracks(video).length > 0;
+  }
+  function chooseActiveTrack(video, activeTrackIndex) {
+    const subs = subtitleTracks(video);
+    if (subs.length === 0) return null;
+    const idx = activeTrackIndex < 0 || activeTrackIndex >= subs.length ? 0 : activeTrackIndex;
+    return subs[idx];
+  }
+  function applyPageModes(video, activeTrackIndex, overlayActive) {
+    const subs = subtitleTracks(video);
+    subs.forEach(function(tr, i) {
+      tr.mode = i === activeTrackIndex && overlayActive ? "hidden" : "disabled";
+    });
+  }
+  function currentCueText(video, activeTrackIndex) {
+    const tr = chooseActiveTrack(video, activeTrackIndex);
+    if (!tr || !tr.cues) return "";
+    const ct = video.currentTime || 0;
+    for (let i = 0; i < tr.cues.length; i++) {
+      const c = tr.cues[i];
+      if (ct >= c.startTime && ct <= c.endTime) return (c.text || "").replace(/\r/g, "");
+    }
+    return "";
+  }
+  function trackInfoList(video) {
+    const subs = subtitleTracks(video);
+    return subs.map(function(tr, i) {
+      const code = String(tr.language || tr.srclang || "").toLowerCase();
+      const rawLabel = String(tr.label || code || "Lang " + (i + 1));
+      const label = langDisplayNameEn(code, rawLabel);
+      return { index: i, lang: code, label };
+    });
+  }
+  function findTrackIndexByLang(video, code) {
+    const c = String(code || "").toLowerCase();
+    const list = trackInfoList(video);
+    for (var i = 0; i < list.length; i++) {
+      if (list[i].lang === c) return list[i].index;
+      if (list[i].label.toLowerCase() === c) return list[i].index;
+    }
+    return -1;
+  }
+  function buildSubtitlesMenuView(menu, overlayActive, styleBackButton2, ensureTransparentMenuButton2) {
+    if (!menu) return;
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "yrp-menu-item";
+    back.setAttribute("data-action", "back");
+    back.textContent = "\u2190 Back";
+    styleBackButton2(back);
+    menu.appendChild(back);
+    const onBtn = document.createElement("button");
+    onBtn.type = "button";
+    onBtn.className = "yrp-menu-item";
+    onBtn.setAttribute("data-action", "subs-on");
+    onBtn.textContent = "On" + (overlayActive ? " \u2713" : "");
+    ensureTransparentMenuButton2(onBtn);
+    menu.appendChild(onBtn);
+    const offBtn = document.createElement("button");
+    offBtn.type = "button";
+    offBtn.className = "yrp-menu-item";
+    offBtn.setAttribute("data-action", "subs-off");
+    offBtn.textContent = "Off" + (!overlayActive ? " \u2713" : "");
+    ensureTransparentMenuButton2(offBtn);
+    menu.appendChild(offBtn);
+  }
+  function buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton2, ensureTransparentMenuButton2, buildScrollableListContainer2) {
+    if (!menu) return;
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "yrp-menu-item";
+    back.setAttribute("data-action", "back");
+    back.textContent = "\u2190 Back";
+    styleBackButton2(back);
+    menu.appendChild(back);
+    const sc = buildScrollableListContainer2(back, menu);
+    menu.appendChild(sc);
+    const list = trackInfoList(video);
+    const cur = chooseActiveTrack(video, activeTrackIndex);
+    const curLang = cur && (cur.language || cur.srclang) ? String(cur.language || cur.srclang).toLowerCase() : "";
+    const sorted = list.slice().sort(function(a, b) {
+      const aa = (a.lang || "").toLowerCase();
+      const bb = (b.lang || "").toLowerCase();
+      if (aa === "auto" && bb !== "auto") return -1;
+      if (bb === "auto" && aa !== "auto") return 1;
+      return (a.label || "").localeCompare(b.label || "");
+    });
+    sorted.forEach(function(ti) {
+      const it = document.createElement("button");
+      it.type = "button";
+      it.className = "yrp-menu-item";
+      it.setAttribute("data-action", "select-lang");
+      it.setAttribute("data-lang", ti.lang || "");
+      const suffix = ti.lang ? ` (${ti.lang})` : "";
+      const isCurrentLang = ti.index === activeTrackIndex || ti.lang && curLang && ti.lang === curLang;
+      it.textContent = ti.label + suffix + (isCurrentLang ? " \u2713" : "");
+      ensureTransparentMenuButton2(it);
+      sc.appendChild(it);
+    });
+    if (!sorted.length) {
+      const empty = document.createElement("div");
+      empty.className = "yrp-menu-title";
+      empty.style.marginTop = "6px";
+      empty.style.fontSize = "12px";
+      empty.style.opacity = "0.8";
+      empty.textContent = "No subtitle tracks";
+      sc.appendChild(empty);
+    }
+  }
+  function refreshSubtitlesBtn(btnSubtitles, video, overlayActive) {
+    if (!btnSubtitles) return;
+    const has = anySubtitleTracks(video);
+    btnSubtitles.disabled = !has;
+    btnSubtitles.style.visibility = has ? "visible" : "hidden";
+    btnSubtitles.classList.toggle("no-tracks", !has);
+    btnSubtitles.classList.toggle("has-tracks", has);
+    btnSubtitles.classList.toggle("active", has && overlayActive);
+    btnSubtitles.classList.toggle("disabled-track", has && !overlayActive);
+    btnSubtitles.setAttribute("aria-pressed", overlayActive ? "true" : "false");
+  }
+  function updateOverlayText(hooks, video, activeTrackIndex, overlayActive) {
+    if (!hooks || !hooks.textBox) return;
+    hooks.textBox.textContent = overlayActive ? currentCueText(video, activeTrackIndex) : "";
+  }
+  function logTracks(video, d, prefix) {
+    const subs = subtitleTracks(video);
+    const info = subs.map(function(tr, i) {
+      return {
+        i,
+        mode: tr.mode,
+        label: tr.label,
+        srclang: tr.language || tr.srclang,
+        cues: tr.cues ? tr.cues.length : 0,
+        kind: tr.kind
+      };
+    });
+    d(prefix, info);
+  }
+
+  // src/player.menu.js
+  function ensureTransparentMenuButton(btn) {
+    try {
+      btn.style.background = "transparent";
+      btn.style.backgroundColor = "transparent";
+      btn.style.border = "none";
+      btn.style.boxShadow = "none";
+      btn.style.color = "inherit";
+      btn.style.textAlign = "left";
+      btn.style.width = "100%";
+      btn.style.display = "block";
+    } catch (e) {
+    }
+  }
+  function styleBackButton(btn) {
+    ensureTransparentMenuButton(btn);
+    try {
+      btn.style.background = "rgba(255,255,255,0.12)";
+      btn.style.backgroundColor = "rgba(255,255,255,0.12)";
+      btn.style.borderRadius = "4px";
+      btn.style.fontWeight = "700";
+      btn.style.marginBottom = "6px";
+      btn.style.paddingLeft = "8px";
+      btn.style.paddingRight = "8px";
+    } catch (e) {
+    }
+  }
+  function withSubmenuChevron(btn) {
+    try {
+      btn.classList.add("has-submenu");
+    } catch (e) {
+    }
+  }
+  function buildScrollableListContainer(backBtn, menu) {
+    const wrap = document.createElement("div");
+    wrap.className = "yrp-menu-scroll";
+    let maxHeightPx = 300;
+    if (menu) {
+      try {
+        const playerContainer = menu.closest(".yrp-container");
+        if (playerContainer) {
+          const videoWrap = playerContainer.querySelector(".yrp-video-wrap");
+          if (videoWrap) {
+            const playerHeight = videoWrap.getBoundingClientRect().height;
+            const calculated = Math.floor(playerHeight * 2 / 3) - 34 - 50 - 20;
+            if (calculated > 150) {
+              maxHeightPx = calculated;
+            }
+          }
+        }
+      } catch (e) {
+      }
+    }
+    Object.assign(wrap.style, {
+      overflowY: "scroll",
+      // Always show scrollbar track
+      overflowX: "hidden",
+      maxHeight: maxHeightPx + "px",
+      minHeight: "100px",
+      // Minimum to ensure some content is visible
+      height: "auto",
+      paddingRight: "8px",
+      // Space for scrollbar
+      paddingLeft: "2px",
+      marginTop: "4px",
+      // Ensure the container can receive mouse events and scroll
+      pointerEvents: "auto",
+      position: "relative",
+      // Explicitly set display to ensure proper layout
+      display: "block",
+      // Box sizing to include padding in height calculations
+      boxSizing: "border-box",
+      // Force scrollbar visibility with webkit styles
+      WebkitOverflowScrolling: "touch"
+    });
+    const style = document.createElement("style");
+    style.textContent = `
     .yrp-menu-scroll {
       scrollbar-width: thin;
       scrollbar-color: rgba(255,255,255,0.4) rgba(255,255,255,0.1);
@@ -26,4 +410,1603 @@
       background: rgba(255,255,255,0.8);
       background-clip: padding-box;
     }
-  `,document.querySelector("#yrp-menu-scroll-style")||(c.id="yrp-menu-scroll-style",document.head.appendChild(c)),a.addEventListener("wheel",function(l){let y=a.scrollTop===0,n=a.scrollTop+a.clientHeight>=a.scrollHeight-1;(l.deltaY<0&&!y||l.deltaY>0&&!n||!y&&!n)&&l.stopPropagation()},{passive:!1}),a}function _e(t,r){if(t)try{let a=t.querySelector('.yrp-menu-section[data-section="quality"]');if(!a)return;let s=a.querySelector(".yrp-menu-title");if(s&&s.parentNode&&s.parentNode.removeChild(s),a.querySelector(".yrp-menu-item.quality-future"))return;let c=document.createElement("button");c.type="button",c.className="yrp-menu-item quality-future",c.textContent="Quality (future)",c.disabled=!0,r(c),c.style.opacity="0.75",a.appendChild(c)}catch(a){}}function Xe(t){if(t)try{let r=t.querySelector('.yrp-menu-section[data-section="subtitles"]');r&&r.parentNode&&r.parentNode.removeChild(r)}catch(r){}}function jt(t,r,a,s,c,l){if(!t)return null;let y=t.querySelector(".yrp-menu-section")||null,n=document.createElement("button");return n.type="button",n.className="yrp-menu-item",n.setAttribute("data-action",a),n.textContent=r,c(n),s&&s.disabled===!0&&(n.disabled=!0,n.style.opacity="0.6"),s&&s.hasSubmenu===!0&&l(n),y&&y.parentNode===t?t.insertBefore(n,y):t.appendChild(n),n}function $e(){return[.5,.75,1,1.25,1.5,2]}function Pe(t,r,a,s){if(!t)return;for(;t.firstChild;)t.removeChild(t.firstChild);let c=document.createElement("button");c.type="button",c.className="yrp-menu-item",c.setAttribute("data-action","back"),c.textContent="\u2190 Back",a(c),t.appendChild(c);let l=isFinite(r.playbackRate)?r.playbackRate:1;$e().forEach(function(y){let n=document.createElement("button");n.type="button",n.className="yrp-menu-item",n.setAttribute("data-action","set-speed"),n.setAttribute("data-speed",String(y)),n.textContent=(y===1?"1.0x":String(y)+"x")+(Math.abs(y-l)<.001?" \u2713":""),s(n),t.appendChild(n)})}function ee(t,r){let a=parseFloat(String(r));if(!(!isFinite(a)||a<=0)){t.playbackRate=a;try{localStorage.setItem("playback_speed",String(a))}catch(s){}}}var Ft=class{constructor(r){this.menu=r,this.menuView="main",this.menuMainHTML="",this.menuFixedMinHeight=0}ensureMainSnapshot(){this.menu&&(this.menuMainHTML||(this.menuMainHTML=this.menu.innerHTML||""))}lockHeightFromCurrent(){if(this.menu&&!(this.menuFixedMinHeight>0))try{let r=this.menu.getBoundingClientRect();this.menuFixedMinHeight=Math.ceil(r.height||0),this.menuFixedMinHeight>0&&(this.menu.style.minHeight=this.menuFixedMinHeight+"px")}catch(r){}}resetHeightLock(){this.menu&&(this.menuFixedMinHeight=0,this.menu.style.minHeight="")}setView(r){this.menuView=r}getView(){return this.menuView}openMainView(r){if(this.menu){this.ensureMainSnapshot(),this.menu.innerHTML=this.menuMainHTML,this.menuView="main",this.menu.style.maxHeight="";try{let a=this.menu.querySelector('.yrp-menu-section[data-section="speed"]');a&&a.parentNode&&a.parentNode.removeChild(a)}catch(a){}Xe(this.menu),_e(this.menu,rt),r&&(r.injectSpeed&&r.injectSpeed(),r.injectLanguages&&r.injectLanguages(),r.injectSubtitles&&r.injectSubtitles())}}constrainToPlayerHeight(r=2/3){if(this.menu)try{let a=this.menu.closest(".yrp-container");if(a){let s=a.querySelector(".yrp-video-wrap");if(s){let c=s.getBoundingClientRect().height,l=Math.floor(c*r)-34;l>100&&(this.menu.style.maxHeight=l+"px")}}}catch(a){}}};var Je={};function Ye(){try{let r=new URL(Je.url).pathname.match(/\/static\/players\/([^\/]+)\//);if(r)return r[1]}catch(t){}try{let r=(document.currentScript&&document.currentScript.src||"").match(/\/static\/players\/([^\/]+)\//);if(r)return r[1]}catch(t){}try{let t=document.querySelector(".player-host[data-player]");if(t){let r=String(t.getAttribute("data-player")||"").trim();if(r)return r}}catch(t){}return"yurtube"}function ne(){let t=Ye(),r=`/static/players/${t}`,a=document.querySelectorAll(`.player-host[data-player="${t}"]`);a.length&&fetch(r+"/templates/player.html",{credentials:"same-origin"}).then(s=>s.text()).then(function(s){for(let c=0;c<a.length;c++)ze(a[c],s,r)}).catch(function(){})}function qe(t,...r){if(t)try{}catch(a){}}function ze(t,r,a){t.innerHTML=r;let s=t.querySelector(".yrp-container"),c=s.querySelector(".yrp-video-wrap"),l=s.querySelector(".yrp-video"),y=l.querySelector("source"),n=t.getAttribute("data-video-src")||"",U=t.getAttribute("data-poster-url")||"",T=t.getAttribute("data-video-id")||"",_=Nt(t,"data-subtitles",[]),C=Nt(t,"data-options",{}),w=t.getAttribute("data-sprites-vtt")||"",E=t.getAttribute("data-caption-vtt")||"",F=t.getAttribute("data-caption-lang")||"",Y=/\byrpdebug=1\b/i.test(location.search)||!!(C&&C.debug),ot=(...d)=>qe(Y,...d);if(y&&y.setAttribute("src",n),U&&l.setAttribute("poster",U),C.autoplay&&l.setAttribute("autoplay",""),C.muted&&l.setAttribute("muted",""),C.loop&&l.setAttribute("loop",""),T&&s.setAttribute("data-video-id",T),w&&s.setAttribute("data-sprites-vtt",w),l.setAttribute("playsinline",""),Array.isArray(_)&&_.forEach(function(d){if(!d||!d.src)return;let b=document.createElement("track");b.setAttribute("kind","captions"),d.srclang&&b.setAttribute("srclang",String(d.srclang)),d.label&&b.setAttribute("label",String(d.label)),b.setAttribute("src",String(d.src)),d.default&&b.setAttribute("default",""),l.appendChild(b)}),E)try{let d=document.createElement("track");d.setAttribute("kind","captions"),d.setAttribute("src",E),d.setAttribute("srclang",F||"auto"),d.setAttribute("label",F||"Original"),d.setAttribute("default",""),l.appendChild(d)}catch(d){ot("caption append failed",d)}try{l.load(),ot("video.load()",{src:n})}catch(d){ot("video.load() error",d)}Ce(l,y,ot);let z=a+"/img/buttons";[["--icon-play","play.svg"],["--icon-pause","pause.svg"],["--icon-prev","prev.svg"],["--icon-next","next.svg"],["--icon-vol","volume.svg"],["--icon-mute","mute.svg"],["--icon-cc","cc.svg"],["--icon-mini","mini.svg"],["--icon-settings","settings.svg"],["--icon-theater","theater.svg"],["--icon-full","full.svg"],["--icon-autoplay-on","autoplay-on.svg"],["--icon-autoplay-off","autoplay-off.svg"],["--icon-shuffle-on","shuffle-on.svg"],["--icon-shuffle-off","shuffle-off.svg"],["--icon-cycle-on","cycle-on.svg"],["--icon-cycle-off","cycle-off.svg"]].forEach(([d,b])=>{s.style.setProperty(d,`url("${z}/${b}")`)}),s.classList.add("yrp-icons-ready");let Z=s.querySelector(".yrp-center-logo");Z&&Z.setAttribute("src",a+"/img/logo.png");let A=document.createElement("div");A.className="yrp-captions-layer",Object.assign(A.style,{position:"absolute",left:"50%",top:"80%",transform:"translate(-50%,-50%)",zIndex:"21",pointerEvents:"auto",userSelect:"none",touchAction:"none"});let it=document.createElement("div");it.className="yrp-captions-text",Object.assign(it.style,{display:"inline-block",background:"rgba(0,0,0,0.55)",color:"#fff",fontSize:"16px",lineHeight:"1.35",padding:"6px 10px",borderRadius:"6px",maxWidth:"80%",minWidth:"220px",boxShadow:"0 2px 6px rgba(0,0,0,0.35)",whiteSpace:"pre-wrap",wordBreak:"break-word"}),A.appendChild(it),c&&(c.style.position="relative",c.appendChild(A));let O={active:!1,startX:0,startY:0,startLeftPct:50,startTopPct:80},tt=!1;function q(){return c?c.getBoundingClientRect():{width:0,height:0,left:0,top:0}}function v(d){let b=q(),B=Math.min(d,b.width-d)*2,X=12,P=220;it.style.maxWidth=Math.max(P,Math.floor(B-X))+"px"}function ct(d){let b=d.touches?d.touches[0]:d,B=q(),X=A.getBoundingClientRect();O.startLeftPct=(X.left+X.width/2-B.left)/B.width*100,O.startTopPct=(X.top+X.height/2-B.top)/B.height*100,O.active=!0,O.startX=b.clientX,O.startY=b.clientY,d.preventDefault(),d.stopPropagation()}function yt(d){if(!O.active)return;let b=d.touches?d.touches[0]:d,B=b.clientX-O.startX,X=b.clientY-O.startY,P=q(),et=O.startLeftPct/100*P.width+B,$=O.startTopPct/100*P.height+X,Ut=A.getBoundingClientRect(),Wt=Ut.width/2,Kt=Ut.height/2;et=j(et,Wt,P.width-Wt),$=j($,Kt,P.height-Kt),A.style.left=et/P.width*100+"%",A.style.top=$/P.height*100+"%",A.style.transform="translate(-50%,-50%)",tt=!0,v(et),d.preventDefault(),d.stopPropagation()}function ht(d){O.active&&(O.active=!1,d.preventDefault(),d.stopPropagation())}A.addEventListener("mousedown",ct),A.addEventListener("touchstart",ct,{passive:!1}),document.addEventListener("mousemove",yt),document.addEventListener("touchmove",yt,{passive:!1}),document.addEventListener("mouseup",ht),document.addEventListener("touchend",ht),A.addEventListener("click",function(d){d.stopPropagation()});function mt(){if(tt)return;let d=!s.classList.contains("autohide");A.style.top=d?"78%":"82%",A.style.left="50%",A.style.transform="translate(-50%,-50%)",v(q().width/2)}let at=0;typeof C.start=="number"&&C.start>0&&(at=Math.max(0,C.start));try{let b=new URL(window.location.href).searchParams.get("t");if(b!=null){let B=parseInt(String(b).trim(),10);isFinite(B)&&B>0&&(at=Math.max(at,B))}}catch(d){}Ge(s,at,Y,{overlay:A,textBox:it,autoAdjust:mt},at,a)}function Ge(t,r,a,s,c,l){let y=(...e)=>qe(a,...e),n=t.querySelector(".yrp-video"),U=t.querySelector(".yrp-center-play"),T=t.querySelector(".yrp-play"),_=t.querySelector(".yrp-prev"),C=t.querySelector(".yrp-next"),w=t.querySelector(".yrp-vol-btn"),E=t.querySelector(".yrp-volume"),F=t.querySelector(".yrp-vol-slider"),Y=t.querySelector(".yrp-time-current"),ot=t.querySelector(".yrp-time-total"),z=t.querySelector(".yrp-progress"),Z=t.querySelector(".yrp-progress-rail"),A=t.querySelector(".yrp-progress-buffer"),it=t.querySelector(".yrp-progress-played"),O=t.querySelector(".yrp-progress-handle"),tt=t.querySelector(".yrp-progress-tooltip"),q=t.querySelector(".yrp-settings"),v=t.querySelector(".yrp-menu"),ct=t.querySelector(".yrp-theater"),yt=t.querySelector(".yrp-fullscreen"),ht=t.querySelector(".yrp-pip"),mt=t.querySelector(".yrp-left"),at=t.querySelector(".yrp-right"),d=t.querySelector(".yrp-autoplay"),b=t.querySelector(".yrp-subtitles"),B=null,X=!1,P=0,et=!1,$=!1,Ut=!1,Wt=!1,Kt=!1,Qe=null,re=!!K("autoplay",!1),lt=t.getAttribute("data-sprites-vtt")||"",kt=[],_t=0,nt=null,Ct=!1,Et=!1,M=!0,W=0,ie=function(){try{return String(localStorage.getItem("subtitle_lang")||"")}catch(e){return""}}(),Xt=function(){try{return parseFloat(localStorage.getItem("playback_speed")||"")}catch(e){return NaN}}(),x=new Ft(v),ae=!1;function Ie(e){let i=Zt(n,e);if(i>=0){W=i,M=!0,Lt(n,W,M),ft(s,n,W,M);try{localStorage.setItem("subtitle_lang",String(e||""))}catch(f){}pt(b,n,M)}}function se(e){M=!!e,Lt(n,W,M),ft(s,n,W,M),pt(b,n,M)}function $t(){x.openMainView({injectSpeed:Ne,injectLanguages:Be,injectSubtitles:He})}function Be(){v&&(v.querySelector('.yrp-menu-item[data-action="open-langs"]')||jt(v,"Languages","open-langs",{hasSubmenu:!0},rt,Dt))}function Ne(){v&&(v.querySelector('.yrp-menu-item[data-action="open-speed"]')||jt(v,"Speed","open-speed",{hasSubmenu:!0},rt,Dt))}function He(){if(!v||v.querySelector('.yrp-menu-item[data-action="open-subs"]'))return;let e=St(n),i=jt(v,"Subtitles","open-subs",{hasSubmenu:!0,disabled:!e},rt,Dt);i&&!e&&(i.title="No subtitle tracks")}function oe(){Me(v,n,W,Ot,rt,Te),x.setView("langs"),x.constrainToPlayerHeight(2/3)}function ce(){Pe(v,n,Ot,rt),x.setView("speed"),x.constrainToPlayerHeight(2/3)}function le(){Ae(v,M,Ot,rt),x.setView("subs"),x.constrainToPlayerHeight(2/3)}function ue(e,i,f,o,u){let m=o?i:f,p=getComputedStyle(t).getPropertyValue(m)||t.style.getPropertyValue(m)||"",g=String(p).match(/url\(["']?([^"')]+)["']?\)/i);if(!(g&&g[1]?g[1]:null)){e.style.webkitMaskImage="",e.style.maskImage="",e.textContent=u,e.style.backgroundColor="transparent",e.style.color="var(--yrp-icon-color)",e.style.textIndent="0",e.dataset.maskApplied="0";return}e.textContent="";let k=`var(${m})`;e.style.webkitMaskImage=k,e.style.maskImage=k,e.style.backgroundColor="var(--yrp-icon-color)",e.style.color="",e.style.textIndent="-9999px",e.dataset.maskApplied="1"}function Re(){return nt||(z?(nt=document.createElement("div"),Object.assign(nt.style,{position:"absolute",display:"none",bottom:"calc(100% + 30px)",left:"0",width:"160px",height:"90px",border:"1px solid #333",background:"#000",overflow:"hidden",zIndex:"5"}),nt.className="yrp-sprite-pop",getComputedStyle(z).position==="static"&&(z.style.position="relative"),z.appendChild(nt),nt):null)}function de(e){let i=String(e||"").match(/^(\d{2}):(\d{2}):(\d{2}\.\d{3})$/);return i?parseInt(i[1],10)*3600+parseInt(i[2],10)*60+parseFloat(i[3]):0}function Ve(e){if(!e)return"";try{let i=new URL(lt,window.location.href);return new URL(e,i).href}catch(i){return e}}function pe(){if(!lt||Ct||Et)return;let e="";try{e=new URL(lt,window.location.href).href}catch(i){e=lt}fetch(e,{credentials:"same-origin"}).then(i=>i.text()).then(function(i){let f=i.split(/\r?\n/);for(let o=0;o<f.length;o++){let u=f[o].trim();if(u&&u.indexOf("-->")>=0){let m=u.split("-->").map(G=>G.trim());if(m.length<2)continue;let S=de(m[0]),p=de(m[1]),g=(f[o+1]||"").trim(),L="",k=0,N=0,ut=0,qt=0,dt=g.indexOf("#xywh=");if(dt>0){L=g.substring(0,dt);let G=g.substring(dt+6).split(",");G.length===4&&(k=parseInt(G[0],10),N=parseInt(G[1],10),ut=parseInt(G[2],10),qt=parseInt(G[3],10))}else L=g||"";let vt=Ve(L);kt.push({start:S,end:p,spriteUrl:vt,x:k,y:N,w:ut,h:qt}),p>_t&&(_t=p),o++}}Ct=!0}).catch(function(){Et=!0})}function Fe(e){if(!lt||!kt.length||!Z)return;let i=Z.getBoundingClientRect(),f=j(e-i.left,0,i.width),o=i.width>0?f/i.width:0,u=(P||_t||0)*o,m=null;for(let L=0;L<kt.length;L++){let k=kt[L];if(u>=k.start&&u<k.end){m=k;break}}let S=Re();if(!S)return;if(!m||!m.spriteUrl||m.w<=0||m.h<=0){S.style.display="none";return}for(;S.firstChild;)S.removeChild(S.firstChild);let p=document.createElement("img");Object.assign(p.style,{position:"absolute",left:-m.x+"px",top:-m.y+"px"}),p.src=m.spriteUrl,S.appendChild(p),S.style.display="block";let g=j(f-m.w/2,0,i.width-m.w);S.style.left=g+"px",S.style.width=m.w+"px",S.style.height=m.h+"px"}function fe(){if(!d)return;let e=re;d.setAttribute("aria-pressed",e?"true":"false"),d.title=e?"Autoplay on (A)":"Autoplay off (A)",d.textContent="";let i=e?"var(--icon-autoplay-on)":"var(--icon-autoplay-off)";Object.assign(d.style,{backgroundColor:"currentColor",webkitMaskImage:i,maskImage:i,webkitMaskRepeat:"no-repeat",maskRepeat:"no-repeat",webkitMaskPosition:"center",maskPosition:"center",webkitMaskSize:"20px 20px",maskSize:"20px 20px",opacity:e?"1":"0.6"})}function Yt(){if(!T)return;let e=!n.paused;T.classList.toggle("icon-play",!e),T.classList.toggle("icon-pause",e),T.setAttribute("aria-label",e?"Pause (Space, K)":"Play (Space, K)"),T.title=e?"Pause (Space, K)":"Play (Space, K)",T.textContent="";let i=e?"var(--icon-pause)":"var(--icon-play)";Object.assign(T.style,{backgroundColor:"currentColor",webkitMaskImage:i,maskImage:i,webkitMaskRepeat:"no-repeat",maskRepeat:"no-repeat",webkitMaskPosition:"center",maskPosition:"center",webkitMaskSize:"20px 20px",maskSize:"20px 20px"})}function zt(e){B&&clearTimeout(B),B=setTimeout(function(){t.classList.add("autohide"),s&&s.autoAdjust&&s.autoAdjust()},Math.max(0,e||1200))}function D(){t.classList.remove("autohide"),s&&s.autoAdjust&&s.autoAdjust(),zt(2e3)}function ye(){try{P=isFinite(n.duration)?n.duration:0}catch(e){P=0}ot&&(ot.textContent=Bt(P)),Y&&(Y.textContent=Bt(n.currentTime||0))}function Gt(){let e=P||0,i=n.currentTime||0,f=e>0?j(i/e,0,1):0;it&&(it.style.width=(f*100).toFixed(3)+"%"),O&&(O.style.left=(f*100).toFixed(3)+"%");let o=0;if(n.buffered&&n.buffered.length>0)try{o=n.buffered.end(n.buffered.length-1)}catch(m){o=0}let u=e>0?j(o/e,0,1):0;A&&(A.style.width=(u*100).toFixed(3)+"%")}function At(){n.paused?n.play().catch(()=>{}):n.pause()}function he(){n.muted=!n.muted,gt()}function gt(){let e=n.muted?0:n.volume,i=n.muted||e===0?"Mute":"Vol";w&&(w.textContent=i,w.classList.toggle("icon-mute",i==="Mute"),w.classList.toggle("icon-vol",i!=="Mute"))}function me(e){if(!Z)return;let i=Z.getBoundingClientRect(),f=j(e-i.left,0,i.width),o=i.width>0?f/i.width:0;n.currentTime=(P||0)*o}function Oe(e){if(!tt||!Z)return;let i=Z.getBoundingClientRect(),f=j(e-i.left,0,i.width),o=i.width>0?f/i.width:0,u=(P||0)*o;tt.textContent=Bt(u),tt.style.left=(o*100).toFixed(3)+"%",tt.hidden=!1}(function(){let i=t.getAttribute("data-video-id")||"";if(!i)return;if(c>0){try{let p=K("resume",{});p&&p[i]&&(delete p[i],Q("resume",p))}catch(p){}return}let f=K("resume",{}),o=f[i],u=Date.now();function m(p){let g=isFinite(n.duration)?n.duration:0;if(g&&p>10&&p<g-5)try{n.currentTime=p}catch(L){}}if(o&&typeof o.t=="number"&&u-(o.ts||0)<180*24*3600*1e3){let p=Math.max(0,o.t|0);isFinite(n.duration)&&n.duration>0?m(p):n.addEventListener("loadedmetadata",function g(){n.removeEventListener("loadedmetadata",g),m(p)})}let S=we(function(){let p=isFinite(n.duration)?n.duration:0,g=Math.max(0,Math.floor(n.currentTime||0)),L=K("resume",{});L[i]={t:g,ts:Date.now(),d:p};let k=Object.keys(L);if(k.length>200){k.sort((N,ut)=>(L[N].ts||0)-(L[ut].ts||0));for(let N=0;N<k.length-200;N++)delete L[k[N]]}Q("resume",L)},3e3);n.addEventListener("timeupdate",function(){!n.paused&&!n.seeking&&S()}),n.addEventListener("ended",function(){let p=K("resume",{});delete p[i],Q("resume",p)})})(),function(){function i(o){t.classList.toggle("yrp-theater",o);try{if(typeof window.setTheater=="function")window.setTheater(o);else{let u=t.closest(".watch-layout")||document.querySelector(".watch-layout");u&&(u.classList.toggle("theater-mode",o),typeof window.relocateUpNext=="function"&&window.relocateUpNext())}}catch(u){}o?(t.style.maxWidth="",t.style.minWidth="",t.style.width=""):Mt()}!!K("theater",!1)&&i(!0),ct&&ct.addEventListener("click",function(){let o=!t.classList.contains("yrp-theater");i(o),Q("theater",o),D()})}(),n.addEventListener("loadedmetadata",function(){if(r>0)try{n.currentTime=Math.min(r,Math.floor(n.duration||r))}catch(o){}if(setTimeout(Mt,0),ye(),Gt(),gt(),fe(),Yt(),pt(b,n,M),ie){let o=Zt(n,ie);o>=0&&(W=o)}isFinite(Xt)&&Xt>0&&ee(Xt),Vt(n,W),Lt(n,W,M),pt(b,n,M),zt(1200),pe(),ft(s,n,W,M);let e=t.querySelector(".yrp-video-wrap").getBoundingClientRect(),i=e.width/2,f=t.querySelector(".yrp-captions-text");if(f){let o=Math.min(i,e.width-i)*2,u=12,m=220;f.style.maxWidth=Math.max(m,Math.floor(o-u))+"px"}if(te(n,y,"after loadedmetadata"),v&&!v.hidden){let o=x.getView();o==="main"?$t():o==="langs"?oe():o==="speed"?ce():o==="subs"&&le()}});function Ze(e){te(n,y,e)}function Mt(){if(t.classList.contains("yrp-theater"))return;let e=getComputedStyle(n),i=xe(e.getPropertyValue("max-height"))||n.clientHeight||0,f=n.videoWidth||16,o=n.videoHeight||9,u=o>0?f/o:16/9,m=Math.min(i||n.clientHeight||0,window.innerHeight*.9);if(!m||!isFinite(m))return;let S=Math.floor(m*u),p=Math.floor(window.innerWidth*.95),g=De(),L=Math.max(g,Math.min(S,p));t.style.maxWidth=L+"px",t.style.minWidth=g+"px",t.style.width="100%"}function De(){let e=mt?mt.getBoundingClientRect().width:0,i=at?at.getBoundingClientRect().width:0,o=Math.ceil(e+i+24);return!isFinite(o)||o<=0?480:o}(function(){let i=t.closest(".player-host")||t,f=Nt(i,"data-options",null);function o(){return f&&f.autoplay===!0?!0:!!K("autoplay",!1)}if(!o()){setTimeout(function(){zt(1e3)},0);return}function u(){let p=null;try{p=n.play()}catch(g){p=null}p&&typeof p.then=="function"?p.then(function(){}).catch(function(){if(!n.muted){$=!0,n.muted=!0,n.setAttribute("muted","");try{n.play().catch(function(){})}catch(g){}}}):setTimeout(function(){if(n.paused){$=!0,n.muted=!0,n.setAttribute("muted","");try{n.play().catch(function(){})}catch(g){}}},0)}let m=!1;function S(){m||(m=!0,u())}n.readyState>=1&&S(),["loadedmetadata","loadeddata","canplay","canplaythrough"].forEach(function(p){let g=function(){n.removeEventListener(p,g),S()};n.addEventListener(p,g)}),setTimeout(function(){if(n.paused){$=!0,n.muted=!0,n.setAttribute("muted","");try{n.play().catch(function(){})}catch(p){}}},1200)})(),window.addEventListener("resize",Mt),n.addEventListener("timeupdate",function(){ye(),Gt(),ft(s,n,W,M)}),n.addEventListener("progress",Gt),n.addEventListener("play",function(){t.classList.add("playing"),Yt(),D()}),n.addEventListener("pause",function(){t.classList.remove("playing"),Yt(),D()});function Jt(){!document.pictureInPictureEnabled||!n.requestPictureInPicture||n.disablePictureInPicture||(document.pictureInPictureElement===n?document.exitPictureInPicture().catch(function(){}):n.requestPictureInPicture().catch(function(){}))}n.addEventListener("click",At),U&&U.addEventListener("click",At),T&&T.addEventListener("click",At),_&&_.addEventListener("click",function(){t.dispatchEvent(new CustomEvent("yrp-prev",{bubbles:!0}))}),C&&C.addEventListener("click",function(){t.dispatchEvent(new CustomEvent("yrp-next",{bubbles:!0}))}),function(){var i=new URL(window.location.href),f=i.searchParams.get("p"),o=i.searchParams.get("v")||t.getAttribute("data-video-id")||"";if(f)_&&(_.style.display=""),C&&(C.style.display="");else{_&&(_.style.display="none"),C&&(C.style.display="none");var u=t.querySelector(".yrp-shuffle"),m=t.querySelector(".yrp-cycle");u&&(u.style.display="none"),m&&(m.style.display="none");return}function S(){var h=[],R=document.querySelector("#upnext-block .rb-list"),V=document.querySelector("#panel-upnext .upnext-list"),J=[];return R?J=R.querySelectorAll("a.rb-item[href*='/watch']"):V&&(J=V.querySelectorAll("a.rb-item[href*='/watch']")),J.forEach(function(xt){var It=xt.getAttribute("href")||"",Qt=It.match(/[?&]v=([^&]+)/);Qt&&Qt[1]&&h.push(decodeURIComponent(Qt[1]))}),h}var p=S();if(!p||p.length===0)return;var g=p.indexOf(o);g<0&&(g=0);function L(h){return"pl:"+f+":"+h}var k=function(){var h=K(L("order"),"direct");return h==="shuffle"?"shuffle":"direct"}(),N=function(){var h=K(L("cycle"),"0");return h===!0||h==="1"}();function ut(h){k=h==="shuffle"?"shuffle":"direct",Q(L("order"),k),ve()}function qt(h){N=!!h,Q(L("cycle"),N?"1":"0"),be()}function dt(h){if(p.length<=1)return h;for(var R=0,V=h;R<6&&V===h;)V=Math.floor(Math.random()*p.length),R++;return V===h&&(V=(h+1)%p.length),V}function vt(){if(k==="shuffle")return dt(g);var h=g+1;return h>=p.length?N?0:-1:h}function G(){if(k==="shuffle")return dt(g);var h=g-1;return h<0?N?p.length-1:-1:h}function bt(h){h=Math.max(0,Math.min(p.length-1,h));var R=p[h];if(R){try{var V=K("resume",{});V&&V[R]&&(delete V[R],Q("resume",V))}catch(xt){}var J=new URL(window.location.href);J.searchParams.set("v",R),J.searchParams.set("p",f),window.location.href=J.toString()}}t.addEventListener("yrp-prev",function(){var h=G();h>=0&&bt(h)}),t.addEventListener("yrp-next",function(){var h=vt();h>=0&&bt(h)});var I=t.querySelector(".yrp-shuffle"),H=t.querySelector(".yrp-cycle");I||(I=document.createElement("button"),I.type="button",I.className="yrp-btn yrp-shuffle",I.title="Shuffle playlist",I.setAttribute("aria-label","Shuffle playlist"),Object.assign(I.style,{border:"none",width:"var(--yrp-icon-button-width)",height:"28px",cursor:"pointer",padding:"0",marginLeft:"6px",marginRight:"2px"})),H||(H=document.createElement("button"),H.type="button",H.className="yrp-btn yrp-cycle",H.title="Cycle playlist",H.setAttribute("aria-label","Cycle playlist"),Object.assign(H.style,{border:"none",width:"var(--yrp-icon-button-width)",height:"28px",cursor:"pointer",padding:"0",marginRight:"8px"})),I.dataset.forceEmoji="0",H.dataset.forceEmoji="0";function ve(){I.setAttribute("aria-pressed",k==="shuffle"?"true":"false"),ue(I,"--icon-shuffle-on","--icon-shuffle-off",k==="shuffle","\u{1F500}"),I.style.opacity=k==="shuffle"?"1":"0.55",I.style.display=""}function be(){H.setAttribute("aria-pressed",N?"true":"false"),ue(H,"--icon-cycle-on","--icon-cycle-off",!!N,"\u{1F501}"),H.style.opacity="1",H.style.display=""}ve(),be(),I.addEventListener("click",function(){ut(k==="shuffle"?"direct":"shuffle")}),H.addEventListener("click",function(){qt(!N)});try{var st=mt||C&&C.parentNode||t;E&&st?(st.insertBefore(I,E),st.insertBefore(H,E)):C&&st?(st.insertBefore(I,C.nextSibling),st.insertBefore(H,I.nextSibling)):(st.appendChild(I),st.appendChild(H))}catch(h){}n.addEventListener("ended",function(){var h=vt();h>=0&&bt(h)}),document.addEventListener("keydown",function(h){var R=h.target,V=R&&R.tagName?R.tagName.toUpperCase():"";if(!(R&&(R.isContentEditable||V==="INPUT"||V==="TEXTAREA"))&&!(h.ctrlKey||h.metaKey||h.altKey)){var J=h.code||"";if(J==="PageUp"){h.preventDefault();var xt=G();xt>=0&&bt(xt)}else if(J==="PageDown"){h.preventDefault();var It=vt();It>=0&&bt(It)}}})}(),w&&w.addEventListener("click",function(e){e.preventDefault(),e.stopPropagation(),et=!0,$=!1,he(),D(),t.classList.add("vol-open"),setTimeout(function(){t.classList.remove("vol-open")},1200)}),E&&E.addEventListener("wheel",function(e){e.preventDefault(),et=!0,$=!1;let i=.05,f=n.muted?0:n.volume,o=j(f+(e.deltaY<0?i:-i),0,1);n.volume=o,o>0&&(n.muted=!1),F&&(F.value=String(o)),gt(),D()},{passive:!1}),F&&(F.addEventListener("input",function(){et=!0,$=!1;let e=parseFloat(F.value||"1");isFinite(e)||(e=1),e=j(e,0,1),n.volume=e,e>0&&(n.muted=!1),gt()}),F.addEventListener("wheel",function(e){e.preventDefault(),et=!0,$=!1;let i=.05,f=n.muted?0:n.volume,o=j(f+(e.deltaY<0?i:-i),0,1);n.volume=o,o>0&&(n.muted=!1),F.value=String(o),gt(),D()},{passive:!1})),z&&(z.addEventListener("mousedown",function(e){X=!0,Tt(),me(e.clientX)}),window.addEventListener("mousemove",function(e){X&&me(e.clientX)}),window.addEventListener("mouseup",function(){X=!1}),z.addEventListener("mousemove",function(e){Oe(e.clientX),lt&&Ct&&!Et?Fe(e.clientX):lt&&!Ct&&!Et&&pe()}),z.addEventListener("mouseleave",function(){tt&&(tt.hidden=!0),nt&&(nt.style.display="none")}));function Tt(){v&&(v.hidden=!0,q&&q.setAttribute("aria-expanded","false"));let e=t.querySelector(".yrp-context");e&&(e.hidden=!0),t.classList.remove("vol-open"),x.setView("main"),x.resetHeightLock()}q&&v&&(x.ensureMainSnapshot(),ae||(ae=!0,q.addEventListener("click",function(e){!v.hidden?(v.hidden=!0,q.setAttribute("aria-expanded","false"),x.setView("main"),x.resetHeightLock()):(Tt(),$t(),v.hidden=!1,q.setAttribute("aria-expanded","true"),x.lockHeightFromCurrent()),e.stopPropagation(),t.classList.add("vol-open"),D()}),v.addEventListener("click",function(e){let i=e.target&&e.target.closest?e.target.closest(".yrp-menu-item"):null;if(!i||!v.contains(i))return;let f=i.getAttribute("data-action")||"",o=i.getAttribute("data-lang")||"",u=x.getView();if(u==="main"){if(f==="open-langs"){e.preventDefault(),e.stopPropagation(),oe(),x.lockHeightFromCurrent(),t.classList.add("vol-open"),D();return}if(f==="open-speed"){e.preventDefault(),e.stopPropagation(),ce(),x.lockHeightFromCurrent(),t.classList.add("vol-open"),D();return}if(f==="open-subs"){if(e.preventDefault(),e.stopPropagation(),!St(n))return;le(),x.lockHeightFromCurrent(),t.classList.add("vol-open"),D();return}return}if(f==="back"){e.preventDefault(),e.stopPropagation(),$t(),x.lockHeightFromCurrent(),t.classList.add("vol-open"),D();return}if(u==="langs"&&f==="select-lang"&&o){e.preventDefault(),e.stopPropagation(),Ie(o),v.hidden=!0,q.setAttribute("aria-expanded","false"),x.setView("main"),x.resetHeightLock();return}if(u==="speed"&&f==="set-speed"){let m=parseFloat(i.getAttribute("data-speed")||"NaN");if(!isNaN(m)){e.preventDefault(),e.stopPropagation(),ee(n,m),v.hidden=!0,q.setAttribute("aria-expanded","false"),x.setView("main"),x.resetHeightLock();return}}if(u==="subs"){if(f==="subs-on"){e.preventDefault(),e.stopPropagation(),se(!0),v.hidden=!0,q.setAttribute("aria-expanded","false"),x.setView("main"),x.resetHeightLock();return}if(f==="subs-off"){e.preventDefault(),e.stopPropagation(),se(!1),v.hidden=!0,q.setAttribute("aria-expanded","false"),x.setView("main"),x.resetHeightLock();return}}}),document.addEventListener("click",function(e){!v.hidden&&!v.contains(e.target)&&e.target!==q&&(v.hidden=!0,q.setAttribute("aria-expanded","false"),x.setView("main"),x.resetHeightLock())}))),yt&&yt.addEventListener("click",function(){document.fullscreenElement?document.exitFullscreen().catch(function(){}):t.requestFullscreen&&t.requestFullscreen().catch(function(){})}),ht&&ht.addEventListener("click",function(e){e.preventDefault(),e.stopPropagation(),Jt()}),d&&d.addEventListener("click",function(e){e.preventDefault(),e.stopPropagation();let i=!K("autoplay",!1);Q("autoplay",i),re=i,fe()}),b&&b.addEventListener("click",function(e){e.preventDefault(),e.stopPropagation(),St(n)&&(M=!M,Lt(n,W,M),ft(s,n,W,M),pt(b,n,M))}),t.addEventListener("contextmenu",function(e){e.preventDefault(),Tt();let i=t.querySelector(".yrp-context");if(!i)return;let f=t.getBoundingClientRect();i.style.left=e.clientX-f.left+"px",i.style.top=e.clientY-f.top+"px",i.hidden=!1,i.onclick=function(o){let u=o.target&&o.target.getAttribute("data-action"),m=Math.floor(n.currentTime||0),S=t.getAttribute("data-video-id")||"";if(u==="pip")Jt();else if(u==="copy-url"){let p=new URL(window.location.href);p.searchParams.delete("t"),Ht(p.toString())}else if(u==="copy-url-time"){let p=new URL(window.location.href);p.searchParams.set("t",String(m)),Ht(p.toString())}else if(u==="copy-embed"){let g=`<iframe width="560" height="315" src="${(window.location.origin||"")+"/embed?v="+encodeURIComponent(S||"")}" frameborder="0" allow="autoplay; encrypted-media; clipboard-write" allowfullscreen></iframe>`;Ht(g)}i.hidden=!0},document.addEventListener("click",function(o){let u=t.querySelector(".yrp-context");u&&!u.hidden&&!u.contains(o.target)&&(u.hidden=!0)},{once:!0}),document.addEventListener("keydown",function o(u){if(u.code==="Escape"||(u.key||"").toLowerCase()==="escape"){let m=t.querySelector(".yrp-context");m&&!m.hidden&&(m.hidden=!0),document.removeEventListener("keydown",o)}})});function Pt(e){let i=t.getBoundingClientRect();e.clientX>=i.left&&e.clientX<=i.right&&e.clientY>=i.top&&e.clientY<=i.bottom&&D()}document.addEventListener("mousemove",Pt,{passive:!0}),document.addEventListener("pointermove",Pt,{passive:!0}),["mousemove","pointermove","mouseenter","mouseover","touchstart"].forEach(function(e){t.addEventListener(e,function(){try{t.focus()}catch(i){}D()},{passive:!0}),n&&n.addEventListener(e,D,{passive:!0}),U&&U.addEventListener(e,D,{passive:!0})});function ge(){try{document.fullscreenElement===t&&(document.addEventListener("mousemove",Pt,{passive:!0}),document.addEventListener("pointermove",Pt,{passive:!0}))}catch(e){}}document.addEventListener("fullscreenchange",ge),ge();function je(e){let i=e.target,f=i&&i.tagName?i.tagName.toUpperCase():"";if(i&&(i.isContentEditable||f==="INPUT"||f==="TEXTAREA")||e.ctrlKey||e.metaKey||e.altKey)return;let o=e.code,u=(e.key||"").toLowerCase();if(o==="Space"||o==="Enter"||o==="NumpadEnter"||o==="MediaPlayPause"||o==="KeyK"||u==="k"){At(),e.preventDefault();return}if(o==="ArrowLeft"||u==="arrowleft"||o==="KeyJ"||u==="j"){n.currentTime=j((n.currentTime||0)-5,0,P||0),e.preventDefault();return}if(o==="ArrowRight"||u==="arrowright"||o==="KeyL"||u==="l"){n.currentTime=j((n.currentTime||0)+5,0,P||0),e.preventDefault();return}if(o==="KeyM"||u==="m"){he(),e.preventDefault();return}if(o==="KeyF"||u==="f"){document.fullscreenElement?document.exitFullscreen().catch(function(){}):t.requestFullscreen&&t.requestFullscreen().catch(function(){}),e.preventDefault();return}if(o==="KeyT"||u==="t"){ct&&ct.click(),e.preventDefault();return}if(o==="KeyI"||u==="i"){Jt(),e.preventDefault();return}if(o==="KeyA"||u==="a"){d&&d.click(),e.preventDefault();return}if(o==="KeyC"||u==="c"){b&&!b.disabled&&b.click(),e.preventDefault();return}if(o==="Escape"||u==="escape"){Tt();return}}document.addEventListener("keydown",je),setTimeout(Mt,200)}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",ne):ne();})();
+  `;
+    if (!document.querySelector("#yrp-menu-scroll-style")) {
+      style.id = "yrp-menu-scroll-style";
+      document.head.appendChild(style);
+    }
+    wrap.addEventListener("wheel", function(e) {
+      const atTop = wrap.scrollTop === 0;
+      const atBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 1;
+      if (e.deltaY < 0 && !atTop || e.deltaY > 0 && !atBottom) {
+        e.stopPropagation();
+      } else if (!atTop && !atBottom) {
+        e.stopPropagation();
+      }
+    }, { passive: false });
+    return wrap;
+  }
+  function normalizeQualitySectionTypography(menu, ensureTransparentMenuButton2) {
+    if (!menu) return;
+    try {
+      const secQ = menu.querySelector('.yrp-menu-section[data-section="quality"]');
+      if (!secQ) return;
+      const oldTitle = secQ.querySelector(".yrp-menu-title");
+      if (oldTitle) oldTitle.parentNode && oldTitle.parentNode.removeChild(oldTitle);
+      if (secQ.querySelector(".yrp-menu-item.quality-future")) return;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "yrp-menu-item quality-future";
+      btn.textContent = "Quality (future)";
+      btn.disabled = true;
+      ensureTransparentMenuButton2(btn);
+      btn.style.opacity = "0.75";
+      secQ.appendChild(btn);
+    } catch (e) {
+    }
+  }
+  function removeFutureSubtitlesSection(menu) {
+    if (!menu) return;
+    try {
+      const sec = menu.querySelector('.yrp-menu-section[data-section="subtitles"]');
+      if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
+    } catch (e) {
+    }
+  }
+  function insertMainEntry(menu, label, action, extra, ensureTransparentMenuButton2, withSubmenuChevron2) {
+    if (!menu) return null;
+    const firstSection = menu.querySelector(".yrp-menu-section") || null;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "yrp-menu-item";
+    btn.setAttribute("data-action", action);
+    btn.textContent = label;
+    ensureTransparentMenuButton2(btn);
+    if (extra && extra.disabled === true) {
+      btn.disabled = true;
+      btn.style.opacity = "0.6";
+    }
+    if (extra && extra.hasSubmenu === true) {
+      withSubmenuChevron2(btn);
+    }
+    if (firstSection && firstSection.parentNode === menu) menu.insertBefore(btn, firstSection);
+    else menu.appendChild(btn);
+    return btn;
+  }
+  function speedOptions() {
+    return [0.5, 0.75, 1, 1.25, 1.5, 2];
+  }
+  function buildSpeedMenuView(menu, video, styleBackButton2, ensureTransparentMenuButton2) {
+    if (!menu) return;
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "yrp-menu-item";
+    back.setAttribute("data-action", "back");
+    back.textContent = "\u2190 Back";
+    styleBackButton2(back);
+    menu.appendChild(back);
+    const cur = isFinite(video.playbackRate) ? video.playbackRate : 1;
+    speedOptions().forEach(function(s) {
+      const it = document.createElement("button");
+      it.type = "button";
+      it.className = "yrp-menu-item";
+      it.setAttribute("data-action", "set-speed");
+      it.setAttribute("data-speed", String(s));
+      it.textContent = (s === 1 ? "1.0x" : String(s) + "x") + (Math.abs(s - cur) < 1e-3 ? " \u2713" : "");
+      ensureTransparentMenuButton2(it);
+      menu.appendChild(it);
+    });
+  }
+  function applySpeed(video, sp) {
+    const s = parseFloat(String(sp));
+    if (!isFinite(s) || s <= 0) return;
+    video.playbackRate = s;
+    try {
+      localStorage.setItem("playback_speed", String(s));
+    } catch (e) {
+    }
+  }
+  var MenuManager = class {
+    constructor(menu) {
+      this.menu = menu;
+      this.menuView = "main";
+      this.menuMainHTML = "";
+      this.menuFixedMinHeight = 0;
+    }
+    ensureMainSnapshot() {
+      if (!this.menu) return;
+      if (!this.menuMainHTML) this.menuMainHTML = this.menu.innerHTML || "";
+    }
+    lockHeightFromCurrent() {
+      if (!this.menu) return;
+      if (this.menuFixedMinHeight > 0) return;
+      try {
+        const r = this.menu.getBoundingClientRect();
+        this.menuFixedMinHeight = Math.ceil(r.height || 0);
+        if (this.menuFixedMinHeight > 0) this.menu.style.minHeight = this.menuFixedMinHeight + "px";
+      } catch (e) {
+      }
+    }
+    resetHeightLock() {
+      if (!this.menu) return;
+      this.menuFixedMinHeight = 0;
+      this.menu.style.minHeight = "";
+    }
+    setView(view) {
+      this.menuView = view;
+    }
+    getView() {
+      return this.menuView;
+    }
+    openMainView(callbacks) {
+      if (!this.menu) return;
+      this.ensureMainSnapshot();
+      this.menu.innerHTML = this.menuMainHTML;
+      this.menuView = "main";
+      this.menu.style.maxHeight = "";
+      try {
+        const secSpeed = this.menu.querySelector('.yrp-menu-section[data-section="speed"]');
+        if (secSpeed && secSpeed.parentNode) secSpeed.parentNode.removeChild(secSpeed);
+      } catch (e) {
+      }
+      removeFutureSubtitlesSection(this.menu);
+      normalizeQualitySectionTypography(this.menu, ensureTransparentMenuButton);
+      if (callbacks) {
+        callbacks.injectSpeed && callbacks.injectSpeed();
+        callbacks.injectLanguages && callbacks.injectLanguages();
+        callbacks.injectSubtitles && callbacks.injectSubtitles();
+      }
+    }
+    /**
+     * Constrain menu height to a fraction of player height
+     * @param {number} fraction - Fraction of player height (default 2/3)
+     */
+    constrainToPlayerHeight(fraction = 2 / 3) {
+      if (!this.menu) return;
+      try {
+        const playerContainer = this.menu.closest(".yrp-container");
+        if (playerContainer) {
+          const videoWrap = playerContainer.querySelector(".yrp-video-wrap");
+          if (videoWrap) {
+            const playerHeight = videoWrap.getBoundingClientRect().height;
+            const maxMenuHeight = Math.floor(playerHeight * fraction) - 34;
+            if (maxMenuHeight > 100) {
+              this.menu.style.maxHeight = maxMenuHeight + "px";
+            }
+          }
+        }
+      } catch (e) {
+      }
+    }
+  };
+
+  // src/player.core.js
+  var import_meta = {};
+  function detectPlayerName() {
+    try {
+      const u = new URL(import_meta.url);
+      const m = u.pathname.match(/\/static\/players\/([^\/]+)\//);
+      if (m) return m[1];
+    } catch (e) {
+    }
+    try {
+      const s = document.currentScript && document.currentScript.src || "";
+      const m2 = s.match(/\/static\/players\/([^\/]+)\//);
+      if (m2) return m2[1];
+    } catch (e) {
+    }
+    try {
+      const host = document.querySelector(".player-host[data-player]");
+      if (host) {
+        const pn = String(host.getAttribute("data-player") || "").trim();
+        if (pn) return pn;
+      }
+    } catch (e) {
+    }
+    return "yurtube";
+  }
+  function initAll() {
+    const NAME = detectPlayerName();
+    const BASE = `/static/players/${NAME}`;
+    const hosts = document.querySelectorAll(`.player-host[data-player="${NAME}"]`);
+    if (!hosts.length) return;
+    fetch(BASE + "/templates/player.html", { credentials: "same-origin" }).then((r) => r.text()).then(function(html) {
+      for (let i = 0; i < hosts.length; i++) mountOne(hosts[i], html, BASE);
+    }).catch(function() {
+    });
+  }
+  function fmtDebug(debug, ...args) {
+    if (!debug) return;
+    try {
+      console.debug("[YRP]", ...args);
+    } catch (e) {
+    }
+  }
+  function mountOne(host, tpl, BASE) {
+    host.innerHTML = tpl;
+    const root = host.querySelector(".yrp-container");
+    const vw = root.querySelector(".yrp-video-wrap");
+    const video = root.querySelector(".yrp-video");
+    const source = video.querySelector("source");
+    const videoSrc = host.getAttribute("data-video-src") || "";
+    const poster = host.getAttribute("data-poster-url") || "";
+    const vid = host.getAttribute("data-video-id") || "";
+    const subs = parseJSONAttr(host, "data-subtitles", []);
+    const opts = parseJSONAttr(host, "data-options", {});
+    const spritesVtt = host.getAttribute("data-sprites-vtt") || "";
+    const captionVtt = host.getAttribute("data-caption-vtt") || "";
+    const captionLang = host.getAttribute("data-caption-lang") || "";
+    const DEBUG = /\byrpdebug=1\b/i.test(location.search) || !!(opts && opts.debug);
+    const d = (...a) => fmtDebug(DEBUG, ...a);
+    if (source) source.setAttribute("src", videoSrc);
+    if (poster) video.setAttribute("poster", poster);
+    if (opts.autoplay) video.setAttribute("autoplay", "");
+    if (opts.muted) video.setAttribute("muted", "");
+    if (opts.loop) video.setAttribute("loop", "");
+    if (vid) root.setAttribute("data-video-id", vid);
+    if (spritesVtt) root.setAttribute("data-sprites-vtt", spritesVtt);
+    video.setAttribute("playsinline", "");
+    if (Array.isArray(subs)) {
+      subs.forEach(function(t) {
+        if (!t || !t.src) return;
+        const tr = document.createElement("track");
+        tr.setAttribute("kind", "captions");
+        if (t.srclang) tr.setAttribute("srclang", String(t.srclang));
+        if (t.label) tr.setAttribute("label", String(t.label));
+        tr.setAttribute("src", String(t.src));
+        if (t.default) tr.setAttribute("default", "");
+        video.appendChild(tr);
+      });
+    }
+    if (captionVtt) {
+      try {
+        const ctr = document.createElement("track");
+        ctr.setAttribute("kind", "captions");
+        ctr.setAttribute("src", captionVtt);
+        ctr.setAttribute("srclang", captionLang || "auto");
+        ctr.setAttribute("label", captionLang || "Original");
+        ctr.setAttribute("default", "");
+        video.appendChild(ctr);
+      } catch (e) {
+        d("caption append failed", e);
+      }
+    }
+    try {
+      video.load();
+      d("video.load()", { src: videoSrc });
+    } catch (e) {
+      d("video.load() error", e);
+    }
+    installFallbackGuards(video, source, d);
+    const iconBase = BASE + "/img/buttons";
+    [
+      ["--icon-play", "play.svg"],
+      ["--icon-pause", "pause.svg"],
+      ["--icon-prev", "prev.svg"],
+      ["--icon-next", "next.svg"],
+      ["--icon-vol", "volume.svg"],
+      ["--icon-mute", "mute.svg"],
+      ["--icon-cc", "cc.svg"],
+      ["--icon-mini", "mini.svg"],
+      ["--icon-settings", "settings.svg"],
+      ["--icon-theater", "theater.svg"],
+      ["--icon-full", "full.svg"],
+      ["--icon-autoplay-on", "autoplay-on.svg"],
+      ["--icon-autoplay-off", "autoplay-off.svg"],
+      ["--icon-shuffle-on", "shuffle-on.svg"],
+      ["--icon-shuffle-off", "shuffle-off.svg"],
+      ["--icon-cycle-on", "cycle-on.svg"],
+      ["--icon-cycle-off", "cycle-off.svg"]
+    ].forEach(([varName, file]) => {
+      root.style.setProperty(varName, `url("${iconBase}/${file}")`);
+    });
+    root.classList.add("yrp-icons-ready");
+    const centerLogo = root.querySelector(".yrp-center-logo");
+    if (centerLogo) centerLogo.setAttribute("src", BASE + "/img/logo.png");
+    const overlay = document.createElement("div");
+    overlay.className = "yrp-captions-layer";
+    Object.assign(overlay.style, {
+      position: "absolute",
+      left: "50%",
+      top: "80%",
+      transform: "translate(-50%,-50%)",
+      zIndex: "21",
+      pointerEvents: "auto",
+      userSelect: "none",
+      touchAction: "none"
+    });
+    const textBox = document.createElement("div");
+    textBox.className = "yrp-captions-text";
+    Object.assign(textBox.style, {
+      display: "inline-block",
+      background: "rgba(0,0,0,0.55)",
+      color: "#fff",
+      fontSize: "16px",
+      lineHeight: "1.35",
+      padding: "6px 10px",
+      borderRadius: "6px",
+      maxWidth: "80%",
+      minWidth: "220px",
+      boxShadow: "0 2px 6px rgba(0,0,0,0.35)",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-word"
+    });
+    overlay.appendChild(textBox);
+    if (vw) {
+      vw.style.position = "relative";
+      vw.appendChild(overlay);
+    }
+    const dragState = { active: false, startX: 0, startY: 0, startLeftPct: 50, startTopPct: 80 };
+    let userMoved = false;
+    function getVideoWrapRect() {
+      return vw ? vw.getBoundingClientRect() : { width: 0, height: 0, left: 0, top: 0 };
+    }
+    function updateTextBoxMaxWidthByCenter(cx) {
+      const r = getVideoWrapRect();
+      const avail = Math.min(cx, r.width - cx) * 2;
+      const pad = 12, minW = 220;
+      textBox.style.maxWidth = Math.max(minW, Math.floor(avail - pad)) + "px";
+    }
+    function startDrag(e) {
+      const t = e.touches ? e.touches[0] : e;
+      const r = getVideoWrapRect();
+      const ov = overlay.getBoundingClientRect();
+      dragState.startLeftPct = (ov.left + ov.width / 2 - r.left) / r.width * 100;
+      dragState.startTopPct = (ov.top + ov.height / 2 - r.top) / r.height * 100;
+      dragState.active = true;
+      dragState.startX = t.clientX;
+      dragState.startY = t.clientY;
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    function moveDrag(e) {
+      if (!dragState.active) return;
+      const t = e.touches ? e.touches[0] : e;
+      const dx = t.clientX - dragState.startX;
+      const dy = t.clientY - dragState.startY;
+      const r = getVideoWrapRect();
+      let newLeftPx = dragState.startLeftPct / 100 * r.width + dx;
+      let newTopPx = dragState.startTopPct / 100 * r.height + dy;
+      const ov = overlay.getBoundingClientRect();
+      const halfW = ov.width / 2, halfH = ov.height / 2;
+      newLeftPx = clamp(newLeftPx, halfW, r.width - halfW);
+      newTopPx = clamp(newTopPx, halfH, r.height - halfH);
+      overlay.style.left = newLeftPx / r.width * 100 + "%";
+      overlay.style.top = newTopPx / r.height * 100 + "%";
+      overlay.style.transform = "translate(-50%,-50%)";
+      userMoved = true;
+      updateTextBoxMaxWidthByCenter(newLeftPx);
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    function endDrag(e) {
+      if (dragState.active) {
+        dragState.active = false;
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }
+    overlay.addEventListener("mousedown", startDrag);
+    overlay.addEventListener("touchstart", startDrag, { passive: false });
+    document.addEventListener("mousemove", moveDrag);
+    document.addEventListener("touchmove", moveDrag, { passive: false });
+    document.addEventListener("mouseup", endDrag);
+    document.addEventListener("touchend", endDrag);
+    overlay.addEventListener("click", function(e) {
+      e.stopPropagation();
+    });
+    function adjustOverlayAuto() {
+      if (userMoved) return;
+      const controlsVisible = !root.classList.contains("autohide");
+      overlay.style.top = controlsVisible ? "78%" : "82%";
+      overlay.style.left = "50%";
+      overlay.style.transform = "translate(-50%,-50%)";
+      updateTextBoxMaxWidthByCenter(getVideoWrapRect().width / 2);
+    }
+    let startAt = 0;
+    if (typeof opts.start === "number" && opts.start > 0) startAt = Math.max(0, opts.start);
+    try {
+      const uWatch = new URL(window.location.href);
+      const tParam = uWatch.searchParams.get("t");
+      if (tParam != null) {
+        const tNum = parseInt(String(tParam).trim(), 10);
+        if (isFinite(tNum) && tNum > 0) startAt = Math.max(startAt, tNum);
+      }
+    } catch (e) {
+    }
+    wire(root, startAt, DEBUG, { overlay, textBox, autoAdjust: adjustOverlayAuto }, startAt, BASE);
+  }
+  function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
+    const d = (...a) => fmtDebug(DEBUG, ...a);
+    const video = root.querySelector(".yrp-video");
+    const centerPlay = root.querySelector(".yrp-center-play");
+    const btnPlay = root.querySelector(".yrp-play");
+    const btnPrev = root.querySelector(".yrp-prev");
+    const btnNext = root.querySelector(".yrp-next");
+    const btnVol = root.querySelector(".yrp-vol-btn");
+    const vol = root.querySelector(".yrp-volume");
+    const volSlider = root.querySelector(".yrp-vol-slider");
+    const tCur = root.querySelector(".yrp-time-current");
+    const tTot = root.querySelector(".yrp-time-total");
+    const progress = root.querySelector(".yrp-progress");
+    const rail = root.querySelector(".yrp-progress-rail");
+    const buf = root.querySelector(".yrp-progress-buffer");
+    const played = root.querySelector(".yrp-progress-played");
+    const handle = root.querySelector(".yrp-progress-handle");
+    const tooltip = root.querySelector(".yrp-progress-tooltip");
+    const btnSettings = root.querySelector(".yrp-settings");
+    const menu = root.querySelector(".yrp-menu");
+    const btnTheater = root.querySelector(".yrp-theater");
+    const btnFull = root.querySelector(".yrp-fullscreen");
+    const btnPip = root.querySelector(".yrp-pip");
+    const leftGrp = root.querySelector(".yrp-left");
+    const rightGrp = root.querySelector(".yrp-right");
+    const btnAutoplay = root.querySelector(".yrp-autoplay");
+    const btnSubtitles = root.querySelector(".yrp-subtitles");
+    let hideTimer = null, seeking = false, duration = 0;
+    let userTouchedVolume = false, autoMuteApplied = false;
+    let pipInSystem = false, pipWasPlayingOrig = false, pipWasMutedOrig = false, pipUserState = null;
+    let autoplayOn = !!load("autoplay", false);
+    const spritesVttUrl = root.getAttribute("data-sprites-vtt") || "";
+    let spriteCues = [], spriteDurationApprox = 0, spritePop = null, spritesLoaded = false, spritesLoadError = false;
+    let overlayActive = true;
+    let activeTrackIndex = 0;
+    let prefLang = function() {
+      try {
+        return String(localStorage.getItem("subtitle_lang") || "");
+      } catch (_) {
+        return "";
+      }
+    }();
+    let prefSpeed = function() {
+      try {
+        return parseFloat(localStorage.getItem("playback_speed") || "");
+      } catch (_) {
+        return NaN;
+      }
+    }();
+    const menuManager = new MenuManager(menu);
+    let menuBound = false;
+    function selectSubtitleLang(code) {
+      const idx = findTrackIndexByLang(video, code);
+      if (idx >= 0) {
+        activeTrackIndex = idx;
+        overlayActive = true;
+        applyPageModes(video, activeTrackIndex, overlayActive);
+        updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+        try {
+          localStorage.setItem("subtitle_lang", String(code || ""));
+        } catch (_) {
+        }
+        refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
+      }
+    }
+    function setSubtitlesEnabled(flag) {
+      overlayActive = !!flag;
+      applyPageModes(video, activeTrackIndex, overlayActive);
+      updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+      refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
+    }
+    function openMainMenuView() {
+      menuManager.openMainView({
+        injectSpeed: injectSpeedEntryIntoMain,
+        injectLanguages: injectLanguagesEntryIntoMain,
+        injectSubtitles: injectSubtitlesEntryIntoMain
+      });
+    }
+    function injectLanguagesEntryIntoMain() {
+      if (!menu) return;
+      if (menu.querySelector('.yrp-menu-item[data-action="open-langs"]')) return;
+      insertMainEntry(menu, "Languages", "open-langs", { hasSubmenu: true }, ensureTransparentMenuButton, withSubmenuChevron);
+    }
+    function injectSpeedEntryIntoMain() {
+      if (!menu) return;
+      if (menu.querySelector('.yrp-menu-item[data-action="open-speed"]')) return;
+      insertMainEntry(menu, "Speed", "open-speed", { hasSubmenu: true }, ensureTransparentMenuButton, withSubmenuChevron);
+    }
+    function injectSubtitlesEntryIntoMain() {
+      if (!menu) return;
+      if (menu.querySelector('.yrp-menu-item[data-action="open-subs"]')) return;
+      const has = anySubtitleTracks(video);
+      const btn = insertMainEntry(menu, "Subtitles", "open-subs", { hasSubmenu: true, disabled: !has }, ensureTransparentMenuButton, withSubmenuChevron);
+      if (btn && !has) btn.title = "No subtitle tracks";
+    }
+    function wrappedBuildLangsMenuView() {
+      buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
+      menuManager.setView("langs");
+      menuManager.constrainToPlayerHeight(2 / 3);
+    }
+    function wrappedBuildSpeedMenuView() {
+      buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
+      menuManager.setView("speed");
+      menuManager.constrainToPlayerHeight(2 / 3);
+    }
+    function wrappedBuildSubtitlesMenuView() {
+      buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
+      menuManager.setView("subs");
+      menuManager.constrainToPlayerHeight(2 / 3);
+    }
+    function applyIcon2(button, varOn, varOff, isOn, fallbackEmoji) {
+      const varName = isOn ? varOn : varOff;
+      const cs = getComputedStyle(root);
+      const val = cs.getPropertyValue(varName) || root.style.getPropertyValue(varName) || "";
+      const m = String(val).match(/url\(["']?([^"')]+)["']?\)/i);
+      const url = m && m[1] ? m[1] : null;
+      if (!url) {
+        button.style.webkitMaskImage = "";
+        button.style.maskImage = "";
+        button.textContent = fallbackEmoji;
+        button.style.backgroundColor = "transparent";
+        button.style.color = "var(--yrp-icon-color)";
+        button.style.textIndent = "0";
+        button.dataset.maskApplied = "0";
+        return;
+      }
+      button.textContent = "";
+      const iconVar = `var(${varName})`;
+      button.style.webkitMaskImage = iconVar;
+      button.style.maskImage = iconVar;
+      button.style.backgroundColor = "var(--yrp-icon-color)";
+      button.style.color = "";
+      button.style.textIndent = "-9999px";
+      button.dataset.maskApplied = "1";
+    }
+    function ensureSpritePop() {
+      if (spritePop) return spritePop;
+      if (!progress) return null;
+      spritePop = document.createElement("div");
+      Object.assign(spritePop.style, {
+        position: "absolute",
+        display: "none",
+        bottom: "calc(100% + 30px)",
+        left: "0",
+        width: "160px",
+        height: "90px",
+        border: "1px solid #333",
+        background: "#000",
+        overflow: "hidden",
+        zIndex: "5"
+      });
+      spritePop.className = "yrp-sprite-pop";
+      if (getComputedStyle(progress).position === "static") progress.style.position = "relative";
+      progress.appendChild(spritePop);
+      return spritePop;
+    }
+    function parseTimestamp(ts) {
+      const m = String(ts || "").match(/^(\d{2}):(\d{2}):(\d{2}\.\d{3})$/);
+      if (!m) return 0;
+      return parseInt(m[1], 10) * 3600 + parseInt(m[2], 10) * 60 + parseFloat(m[3]);
+    }
+    function buildAbsoluteSpriteUrl(rel) {
+      if (!rel) return "";
+      try {
+        const vttAbs = new URL(spritesVttUrl, window.location.href);
+        return new URL(rel, vttAbs).href;
+      } catch (e) {
+        return rel;
+      }
+    }
+    function loadSpritesVTT() {
+      if (!spritesVttUrl || spritesLoaded || spritesLoadError) return;
+      let vttUrlAbs = "";
+      try {
+        vttUrlAbs = new URL(spritesVttUrl, window.location.href).href;
+      } catch (e) {
+        vttUrlAbs = spritesVttUrl;
+      }
+      fetch(vttUrlAbs, { credentials: "same-origin" }).then((r) => r.text()).then(function(text) {
+        const lines = text.split(/\r?\n/);
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+          if (line.indexOf("-->") >= 0) {
+            const parts = line.split("-->").map((s) => s.trim());
+            if (parts.length < 2) continue;
+            const start = parseTimestamp(parts[0]), end = parseTimestamp(parts[1]);
+            const ref = (lines[i + 1] || "").trim();
+            let spriteRel = "", x = 0, y = 0, w = 0, h = 0;
+            const hashIdx = ref.indexOf("#xywh=");
+            if (hashIdx > 0) {
+              spriteRel = ref.substring(0, hashIdx);
+              const xywh = ref.substring(hashIdx + 6).split(",");
+              if (xywh.length === 4) {
+                x = parseInt(xywh[0], 10);
+                y = parseInt(xywh[1], 10);
+                w = parseInt(xywh[2], 10);
+                h = parseInt(xywh[3], 10);
+              }
+            } else {
+              spriteRel = ref || "";
+            }
+            const abs = buildAbsoluteSpriteUrl(spriteRel);
+            spriteCues.push({ start, end, spriteUrl: abs, x, y, w, h });
+            if (end > spriteDurationApprox) spriteDurationApprox = end;
+            i++;
+          }
+        }
+        spritesLoaded = true;
+      }).catch(function() {
+        spritesLoadError = true;
+      });
+    }
+    function showSpritePreviewAtClientX(clientX) {
+      if (!spritesVttUrl || !spriteCues.length || !rail) return;
+      const rect = rail.getBoundingClientRect();
+      const x = clamp(clientX - rect.left, 0, rect.width);
+      const frac = rect.width > 0 ? x / rect.width : 0;
+      const t = (duration || spriteDurationApprox || 0) * frac;
+      let cue = null;
+      for (let i = 0; i < spriteCues.length; i++) {
+        const c = spriteCues[i];
+        if (t >= c.start && t < c.end) {
+          cue = c;
+          break;
+        }
+      }
+      const pop = ensureSpritePop();
+      if (!pop) return;
+      if (!cue || !cue.spriteUrl || cue.w <= 0 || cue.h <= 0) {
+        pop.style.display = "none";
+        return;
+      }
+      while (pop.firstChild) pop.removeChild(pop.firstChild);
+      const img = document.createElement("img");
+      Object.assign(img.style, { position: "absolute", left: -cue.x + "px", top: -cue.y + "px" });
+      img.src = cue.spriteUrl;
+      pop.appendChild(img);
+      pop.style.display = "block";
+      const leftPx = clamp(x - cue.w / 2, 0, rect.width - cue.w);
+      pop.style.left = leftPx + "px";
+      pop.style.width = cue.w + "px";
+      pop.style.height = cue.h + "px";
+    }
+    function refreshAutoplayBtn() {
+      if (!btnAutoplay) return;
+      const on = autoplayOn;
+      btnAutoplay.setAttribute("aria-pressed", on ? "true" : "false");
+      btnAutoplay.title = on ? "Autoplay on (A)" : "Autoplay off (A)";
+      btnAutoplay.textContent = "";
+      const iconVar = on ? "var(--icon-autoplay-on)" : "var(--icon-autoplay-off)";
+      Object.assign(btnAutoplay.style, {
+        backgroundColor: "currentColor",
+        webkitMaskImage: iconVar,
+        maskImage: iconVar,
+        webkitMaskRepeat: "no-repeat",
+        maskRepeat: "no-repeat",
+        webkitMaskPosition: "center",
+        maskPosition: "center",
+        webkitMaskSize: "20px 20px",
+        maskSize: "20px 20px",
+        opacity: on ? "1" : "0.6"
+      });
+    }
+    function refreshPlayBtn() {
+      if (!btnPlay) return;
+      const playing = !video.paused;
+      btnPlay.classList.toggle("icon-play", !playing);
+      btnPlay.classList.toggle("icon-pause", playing);
+      btnPlay.setAttribute("aria-label", playing ? "Pause (Space, K)" : "Play (Space, K)");
+      btnPlay.title = playing ? "Pause (Space, K)" : "Play (Space, K)";
+      btnPlay.textContent = "";
+      const iconVar = playing ? "var(--icon-pause)" : "var(--icon-play)";
+      Object.assign(btnPlay.style, {
+        backgroundColor: "currentColor",
+        webkitMaskImage: iconVar,
+        maskImage: iconVar,
+        webkitMaskRepeat: "no-repeat",
+        maskRepeat: "no-repeat",
+        webkitMaskPosition: "center",
+        maskPosition: "center",
+        webkitMaskSize: "20px 20px",
+        maskSize: "20px 20px"
+      });
+    }
+    function scheduleAutoHide(ms) {
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = setTimeout(function() {
+        root.classList.add("autohide");
+        hooks && hooks.autoAdjust && hooks.autoAdjust();
+      }, Math.max(0, ms || 1200));
+    }
+    function showControls() {
+      root.classList.remove("autohide");
+      hooks && hooks.autoAdjust && hooks.autoAdjust();
+      scheduleAutoHide(2e3);
+    }
+    function updateTimes() {
+      try {
+        duration = isFinite(video.duration) ? video.duration : 0;
+      } catch (e) {
+        duration = 0;
+      }
+      if (tTot) tTot.textContent = fmtTime(duration);
+      if (tCur) tCur.textContent = fmtTime(video.currentTime || 0);
+    }
+    function updateProgress() {
+      const d2 = duration || 0, ct = video.currentTime || 0, f = d2 > 0 ? clamp(ct / d2, 0, 1) : 0;
+      if (played) played.style.width = (f * 100).toFixed(3) + "%";
+      if (handle) handle.style.left = (f * 100).toFixed(3) + "%";
+      let b = 0;
+      if (video.buffered && video.buffered.length > 0) {
+        try {
+          b = video.buffered.end(video.buffered.length - 1);
+        } catch (e) {
+          b = 0;
+        }
+      }
+      const bf = d2 > 0 ? clamp(b / d2, 0, 1) : 0;
+      if (buf) buf.style.width = (bf * 100).toFixed(3) + "%";
+    }
+    function playToggle() {
+      if (video.paused) video.play().catch(() => {
+      });
+      else video.pause();
+    }
+    function setMutedToggle() {
+      video.muted = !video.muted;
+      refreshVolIcon();
+    }
+    function refreshVolIcon() {
+      const v = video.muted ? 0 : video.volume;
+      const label = video.muted || v === 0 ? "Mute" : "Vol";
+      if (btnVol) {
+        btnVol.textContent = label;
+        btnVol.classList.toggle("icon-mute", label === "Mute");
+        btnVol.classList.toggle("icon-vol", label !== "Mute");
+      }
+    }
+    function seekByClientX(xClient) {
+      if (!rail) return;
+      const rect = rail.getBoundingClientRect();
+      const x = clamp(xClient - rect.left, 0, rect.width);
+      const f = rect.width > 0 ? x / rect.width : 0;
+      video.currentTime = (duration || 0) * f;
+    }
+    function updateTooltip(xClient) {
+      if (!tooltip || !rail) return;
+      const rect = rail.getBoundingClientRect();
+      const x = clamp(xClient - rect.left, 0, rect.width);
+      const f = rect.width > 0 ? x / rect.width : 0;
+      const t = (duration || 0) * f;
+      tooltip.textContent = fmtTime(t);
+      tooltip.style.left = (f * 100).toFixed(3) + "%";
+      tooltip.hidden = false;
+    }
+    (function resumePosition() {
+      const vid = root.getAttribute("data-video-id") || "";
+      if (!vid) return;
+      if (startFromUrl > 0) {
+        try {
+          const s0 = load("resume", {});
+          if (s0 && s0[vid]) {
+            delete s0[vid];
+            save("resume", s0);
+          }
+        } catch (e) {
+        }
+        return;
+      }
+      const map = load("resume", {}), rec = map[vid], now = Date.now();
+      function applyResume(t) {
+        const d2 = isFinite(video.duration) ? video.duration : 0;
+        if (d2 && t > 10 && t < d2 - 5) {
+          try {
+            video.currentTime = t;
+          } catch (e) {
+          }
+        }
+      }
+      if (rec && typeof rec.t === "number" && now - (rec.ts || 0) < 180 * 24 * 3600 * 1e3) {
+        const setAt = Math.max(0, rec.t | 0);
+        if (isFinite(video.duration) && video.duration > 0) applyResume(setAt);
+        else video.addEventListener("loadedmetadata", function once() {
+          video.removeEventListener("loadedmetadata", once);
+          applyResume(setAt);
+        });
+      }
+      const savePos = throttle(function() {
+        const d2 = isFinite(video.duration) ? video.duration : 0;
+        const cur = Math.max(0, Math.floor(video.currentTime || 0));
+        const m = load("resume", {});
+        m[vid] = { t: cur, ts: Date.now(), d: d2 };
+        const keys = Object.keys(m);
+        if (keys.length > 200) {
+          keys.sort((a, b) => (m[a].ts || 0) - (m[b].ts || 0));
+          for (let i = 0; i < keys.length - 200; i++) delete m[keys[i]];
+        }
+        save("resume", m);
+      }, 3e3);
+      video.addEventListener("timeupdate", function() {
+        if (!video.paused && !video.seeking) savePos();
+      });
+      video.addEventListener("ended", function() {
+        const m = load("resume", {});
+        delete m[vid];
+        save("resume", m);
+      });
+    })();
+    (function theaterInit() {
+      function applyTheater(flag) {
+        root.classList.toggle("yrp-theater", flag);
+        try {
+          if (typeof window.setTheater === "function") {
+            window.setTheater(flag);
+          } else {
+            const layout = root.closest(".watch-layout") || document.querySelector(".watch-layout");
+            if (layout) {
+              layout.classList.toggle("theater-mode", flag);
+              if (typeof window.relocateUpNext === "function") window.relocateUpNext();
+            }
+          }
+        } catch (e) {
+        }
+        if (flag) {
+          root.style.maxWidth = "";
+          root.style.minWidth = "";
+          root.style.width = "";
+        } else {
+          adjustWidthByAspect();
+        }
+      }
+      const thSaved = !!load("theater", false);
+      if (thSaved) applyTheater(true);
+      if (btnTheater) {
+        btnTheater.addEventListener("click", function() {
+          const next = !root.classList.contains("yrp-theater");
+          applyTheater(next);
+          save("theater", next);
+          showControls();
+        });
+      }
+    })();
+    video.addEventListener("loadedmetadata", function() {
+      if (startAt > 0) {
+        try {
+          video.currentTime = Math.min(startAt, Math.floor(video.duration || startAt));
+        } catch (e) {
+        }
+      }
+      setTimeout(adjustWidthByAspect, 0);
+      updateTimes();
+      updateProgress();
+      refreshVolIcon();
+      refreshAutoplayBtn();
+      refreshPlayBtn();
+      refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
+      if (prefLang) {
+        const idxPref = findTrackIndexByLang(video, prefLang);
+        if (idxPref >= 0) activeTrackIndex = idxPref;
+      }
+      if (isFinite(prefSpeed) && prefSpeed > 0) {
+        applySpeed(prefSpeed);
+      }
+      chooseActiveTrack(video, activeTrackIndex);
+      applyPageModes(video, activeTrackIndex, overlayActive);
+      refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
+      scheduleAutoHide(1200);
+      loadSpritesVTT();
+      updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+      const r = root.querySelector(".yrp-video-wrap").getBoundingClientRect();
+      const centerX = r.width / 2, tb = root.querySelector(".yrp-captions-text");
+      if (tb) {
+        const avail = Math.min(centerX, r.width - centerX) * 2;
+        const pad = 12, minW = 220;
+        tb.style.maxWidth = Math.max(minW, Math.floor(avail - pad)) + "px";
+      }
+      logTracks(video, d, "after loadedmetadata");
+      if (menu && !menu.hidden) {
+        const currentView = menuManager.getView();
+        if (currentView === "main") openMainMenuView();
+        else if (currentView === "langs") wrappedBuildLangsMenuView();
+        else if (currentView === "speed") wrappedBuildSpeedMenuView();
+        else if (currentView === "subs") wrappedBuildSubtitlesMenuView();
+      }
+    });
+    function wrappedLogTracks(prefix) {
+      logTracks(video, d, prefix);
+    }
+    function adjustWidthByAspect() {
+      if (root.classList.contains("yrp-theater")) return;
+      const cs = getComputedStyle(video);
+      const maxH = cssPxToNum(cs.getPropertyValue("max-height")) || video.clientHeight || 0;
+      const vw0 = video.videoWidth || 16, vh0 = video.videoHeight || 9;
+      const aspect = vh0 > 0 ? vw0 / vh0 : 16 / 9;
+      const targetH = Math.min(maxH || video.clientHeight || 0, window.innerHeight * 0.9);
+      if (!targetH || !isFinite(targetH)) return;
+      const targetW = Math.floor(targetH * aspect);
+      const maxPage = Math.floor(window.innerWidth * 0.95);
+      const controlsMin = measureControlsMinWidth();
+      const finalW = Math.max(controlsMin, Math.min(targetW, maxPage));
+      root.style.maxWidth = finalW + "px";
+      root.style.minWidth = controlsMin + "px";
+      root.style.width = "100%";
+    }
+    function measureControlsMinWidth() {
+      const lw = leftGrp ? leftGrp.getBoundingClientRect().width : 0;
+      const rw = rightGrp ? rightGrp.getBoundingClientRect().width : 0;
+      const pad = 24;
+      const mw = Math.ceil(lw + rw + pad);
+      return !isFinite(mw) || mw <= 0 ? 480 : mw;
+    }
+    (function autoplayInit() {
+      const host = root.closest(".player-host") || root;
+      const opt = parseJSONAttr(host, "data-options", null);
+      function want() {
+        if (opt && opt.autoplay === true) return true;
+        return !!load("autoplay", false);
+      }
+      if (!want()) {
+        setTimeout(function() {
+          scheduleAutoHide(1e3);
+        }, 0);
+        return;
+      }
+      function sequence() {
+        let p = null;
+        try {
+          p = video.play();
+        } catch (e) {
+          p = null;
+        }
+        if (p && typeof p.then === "function") {
+          p.then(function() {
+          }).catch(function() {
+            if (!video.muted) {
+              autoMuteApplied = true;
+              video.muted = true;
+              video.setAttribute("muted", "");
+              try {
+                video.play().catch(function() {
+                });
+              } catch (e) {
+              }
+            }
+          });
+        } else {
+          setTimeout(function() {
+            if (video.paused) {
+              autoMuteApplied = true;
+              video.muted = true;
+              video.setAttribute("muted", "");
+              try {
+                video.play().catch(function() {
+                });
+              } catch (e) {
+              }
+            }
+          }, 0);
+        }
+      }
+      let fired = false;
+      function fireOnce() {
+        if (fired) return;
+        fired = true;
+        sequence();
+      }
+      if (video.readyState >= 1) fireOnce();
+      ["loadedmetadata", "loadeddata", "canplay", "canplaythrough"].forEach(function(ev) {
+        const once = function() {
+          video.removeEventListener(ev, once);
+          fireOnce();
+        };
+        video.addEventListener(ev, once);
+      });
+      setTimeout(function() {
+        if (video.paused) {
+          autoMuteApplied = true;
+          video.muted = true;
+          video.setAttribute("muted", "");
+          try {
+            video.play().catch(function() {
+            });
+          } catch (e) {
+          }
+        }
+      }, 1200);
+    })();
+    window.addEventListener("resize", adjustWidthByAspect);
+    video.addEventListener("timeupdate", function() {
+      updateTimes();
+      updateProgress();
+      updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+    });
+    video.addEventListener("progress", updateProgress);
+    video.addEventListener("play", function() {
+      root.classList.add("playing");
+      refreshPlayBtn();
+      showControls();
+    });
+    video.addEventListener("pause", function() {
+      root.classList.remove("playing");
+      refreshPlayBtn();
+      showControls();
+    });
+    function toggleMini() {
+      if (!document.pictureInPictureEnabled || !video.requestPictureInPicture || video.disablePictureInPicture) return;
+      if (document.pictureInPictureElement === video) document.exitPictureInPicture().catch(function() {
+      });
+      else video.requestPictureInPicture().catch(function() {
+      });
+    }
+    video.addEventListener("click", playToggle);
+    centerPlay && centerPlay.addEventListener("click", playToggle);
+    btnPlay && btnPlay.addEventListener("click", playToggle);
+    btnPrev && btnPrev.addEventListener("click", function() {
+      root.dispatchEvent(new CustomEvent("yrp-prev", { bubbles: true }));
+    });
+    btnNext && btnNext.addEventListener("click", function() {
+      root.dispatchEvent(new CustomEvent("yrp-next", { bubbles: true }));
+    });
+    (function playlistSupport() {
+      var url = new URL(window.location.href);
+      var playlistId = url.searchParams.get("p");
+      var currentVid = url.searchParams.get("v") || (root.getAttribute("data-video-id") || "");
+      if (!playlistId) {
+        if (btnPrev) btnPrev.style.display = "none";
+        if (btnNext) btnNext.style.display = "none";
+        var oldSh = root.querySelector(".yrp-shuffle");
+        var oldCy = root.querySelector(".yrp-cycle");
+        if (oldSh) oldSh.style.display = "none";
+        if (oldCy) oldCy.style.display = "none";
+        return;
+      } else {
+        if (btnPrev) btnPrev.style.display = "";
+        if (btnNext) btnNext.style.display = "";
+      }
+      function collectOrder() {
+        var items = [];
+        var right = document.querySelector("#upnext-block .rb-list");
+        var under = document.querySelector("#panel-upnext .upnext-list");
+        var anchors = [];
+        if (right) anchors = right.querySelectorAll("a.rb-item[href*='/watch']");
+        else if (under) anchors = under.querySelectorAll("a.rb-item[href*='/watch']");
+        anchors.forEach(function(a) {
+          var href = a.getAttribute("href") || "";
+          var m = href.match(/[?&]v=([^&]+)/);
+          if (m && m[1]) items.push(decodeURIComponent(m[1]));
+        });
+        return items;
+      }
+      var order = collectOrder();
+      if (!order || order.length === 0) return;
+      var curIndex = order.indexOf(currentVid);
+      if (curIndex < 0) curIndex = 0;
+      function plKey(s) {
+        return "pl:" + playlistId + ":" + s;
+      }
+      var orderMode = function() {
+        var v = load(plKey("order"), "direct");
+        return v === "shuffle" ? "shuffle" : "direct";
+      }();
+      var cycleOn = function() {
+        var v = load(plKey("cycle"), "0");
+        return v === true || v === "1";
+      }();
+      function saveOrderMode(mode) {
+        orderMode = mode === "shuffle" ? "shuffle" : "direct";
+        save(plKey("order"), orderMode);
+        refreshShuffleBtn();
+      }
+      function saveCycle(flag) {
+        cycleOn = !!flag;
+        save(plKey("cycle"), cycleOn ? "1" : "0");
+        refreshCycleBtn();
+      }
+      function pickRandomIndex(excludeIdx) {
+        if (order.length <= 1) return excludeIdx;
+        var tries = 0, rnd = excludeIdx;
+        while (tries < 6 && rnd === excludeIdx) {
+          rnd = Math.floor(Math.random() * order.length);
+          tries++;
+        }
+        if (rnd === excludeIdx) rnd = (excludeIdx + 1) % order.length;
+        return rnd;
+      }
+      function nextIndex() {
+        if (orderMode === "shuffle") return pickRandomIndex(curIndex);
+        var ni = curIndex + 1;
+        if (ni >= order.length) return cycleOn ? 0 : -1;
+        return ni;
+      }
+      function prevIndex() {
+        if (orderMode === "shuffle") return pickRandomIndex(curIndex);
+        var pi = curIndex - 1;
+        if (pi < 0) return cycleOn ? order.length - 1 : -1;
+        return pi;
+      }
+      function gotoIndex(idx) {
+        idx = Math.max(0, Math.min(order.length - 1, idx));
+        var vidTarget = order[idx];
+        if (!vidTarget) return;
+        try {
+          var m = load("resume", {});
+          if (m && m[vidTarget]) {
+            delete m[vidTarget];
+            save("resume", m);
+          }
+        } catch (_) {
+        }
+        var nu = new URL(window.location.href);
+        nu.searchParams.set("v", vidTarget);
+        nu.searchParams.set("p", playlistId);
+        window.location.href = nu.toString();
+      }
+      root.addEventListener("yrp-prev", function() {
+        var i = prevIndex();
+        if (i >= 0) gotoIndex(i);
+      });
+      root.addEventListener("yrp-next", function() {
+        var i = nextIndex();
+        if (i >= 0) gotoIndex(i);
+      });
+      var btnShuffle = root.querySelector(".yrp-shuffle");
+      var btnCycle = root.querySelector(".yrp-cycle");
+      if (!btnShuffle) {
+        btnShuffle = document.createElement("button");
+        btnShuffle.type = "button";
+        btnShuffle.className = "yrp-btn yrp-shuffle";
+        btnShuffle.title = "Shuffle playlist";
+        btnShuffle.setAttribute("aria-label", "Shuffle playlist");
+        Object.assign(btnShuffle.style, {
+          border: "none",
+          width: "var(--yrp-icon-button-width)",
+          height: "28px",
+          cursor: "pointer",
+          padding: "0",
+          marginLeft: "6px",
+          marginRight: "2px"
+        });
+      }
+      if (!btnCycle) {
+        btnCycle = document.createElement("button");
+        btnCycle.type = "button";
+        btnCycle.className = "yrp-btn yrp-cycle";
+        btnCycle.title = "Cycle playlist";
+        btnCycle.setAttribute("aria-label", "Cycle playlist");
+        Object.assign(btnCycle.style, {
+          border: "none",
+          width: "var(--yrp-icon-button-width)",
+          height: "28px",
+          cursor: "pointer",
+          padding: "0",
+          marginRight: "8px"
+        });
+      }
+      btnShuffle.dataset.forceEmoji = "0";
+      btnCycle.dataset.forceEmoji = "0";
+      function refreshShuffleBtn() {
+        btnShuffle.setAttribute("aria-pressed", orderMode === "shuffle" ? "true" : "false");
+        applyIcon2(btnShuffle, "--icon-shuffle-on", "--icon-shuffle-off", orderMode === "shuffle", "\u{1F500}");
+        btnShuffle.style.opacity = orderMode === "shuffle" ? "1" : "0.55";
+        btnShuffle.style.display = "";
+      }
+      function refreshCycleBtn() {
+        btnCycle.setAttribute("aria-pressed", cycleOn ? "true" : "false");
+        applyIcon2(btnCycle, "--icon-cycle-on", "--icon-cycle-off", !!cycleOn, "\u{1F501}");
+        btnCycle.style.opacity = "1";
+        btnCycle.style.display = "";
+      }
+      refreshShuffleBtn();
+      refreshCycleBtn();
+      btnShuffle.addEventListener("click", function() {
+        saveOrderMode(orderMode === "shuffle" ? "direct" : "shuffle");
+      });
+      btnCycle.addEventListener("click", function() {
+        saveCycle(!cycleOn);
+      });
+      try {
+        var container = leftGrp || btnNext && btnNext.parentNode || root;
+        if (vol && container) {
+          container.insertBefore(btnShuffle, vol);
+          container.insertBefore(btnCycle, vol);
+        } else if (btnNext && container) {
+          container.insertBefore(btnShuffle, btnNext.nextSibling);
+          container.insertBefore(btnCycle, btnShuffle.nextSibling);
+        } else {
+          container.appendChild(btnShuffle);
+          container.appendChild(btnCycle);
+        }
+      } catch (_) {
+      }
+      video.addEventListener("ended", function() {
+        var i = nextIndex();
+        if (i >= 0) gotoIndex(i);
+      });
+      document.addEventListener("keydown", function(e) {
+        var t = e.target, tag = t && t.tagName ? t.tagName.toUpperCase() : "";
+        if (t && (t.isContentEditable || tag === "INPUT" || tag === "TEXTAREA")) return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        var code = e.code || "";
+        if (code === "PageUp") {
+          e.preventDefault();
+          var i = prevIndex();
+          if (i >= 0) gotoIndex(i);
+        } else if (code === "PageDown") {
+          e.preventDefault();
+          var j = nextIndex();
+          if (j >= 0) gotoIndex(j);
+        }
+      });
+    })();
+    if (btnVol) {
+      btnVol.addEventListener("click", function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        userTouchedVolume = true;
+        autoMuteApplied = false;
+        setMutedToggle();
+        showControls();
+        root.classList.add("vol-open");
+        setTimeout(function() {
+          root.classList.remove("vol-open");
+        }, 1200);
+      });
+    }
+    if (vol) {
+      vol.addEventListener("wheel", function(e) {
+        e.preventDefault();
+        userTouchedVolume = true;
+        autoMuteApplied = false;
+        const step = 0.05, v = video.muted ? 0 : video.volume;
+        const nv = clamp(v + (e.deltaY < 0 ? step : -step), 0, 1);
+        video.volume = nv;
+        if (nv > 0) video.muted = false;
+        volSlider && (volSlider.value = String(nv));
+        refreshVolIcon();
+        showControls();
+      }, { passive: false });
+    }
+    if (volSlider) {
+      volSlider.addEventListener("input", function() {
+        userTouchedVolume = true;
+        autoMuteApplied = false;
+        let v = parseFloat(volSlider.value || "1");
+        if (!isFinite(v)) v = 1;
+        v = clamp(v, 0, 1);
+        video.volume = v;
+        if (v > 0) video.muted = false;
+        refreshVolIcon();
+      });
+      volSlider.addEventListener("wheel", function(e) {
+        e.preventDefault();
+        userTouchedVolume = true;
+        autoMuteApplied = false;
+        const step = 0.05, v = video.muted ? 0 : video.volume;
+        const nv = clamp(v + (e.deltaY < 0 ? step : -step), 0, 1);
+        video.volume = nv;
+        if (nv > 0) video.muted = false;
+        volSlider.value = String(nv);
+        refreshVolIcon();
+        showControls();
+      }, { passive: false });
+    }
+    if (progress) {
+      progress.addEventListener("mousedown", function(e) {
+        seeking = true;
+        hideMenus();
+        seekByClientX(e.clientX);
+      });
+      window.addEventListener("mousemove", function(e) {
+        if (seeking) seekByClientX(e.clientX);
+      });
+      window.addEventListener("mouseup", function() {
+        seeking = false;
+      });
+      progress.addEventListener("mousemove", function(e) {
+        updateTooltip(e.clientX);
+        if (spritesVttUrl && spritesLoaded && !spritesLoadError) showSpritePreviewAtClientX(e.clientX);
+        else if (spritesVttUrl && !spritesLoaded && !spritesLoadError) loadSpritesVTT();
+      });
+      progress.addEventListener("mouseleave", function() {
+        tooltip && (tooltip.hidden = true);
+        spritePop && (spritePop.style.display = "none");
+      });
+    }
+    function hideMenus() {
+      if (menu) {
+        menu.hidden = true;
+        btnSettings && btnSettings.setAttribute("aria-expanded", "false");
+      }
+      const ctx = root.querySelector(".yrp-context");
+      if (ctx) ctx.hidden = true;
+      root.classList.remove("vol-open");
+      menuManager.setView("main");
+      menuManager.resetHeightLock();
+    }
+    if (btnSettings && menu) {
+      menuManager.ensureMainSnapshot();
+      if (!menuBound) {
+        menuBound = true;
+        btnSettings.addEventListener("click", function(e) {
+          const open = menu.hidden ? false : true;
+          if (open) {
+            menu.hidden = true;
+            btnSettings.setAttribute("aria-expanded", "false");
+            menuManager.setView("main");
+            menuManager.resetHeightLock();
+          } else {
+            hideMenus();
+            openMainMenuView();
+            menu.hidden = false;
+            btnSettings.setAttribute("aria-expanded", "true");
+            menuManager.lockHeightFromCurrent();
+          }
+          e.stopPropagation();
+          root.classList.add("vol-open");
+          showControls();
+        });
+        menu.addEventListener("click", function(e) {
+          const item = e.target && e.target.closest ? e.target.closest(".yrp-menu-item") : null;
+          if (!item || !menu.contains(item)) return;
+          const act = item.getAttribute("data-action") || "";
+          const lang = item.getAttribute("data-lang") || "";
+          const currentView = menuManager.getView();
+          if (currentView === "main") {
+            if (act === "open-langs") {
+              e.preventDefault();
+              e.stopPropagation();
+              wrappedBuildLangsMenuView();
+              menuManager.lockHeightFromCurrent();
+              root.classList.add("vol-open");
+              showControls();
+              return;
+            }
+            if (act === "open-speed") {
+              e.preventDefault();
+              e.stopPropagation();
+              wrappedBuildSpeedMenuView();
+              menuManager.lockHeightFromCurrent();
+              root.classList.add("vol-open");
+              showControls();
+              return;
+            }
+            if (act === "open-subs") {
+              e.preventDefault();
+              e.stopPropagation();
+              if (!anySubtitleTracks(video)) return;
+              wrappedBuildSubtitlesMenuView();
+              menuManager.lockHeightFromCurrent();
+              root.classList.add("vol-open");
+              showControls();
+              return;
+            }
+            return;
+          }
+          if (act === "back") {
+            e.preventDefault();
+            e.stopPropagation();
+            openMainMenuView();
+            menuManager.lockHeightFromCurrent();
+            root.classList.add("vol-open");
+            showControls();
+            return;
+          }
+          if (currentView === "langs") {
+            if (act === "select-lang" && lang) {
+              e.preventDefault();
+              e.stopPropagation();
+              selectSubtitleLang(lang);
+              menu.hidden = true;
+              btnSettings.setAttribute("aria-expanded", "false");
+              menuManager.setView("main");
+              menuManager.resetHeightLock();
+              return;
+            }
+          }
+          if (currentView === "speed") {
+            if (act === "set-speed") {
+              const sp2 = parseFloat(item.getAttribute("data-speed") || "NaN");
+              if (!isNaN(sp2)) {
+                e.preventDefault();
+                e.stopPropagation();
+                applySpeed(video, sp2);
+                menu.hidden = true;
+                btnSettings.setAttribute("aria-expanded", "false");
+                menuManager.setView("main");
+                menuManager.resetHeightLock();
+                return;
+              }
+            }
+          }
+          if (currentView === "subs") {
+            if (act === "subs-on") {
+              e.preventDefault();
+              e.stopPropagation();
+              setSubtitlesEnabled(true);
+              menu.hidden = true;
+              btnSettings.setAttribute("aria-expanded", "false");
+              menuManager.setView("main");
+              menuManager.resetHeightLock();
+              return;
+            }
+            if (act === "subs-off") {
+              e.preventDefault();
+              e.stopPropagation();
+              setSubtitlesEnabled(false);
+              menu.hidden = true;
+              btnSettings.setAttribute("aria-expanded", "false");
+              menuManager.setView("main");
+              menuManager.resetHeightLock();
+              return;
+            }
+          }
+        });
+        document.addEventListener("click", function(e) {
+          if (!menu.hidden && !menu.contains(e.target) && e.target !== btnSettings) {
+            menu.hidden = true;
+            btnSettings.setAttribute("aria-expanded", "false");
+            menuManager.setView("main");
+            menuManager.resetHeightLock();
+          }
+        });
+      }
+    }
+    btnFull && btnFull.addEventListener("click", function() {
+      if (document.fullscreenElement) document.exitFullscreen().catch(function() {
+      });
+      else root.requestFullscreen && root.requestFullscreen().catch(function() {
+      });
+    });
+    btnPip && btnPip.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMini();
+    });
+    btnAutoplay && btnAutoplay.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const next = !load("autoplay", false);
+      save("autoplay", next);
+      autoplayOn = next;
+      refreshAutoplayBtn();
+    });
+    btnSubtitles && btnSubtitles.addEventListener("click", function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!anySubtitleTracks(video)) return;
+      overlayActive = !overlayActive;
+      applyPageModes(video, activeTrackIndex, overlayActive);
+      updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+      refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
+    });
+    root.addEventListener("contextmenu", function(e) {
+      e.preventDefault();
+      hideMenus();
+      const ctx = root.querySelector(".yrp-context");
+      if (!ctx) return;
+      const rw = root.getBoundingClientRect();
+      ctx.style.left = e.clientX - rw.left + "px";
+      ctx.style.top = e.clientY - rw.top + "px";
+      ctx.hidden = false;
+      ctx.onclick = function(ev) {
+        const act = ev.target && ev.target.getAttribute("data-action");
+        const at = Math.floor(video.currentTime || 0);
+        const vid = root.getAttribute("data-video-id") || "";
+        if (act === "pip") toggleMini();
+        else if (act === "copy-url") {
+          const u = new URL(window.location.href);
+          u.searchParams.delete("t");
+          copyText(u.toString());
+        } else if (act === "copy-url-time") {
+          const u2 = new URL(window.location.href);
+          u2.searchParams.set("t", String(at));
+          copyText(u2.toString());
+        } else if (act === "copy-embed") {
+          const src = (window.location.origin || "") + "/embed?v=" + encodeURIComponent(vid || "");
+          const iframe = `<iframe width="560" height="315" src="${src}" frameborder="0" allow="autoplay; encrypted-media; clipboard-write" allowfullscreen></iframe>`;
+          copyText(iframe);
+        }
+        ctx.hidden = true;
+      };
+      document.addEventListener("click", function(e2) {
+        const ctx2 = root.querySelector(".yrp-context");
+        if (ctx2 && !ctx2.hidden && !ctx2.contains(e2.target)) ctx2.hidden = true;
+      }, { once: true });
+      document.addEventListener("keydown", function esc(ev) {
+        if (ev.code === "Escape" || (ev.key || "").toLowerCase() === "escape") {
+          const c = root.querySelector(".yrp-context");
+          if (c && !c.hidden) c.hidden = true;
+          document.removeEventListener("keydown", esc);
+        }
+      });
+    });
+    function onDocMove(e) {
+      const r = root.getBoundingClientRect();
+      if (e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) showControls();
+    }
+    document.addEventListener("mousemove", onDocMove, { passive: true });
+    document.addEventListener("pointermove", onDocMove, { passive: true });
+    ["mousemove", "pointermove", "mouseenter", "mouseover", "touchstart"].forEach(function(evName) {
+      root.addEventListener(evName, function() {
+        try {
+          root.focus();
+        } catch (e) {
+        }
+        showControls();
+      }, { passive: true });
+      video && video.addEventListener(evName, showControls, { passive: true });
+      centerPlay && centerPlay.addEventListener(evName, showControls, { passive: true });
+    });
+    function updateFsHoverBinding() {
+      try {
+        if (document.fullscreenElement === root) {
+          document.addEventListener("mousemove", onDocMove, { passive: true });
+          document.addEventListener("pointermove", onDocMove, { passive: true });
+        } else {
+        }
+      } catch (e) {
+      }
+    }
+    document.addEventListener("fullscreenchange", updateFsHoverBinding);
+    updateFsHoverBinding();
+    function handleHotkey(e) {
+      const t = e.target, tag = t && t.tagName ? t.tagName.toUpperCase() : "";
+      if (t && (t.isContentEditable || tag === "INPUT" || tag === "TEXTAREA")) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const code = e.code, key = (e.key || "").toLowerCase();
+      if (code === "Space" || code === "Enter" || code === "NumpadEnter" || code === "MediaPlayPause" || code === "KeyK" || key === "k") {
+        playToggle();
+        e.preventDefault();
+        return;
+      }
+      if (code === "ArrowLeft" || key === "arrowleft" || code === "KeyJ" || key === "j") {
+        video.currentTime = clamp((video.currentTime || 0) - 5, 0, duration || 0);
+        e.preventDefault();
+        return;
+      }
+      if (code === "ArrowRight" || key === "arrowright" || code === "KeyL" || key === "l") {
+        video.currentTime = clamp((video.currentTime || 0) + 5, 0, duration || 0);
+        e.preventDefault();
+        return;
+      }
+      if (code === "KeyM" || key === "m") {
+        setMutedToggle();
+        e.preventDefault();
+        return;
+      }
+      if (code === "KeyF" || key === "f") {
+        if (document.fullscreenElement) document.exitFullscreen().catch(function() {
+        });
+        else root.requestFullscreen && root.requestFullscreen().catch(function() {
+        });
+        e.preventDefault();
+        return;
+      }
+      if (code === "KeyT" || key === "t") {
+        btnTheater && btnTheater.click();
+        e.preventDefault();
+        return;
+      }
+      if (code === "KeyI" || key === "i") {
+        toggleMini();
+        e.preventDefault();
+        return;
+      }
+      if (code === "KeyA" || key === "a") {
+        btnAutoplay && btnAutoplay.click();
+        e.preventDefault();
+        return;
+      }
+      if (code === "KeyC" || key === "c") {
+        btnSubtitles && !btnSubtitles.disabled && btnSubtitles.click();
+        e.preventDefault();
+        return;
+      }
+      if (code === "Escape" || key === "escape") {
+        hideMenus();
+        return;
+      }
+    }
+    document.addEventListener("keydown", handleHotkey);
+    setTimeout(adjustWidthByAspect, 200);
+  }
+
+  // src/player.entry.js
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initAll);
+  } else {
+    initAll();
+  }
+})();
+//# sourceMappingURL=player.js.map
