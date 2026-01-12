@@ -15,7 +15,7 @@ import {
   refreshSubtitlesBtn,
   updateOverlayText,
   logTracks
-} from './subtitles.js';
+} from './player.subtitles.js';
 
 function detectPlayerName() {
   try {
