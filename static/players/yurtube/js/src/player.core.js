@@ -16,6 +16,19 @@ import {
   updateOverlayText,
   logTracks
 } from './player.subtitles.js';
+import {
+  ensureTransparentMenuButton,
+  styleBackButton,
+  withSubmenuChevron,
+  buildScrollableListContainer,
+  normalizeQualitySectionTypography,
+  removeFutureSubtitlesSection,
+  insertMainEntry,
+  speedOptions,
+  buildSpeedMenuView,
+  applySpeed,
+  MenuManager
+} from './player.menu.js';
 
 function detectPlayerName() {
   try {
@@ -308,10 +321,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   let prefLang = (function(){ try { return String(localStorage.getItem('subtitle_lang') || ''); } catch (_) { return ''; } })();
   let prefSpeed = (function(){ try { return parseFloat(localStorage.getItem('playback_speed') || ''); } catch (_) { return NaN; } })();
 
-  // Variant A: reuse the same .yrp-menu container with "views"
-  let menuView = 'main'; // 'main' | 'langs' | 'speed' | 'subs'
-  let menuMainHTML = '';
-  let menuFixedMinHeight = 0;
+  // Menu manager
+  const menuManager = new MenuManager(menu);
   let menuBound = false;
 
 
@@ -334,143 +345,24 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
   }
 
-  function ensureMenuMainSnapshot() {
-    if (!menu) return;
-    if (!menuMainHTML) menuMainHTML = menu.innerHTML || '';
-  }
-
-  function lockMenuHeightFromCurrent() {
-    if (!menu) return;
-    if (menuFixedMinHeight > 0) return;
-    try {
-      const r = menu.getBoundingClientRect();
-      menuFixedMinHeight = Math.ceil(r.height || 0);
-      if (menuFixedMinHeight > 0) menu.style.minHeight = menuFixedMinHeight + 'px';
-    } catch {}
-  }
-
-  function resetMenuHeightLock() {
-    if (!menu) return;
-    menuFixedMinHeight = 0;
-    menu.style.minHeight = '';
-  }
-
-  function ensureTransparentMenuButton(btn) {
-    try {
-      btn.style.background = 'transparent';
-      btn.style.backgroundColor = 'transparent';
-      btn.style.border = 'none';
-      btn.style.boxShadow = 'none';
-      btn.style.color = 'inherit';
-      btn.style.textAlign = 'left';
-      btn.style.width = '100%';
-      btn.style.display = 'block';
-    } catch {}
-  }
-
-  function styleBackButton(btn) {
-    ensureTransparentMenuButton(btn);
-    try {
-      btn.style.background = 'rgba(255,255,255,0.12)';
-      btn.style.backgroundColor = 'rgba(255,255,255,0.12)';
-      btn.style.borderRadius = '4px';
-      btn.style.fontWeight = '700';
-      btn.style.marginBottom = '6px';
-      btn.style.paddingLeft = '8px';
-      btn.style.paddingRight = '8px';
-    } catch {}
-  }
-
-  function withSubmenuChevron(btn) {
-    try { btn.classList.add('has-submenu'); } catch {}
-  }
-
-  function normalizeQualitySectionTypography() {
-    if (!menu) return;
-    try {
-      const secQ = menu.querySelector('.yrp-menu-section[data-section="quality"]');
-      if (!secQ) return;
-
-      const oldTitle = secQ.querySelector('.yrp-menu-title');
-      if (oldTitle) oldTitle.parentNode && oldTitle.parentNode.removeChild(oldTitle);
-
-      if (secQ.querySelector('.yrp-menu-item.quality-future')) return;
-
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'yrp-menu-item quality-future';
-      btn.textContent = 'Quality (future)';
-      btn.disabled = true;
-      ensureTransparentMenuButton(btn);
-      btn.style.opacity = '0.75';
-      secQ.appendChild(btn);
-    } catch {}
-  }
-
-  function removeFutureSubtitlesSection() {
-    if (!menu) return;
-    try {
-      const sec = menu.querySelector('.yrp-menu-section[data-section="subtitles"]');
-      if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
-    } catch {}
-  }
-
   function openMainMenuView() {
-    if (!menu) return;
-    ensureMenuMainSnapshot();
-    menu.innerHTML = menuMainHTML;
-    menuView = 'main';
-
-    try {
-      const secSpeed = menu.querySelector('.yrp-menu-section[data-section="speed"]');
-      if (secSpeed && secSpeed.parentNode) secSpeed.parentNode.removeChild(secSpeed);
-    } catch {}
-
-    removeFutureSubtitlesSection();
-    normalizeQualitySectionTypography();
-
-    injectSpeedEntryIntoMain();
-    injectLanguagesEntryIntoMain();
-    injectSubtitlesEntryIntoMain();
-  }
-
-  function insertMainEntry(label, action, extra = {}) {
-    if (!menu) return null;
-
-    const firstSection = menu.querySelector('.yrp-menu-section') || null;
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'yrp-menu-item';
-    btn.setAttribute('data-action', action);
-    btn.textContent = label;
-
-    ensureTransparentMenuButton(btn);
-
-    if (extra && extra.disabled === true) {
-      btn.disabled = true;
-      btn.style.opacity = '0.6';
-    }
-
-    if (extra && extra.hasSubmenu === true) {
-      withSubmenuChevron(btn);
-    }
-
-    if (firstSection && firstSection.parentNode === menu) menu.insertBefore(btn, firstSection);
-    else menu.appendChild(btn);
-    return btn;
+    menuManager.openMainView({
+      injectSpeed: injectSpeedEntryIntoMain,
+      injectLanguages: injectLanguagesEntryIntoMain,
+      injectSubtitles: injectSubtitlesEntryIntoMain
+    });
   }
 
   function injectLanguagesEntryIntoMain() {
     if (!menu) return;
     if (menu.querySelector('.yrp-menu-item[data-action="open-langs"]')) return;
-    insertMainEntry('Languages', 'open-langs', { hasSubmenu: true });
+    insertMainEntry(menu, 'Languages', 'open-langs', { hasSubmenu: true }, ensureTransparentMenuButton, withSubmenuChevron);
   }
 
   function injectSpeedEntryIntoMain() {
     if (!menu) return;
     if (menu.querySelector('.yrp-menu-item[data-action="open-speed"]')) return;
-    insertMainEntry('Speed', 'open-speed', { hasSubmenu: true });
+    insertMainEntry(menu, 'Speed', 'open-speed', { hasSubmenu: true }, ensureTransparentMenuButton, withSubmenuChevron);
   }
 
   function injectSubtitlesEntryIntoMain() {
@@ -478,7 +370,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     if (menu.querySelector('.yrp-menu-item[data-action="open-subs"]')) return;
 
     const has = anySubtitleTracks(video);
-    const btn = insertMainEntry('Subtitles', 'open-subs', { hasSubmenu: true, disabled: !has });
+    const btn = insertMainEntry(menu, 'Subtitles', 'open-subs', { hasSubmenu: true, disabled: !has }, ensureTransparentMenuButton, withSubmenuChevron);
     if (btn && !has) btn.title = 'No subtitle tracks';
   }
 
@@ -496,51 +388,17 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
 
   function wrappedBuildLangsMenuView() {
     buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
-    menuView = 'langs';
+    menuManager.setView('langs');
   }
 
-  function speedOptions() {
-    return [0.5, 0.75, 1, 1.25, 1.5, 2];
-  }
-
-  function applySpeed(sp) {
-    const s = parseFloat(String(sp));
-    if (!isFinite(s) || s <= 0) return;
-    video.playbackRate = s;
-    try { localStorage.setItem('playback_speed', String(s)); } catch {}
-  }
-
-  function buildSpeedMenuView() {
-    if (!menu) return;
-    menuView = 'speed';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const cur = isFinite(video.playbackRate) ? video.playbackRate : 1;
-
-    speedOptions().forEach(function (s) {
-      const it = document.createElement('button');
-      it.type = 'button';
-      it.className = 'yrp-menu-item';
-      it.setAttribute('data-action', 'set-speed');
-      it.setAttribute('data-speed', String(s));
-      it.textContent = (s === 1 ? '1.0x' : (String(s) + 'x')) + (Math.abs(s - cur) < 0.001 ? ' ✓' : '');
-      ensureTransparentMenuButton(it);
-      menu.appendChild(it);
-    });
+  function wrappedBuildSpeedMenuView() {
+    buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
+    menuManager.setView('speed');
   }
 
   function wrappedBuildSubtitlesMenuView() {
     buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
-    menuView = 'subs';
+    menuManager.setView('subs');
   }
 
   function applyIcon(button, varOn, varOff, isOn, fallbackEmoji) {
@@ -877,10 +735,11 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     logTracks(video, d, 'after loadedmetadata');
 
     if (menu && !menu.hidden) {
-      if (menuView === 'main') openMainMenuView();
-      else if (menuView === 'langs') wrappedBuildLangsMenuView();
-      else if (menuView === 'speed') buildSpeedMenuView();
-      else if (menuView === 'subs') wrappedBuildSubtitlesMenuView();
+      const currentView = menuManager.getView();
+      if (currentView === 'main') openMainMenuView();
+      else if (currentView === 'langs') wrappedBuildLangsMenuView();
+      else if (currentView === 'speed') wrappedBuildSpeedMenuView();
+      else if (currentView === 'subs') wrappedBuildSubtitlesMenuView();
     }
   });
 
@@ -1233,12 +1092,12 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     if (ctx) ctx.hidden = true;
     root.classList.remove('vol-open');
 
-    menuView = 'main';
-    resetMenuHeightLock();
+    menuManager.setView('main');
+    menuManager.resetHeightLock();
   }
 
   if (btnSettings && menu) {
-    ensureMenuMainSnapshot();
+    menuManager.ensureMainSnapshot();
 
     if (!menuBound) {
       menuBound = true;
@@ -1248,14 +1107,14 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
         if (open) {
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
-          menuView = 'main';
-          resetMenuHeightLock();
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
         } else {
           hideMenus();
           openMainMenuView();
           menu.hidden = false;
           btnSettings.setAttribute('aria-expanded', 'true');
-          lockMenuHeightFromCurrent();
+          menuManager.lockHeightFromCurrent();
         }
         e.stopPropagation();
         root.classList.add('vol-open');
@@ -1268,19 +1127,20 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
 
         const act = item.getAttribute('data-action') || '';
         const lang = item.getAttribute('data-lang') || '';
+        const currentView = menuManager.getView();
 
-        if (menuView === 'main') {
+        if (currentView === 'main') {
           if (act === 'open-langs') {
             e.preventDefault(); e.stopPropagation();
             wrappedBuildLangsMenuView();
-            lockMenuHeightFromCurrent();
+            menuManager.lockHeightFromCurrent();
             root.classList.add('vol-open'); showControls();
             return;
           }
           if (act === 'open-speed') {
             e.preventDefault(); e.stopPropagation();
-            buildSpeedMenuView();
-            lockMenuHeightFromCurrent();
+            wrappedBuildSpeedMenuView();
+            menuManager.lockHeightFromCurrent();
             root.classList.add('vol-open'); showControls();
             return;
           }
@@ -1288,7 +1148,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
             e.preventDefault(); e.stopPropagation();
             if (!anySubtitleTracks(video)) return;
             wrappedBuildSubtitlesMenuView();
-            lockMenuHeightFromCurrent();
+            menuManager.lockHeightFromCurrent();
             root.classList.add('vol-open'); showControls();
             return;
           }
@@ -1298,46 +1158,46 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
         if (act === 'back') {
           e.preventDefault(); e.stopPropagation();
           openMainMenuView();
-          lockMenuHeightFromCurrent();
+          menuManager.lockHeightFromCurrent();
           root.classList.add('vol-open'); showControls();
           return;
         }
 
-        if (menuView === 'langs') {
+        if (currentView === 'langs') {
           if (act === 'select-lang' && lang) {
             e.preventDefault(); e.stopPropagation();
             selectSubtitleLang(lang);
             menu.hidden = true;
             btnSettings.setAttribute('aria-expanded', 'false');
-            menuView = 'main';
-            resetMenuHeightLock();
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
             return;
           }
         }
 
-        if (menuView === 'speed') {
+        if (currentView === 'speed') {
           if (act === 'set-speed') {
             const sp2 = parseFloat(item.getAttribute('data-speed') || 'NaN');
             if (!isNaN(sp2)) {
               e.preventDefault(); e.stopPropagation();
-              applySpeed(sp2);
+              applySpeed(video, sp2);
               menu.hidden = true;
               btnSettings.setAttribute('aria-expanded', 'false');
-              menuView = 'main';
-              resetMenuHeightLock();
+              menuManager.setView('main');
+              menuManager.resetHeightLock();
               return;
             }
           }
         }
 
-        if (menuView === 'subs') {
+        if (currentView === 'subs') {
           if (act === 'subs-on') {
             e.preventDefault(); e.stopPropagation();
             setSubtitlesEnabled(true);
             menu.hidden = true;
             btnSettings.setAttribute('aria-expanded', 'false');
-            menuView = 'main';
-            resetMenuHeightLock();
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
             return;
           }
           if (act === 'subs-off') {
@@ -1345,8 +1205,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
             setSubtitlesEnabled(false);
             menu.hidden = true;
             btnSettings.setAttribute('aria-expanded', 'false');
-            menuView = 'main';
-            resetMenuHeightLock();
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
             return;
           }
         }
@@ -1356,8 +1216,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
         if (!menu.hidden && !menu.contains(e.target) && e.target !== btnSettings) {
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
-          menuView = 'main';
-          resetMenuHeightLock();
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
         }
       });
     }
