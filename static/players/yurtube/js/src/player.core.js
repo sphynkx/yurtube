@@ -2,6 +2,20 @@ import { fmtTime, clamp, cssPxToNum, throttle, parseJSONAttr, copyText } from '.
 import { load, save } from './storage.js';
 import { installFallbackGuards } from './fallback.js';
 import { attachPlaylist } from './playlist.js';
+import {
+  subtitleTracks,
+  anySubtitleTracks,
+  chooseActiveTrack,
+  applyPageModes,
+  currentCueText,
+  trackInfoList,
+  findTrackIndexByLang,
+  buildSubtitlesMenuView,
+  buildLangsMenuView,
+  refreshSubtitlesBtn,
+  updateOverlayText,
+  logTracks
+} from './subtitles.js';
 
 function detectPlayerName() {
   try {
@@ -300,108 +314,24 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   let menuFixedMinHeight = 0;
   let menuBound = false;
 
-  // --- English language display helpers ---
-  let _langNamesEn = null;
-  function _getLangNamesEn() {
-    if (_langNamesEn) return _langNamesEn;
-    try {
-      if (typeof Intl !== 'undefined' && Intl.DisplayNames) {
-        _langNamesEn = new Intl.DisplayNames(['en'], { type: 'language' });
-      }
-    } catch {}
-    return _langNamesEn;
-  }
-  function langDisplayNameEn(code, fallbackLabel) {
-    const raw = String(code || '').trim();
-    if (!raw) return String(fallbackLabel || '');
-    if (raw.toLowerCase() === 'auto') return 'Auto';
 
-    // for Intl.DisplayNames we pass primary language subtag only
-    const base = raw.split('-', 1)[0].toLowerCase();
-    try {
-      const dn = _getLangNamesEn();
-      if (dn && typeof dn.of === 'function') {
-        const name = dn.of(base);
-        if (name) return name.charAt(0).toUpperCase() + name.slice(1);
-      }
-    } catch {}
-    return String(fallbackLabel || raw);
-  }
-
-  function subtitleTracks() {
-    try {
-      return video.textTracks ? Array.prototype.filter.call(video.textTracks, function (tr) {
-        return tr.kind === 'subtitles' || tr.kind === 'captions';
-      }) : [];
-    } catch {
-      return [];
-    }
-  }
-  function anySubtitleTracks() { return subtitleTracks().length > 0; }
-  function chooseActiveTrack() {
-    const subs = subtitleTracks();
-    if (subs.length === 0) return null;
-    if (activeTrackIndex < 0 || activeTrackIndex >= subs.length) activeTrackIndex = 0;
-    return subs[activeTrackIndex];
-  }
-  function applyPageModes() {
-    const subs = subtitleTracks();
-    subs.forEach(function (tr, i) {
-      tr.mode = (i === activeTrackIndex && overlayActive) ? 'hidden' : 'disabled';
-    });
-    logTracks('applyPageModes');
-  }
-  function currentCueText() {
-    const tr = chooseActiveTrack();
-    if (!tr || !tr.cues) return '';
-    const ct = video.currentTime || 0;
-    for (let i = 0; i < tr.cues.length; i++) {
-      const c = tr.cues[i];
-      if (ct >= c.startTime && ct <= c.endTime) return (c.text || '').replace(/\r/g, '');
-    }
-    return '';
-  }
-  function updateOverlayText() {
-    if (!hooks || !hooks.textBox) return;
-    hooks.textBox.textContent = overlayActive ? currentCueText() : '';
-  }
-
-  function trackInfoList() {
-    const subs = subtitleTracks();
-    return subs.map(function (tr, i) {
-      // IMPORTANT: use srclang fallback (most browsers don't populate TextTrack.language reliably)
-      const code = String(tr.language || tr.srclang || '').toLowerCase();
-      const rawLabel = String(tr.label || code || ('Lang ' + (i + 1)));
-      const label = langDisplayNameEn(code, rawLabel);
-      return { index: i, lang: code, label: label };
-    });
-  }
-  function findTrackIndexByLang(code) {
-    const c = String(code || '').toLowerCase();
-    const list = trackInfoList();
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].lang === c) return list[i].index;
-      if (list[i].label.toLowerCase() === c) return list[i].index;
-    }
-    return -1;
-  }
   function selectSubtitleLang(code) {
-    const idx = findTrackIndexByLang(code);
+    const idx = findTrackIndexByLang(video, code);
     if (idx >= 0) {
       activeTrackIndex = idx;
       overlayActive = true;
-      applyPageModes();
-      updateOverlayText();
+      applyPageModes(video, activeTrackIndex, overlayActive);
+      updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
       try { localStorage.setItem('subtitle_lang', String(code || '')); } catch (_){}
-      refreshSubtitlesBtn && refreshSubtitlesBtn();
+      refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
     }
   }
 
   function setSubtitlesEnabled(flag) {
     overlayActive = !!flag;
-    applyPageModes();
-    updateOverlayText();
-    refreshSubtitlesBtn && refreshSubtitlesBtn();
+    applyPageModes(video, activeTrackIndex, overlayActive);
+    updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+    refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
   }
 
   function ensureMenuMainSnapshot() {
@@ -547,7 +477,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     if (!menu) return;
     if (menu.querySelector('.yrp-menu-item[data-action="open-subs"]')) return;
 
-    const has = anySubtitleTracks();
+    const has = anySubtitleTracks(video);
     const btn = insertMainEntry('Subtitles', 'open-subs', { hasSubmenu: true, disabled: !has });
     if (btn && !has) btn.title = 'No subtitles tracks';
   }
@@ -564,58 +494,9 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     return wrap;
   }
 
-  function buildLangsMenuView() {
-    if (!menu) return;
+  function wrappedBuildLangsMenuView() {
+    buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
     menuView = 'langs';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const sc = buildScrollableListContainer(back);
-    menu.appendChild(sc);
-
-    const list = trackInfoList();
-    const cur = chooseActiveTrack();
-    const curLang = (cur && (cur.language || cur.srclang)) ? String(cur.language || cur.srclang).toLowerCase() : '';
-
-    const sorted = list.slice().sort(function (a, b) {
-      const aa = (a.lang || '').toLowerCase();
-      const bb = (b.lang || '').toLowerCase();
-      if (aa === 'auto' && bb !== 'auto') return -1;
-      if (bb === 'auto' && aa !== 'auto') return 1;
-      return (a.label || '').localeCompare(b.label || '');
-    });
-
-    sorted.forEach(function (ti) {
-      const it = document.createElement('button');
-      it.type = 'button';
-      it.className = 'yrp-menu-item';
-      it.setAttribute('data-action', 'select-lang');
-      it.setAttribute('data-lang', ti.lang || '');
-
-      const suffix = ti.lang ? ` (${ti.lang})` : '';
-      it.textContent = ti.label + suffix + (ti.lang === curLang ? ' ✓' : '');
-
-      ensureTransparentMenuButton(it);
-      sc.appendChild(it);
-    });
-
-    if (!sorted.length) {
-      const empty = document.createElement('div');
-      empty.className = 'yrp-menu-title';
-      empty.style.marginTop = '6px';
-      empty.style.fontSize = '12px';
-      empty.style.opacity = '0.8';
-      empty.textContent = 'No subtitles tracks';
-      sc.appendChild(empty);
-    }
   }
 
   function speedOptions() {
@@ -657,35 +538,9 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     });
   }
 
-  function buildSubtitlesMenuView() {
-    if (!menu) return;
+  function wrappedBuildSubtitlesMenuView() {
+    buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
     menuView = 'subs';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const onBtn = document.createElement('button');
-    onBtn.type = 'button';
-    onBtn.className = 'yrp-menu-item';
-    onBtn.setAttribute('data-action', 'subs-on');
-    onBtn.textContent = 'On' + (overlayActive ? ' ✓' : '');
-    ensureTransparentMenuButton(onBtn);
-    menu.appendChild(onBtn);
-
-    const offBtn = document.createElement('button');
-    offBtn.type = 'button';
-    offBtn.className = 'yrp-menu-item';
-    offBtn.setAttribute('data-action', 'subs-off');
-    offBtn.textContent = 'Off' + (!overlayActive ? ' ✓' : '');
-    ensureTransparentMenuButton(offBtn);
-    menu.appendChild(offBtn);
   }
 
   function applyIcon(button, varOn, varOff, isOn, fallbackEmoji) {
@@ -854,19 +709,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       maskSize: '20px 20px'
     });
   }
-  function refreshSubtitlesBtn() {
-    if (!btnSubtitles) return;
-    const has = anySubtitleTracks();
-    btnSubtitles.disabled = !has;
-    btnSubtitles.style.visibility = has ? 'visible' : 'hidden';
-    btnSubtitles.classList.toggle('no-tracks', !has);
-    btnSubtitles.classList.toggle('has-tracks', has);
-    btnSubtitles.classList.toggle('active', has && overlayActive);
-    btnSubtitles.classList.toggle('disabled-track', has && !overlayActive);
-    btnSubtitles.setAttribute('aria-pressed', overlayActive ? 'true' : 'false');
-  }
-
-  function scheduleAutoHide(ms) {
+function scheduleAutoHide(ms) {
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(function () {
       root.classList.add('autohide');
@@ -1006,22 +849,23 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     refreshVolIcon();
     refreshAutoplayBtn();
     refreshPlayBtn();
+    refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
 
     if (prefLang) {
-      const idxPref = findTrackIndexByLang(prefLang);
+      const idxPref = findTrackIndexByLang(video, prefLang);
       if (idxPref >= 0) activeTrackIndex = idxPref;
     }
     if (isFinite(prefSpeed) && prefSpeed > 0) {
       applySpeed(prefSpeed);
     }
 
-    chooseActiveTrack();
-    applyPageModes();
-    refreshSubtitlesBtn();
+    chooseActiveTrack(video, activeTrackIndex);
+    applyPageModes(video, activeTrackIndex, overlayActive);
+    refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
     scheduleAutoHide(1200);
 
     loadSpritesVTT();
-    updateOverlayText();
+    updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
 
     const r = root.querySelector('.yrp-video-wrap').getBoundingClientRect();
     const centerX = r.width / 2, tb = root.querySelector('.yrp-captions-text');
@@ -1030,29 +874,18 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       const pad = 12, minW = 220;
       tb.style.maxWidth = Math.max(minW, Math.floor(avail - pad)) + 'px';
     }
-    logTracks('after loadedmetadata');
+    logTracks(video, d, 'after loadedmetadata');
 
     if (menu && !menu.hidden) {
       if (menuView === 'main') openMainMenuView();
-      else if (menuView === 'langs') buildLangsMenuView();
+      else if (menuView === 'langs') wrappedBuildLangsMenuView();
       else if (menuView === 'speed') buildSpeedMenuView();
-      else if (menuView === 'subs') buildSubtitlesMenuView();
+      else if (menuView === 'subs') wrappedBuildSubtitlesMenuView();
     }
   });
 
-  function logTracks(prefix) {
-    const subs = subtitleTracks();
-    const info = subs.map(function (tr, i) {
-      return {
-        i: i,
-        mode: tr.mode,
-        label: tr.label,
-        srclang: tr.language || tr.srclang,
-        cues: tr.cues ? tr.cues.length : 0,
-        kind: tr.kind
-      };
-    });
-    d(prefix, info);
+  function wrappedLogTracks(prefix) {
+    logTracks(video, d, prefix);
   }
 
   function adjustWidthByAspect() {
@@ -1127,7 +960,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   })();
 
   window.addEventListener('resize', adjustWidthByAspect);
-  video.addEventListener('timeupdate', function () { updateTimes(); updateProgress(); updateOverlayText(); });
+  video.addEventListener('timeupdate', function () { updateTimes(); updateProgress(); updateOverlayText(hooks, video, activeTrackIndex, overlayActive); });
   video.addEventListener('progress', updateProgress);
   video.addEventListener('play', function () { root.classList.add('playing'); refreshPlayBtn(); showControls(); });
   video.addEventListener('pause', function () { root.classList.remove('playing'); refreshPlayBtn(); showControls(); });
@@ -1439,7 +1272,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
         if (menuView === 'main') {
           if (act === 'open-langs') {
             e.preventDefault(); e.stopPropagation();
-            buildLangsMenuView();
+            wrappedBuildLangsMenuView();
             lockMenuHeightFromCurrent();
             root.classList.add('vol-open'); showControls();
             return;
@@ -1453,8 +1286,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
           }
           if (act === 'open-subs') {
             e.preventDefault(); e.stopPropagation();
-            if (!anySubtitleTracks()) return;
-            buildSubtitlesMenuView();
+            if (!anySubtitleTracks(video)) return;
+            wrappedBuildSubtitlesMenuView();
             lockMenuHeightFromCurrent();
             root.classList.add('vol-open'); showControls();
             return;
@@ -1549,11 +1382,11 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   btnSubtitles && btnSubtitles.addEventListener('click', function (e) {
     e.preventDefault();
     e.stopPropagation();
-    if (!anySubtitleTracks()) return;
+    if (!anySubtitleTracks(video)) return;
     overlayActive = !overlayActive;
-    applyPageModes();
-    updateOverlayText();
-    refreshSubtitlesBtn();
+    applyPageModes(video, activeTrackIndex, overlayActive);
+    updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+    refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
   });
 
   root.addEventListener('contextmenu', function (e) {
