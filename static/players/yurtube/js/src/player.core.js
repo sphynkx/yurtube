@@ -479,7 +479,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
 
     const has = anySubtitleTracks(video);
     const btn = insertMainEntry('Subtitles', 'open-subs', { hasSubmenu: true, disabled: !has });
-    if (btn && !has) btn.title = 'No subtitles tracks';
+    if (btn && !has) btn.title = 'No subtitle tracks';
   }
 
   function buildScrollableListContainer(backBtn) {
@@ -709,7 +709,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       maskSize: '20px 20px'
     });
   }
-function scheduleAutoHide(ms) {
+  function scheduleAutoHide(ms) {
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(function () {
       root.classList.add('autohide');

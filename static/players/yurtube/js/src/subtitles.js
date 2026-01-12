@@ -198,7 +198,7 @@ export function buildLangsMenuView(menu, video, activeTrackIndex, styleBackButto
     empty.style.marginTop = '6px';
     empty.style.fontSize = '12px';
     empty.style.opacity = '0.8';
-    empty.textContent = 'No subtitles tracks';
+    empty.textContent = 'No subtitle tracks';
     sc.appendChild(empty);
   }
 }

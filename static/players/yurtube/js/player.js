@@ -271,7 +271,7 @@
       empty.style.marginTop = "6px";
       empty.style.fontSize = "12px";
       empty.style.opacity = "0.8";
-      empty.textContent = "No subtitles tracks";
+      empty.textContent = "No subtitle tracks";
       sc.appendChild(empty);
     }
   }
@@ -743,7 +743,7 @@
       if (menu.querySelector('.yrp-menu-item[data-action="open-subs"]')) return;
       const has = anySubtitleTracks(video);
       const btn = insertMainEntry("Subtitles", "open-subs", { hasSubmenu: true, disabled: !has });
-      if (btn && !has) btn.title = "No subtitles tracks";
+      if (btn && !has) btn.title = "No subtitle tracks";
     }
     function buildScrollableListContainer(backBtn) {
       const wrap = document.createElement("div");
