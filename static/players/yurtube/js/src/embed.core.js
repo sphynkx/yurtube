@@ -1,5 +1,32 @@
 import { fmtTime, parseJSONAttr, throttle, copyText } from './util.js';
 import { installFallbackGuards } from './fallback.js';
+import {
+  langDisplayNameEn,
+  subtitleTracks,
+  anySubtitleTracks,
+  chooseActiveTrack,
+  applyTrackModes,
+  currentCueText,
+  trackInfoList,
+  findTrackIndexByLang,
+  buildSubtitlesMenuView,
+  buildLangsMenuView,
+  refreshSubtitlesBtnUI,
+  updateOverlayText
+} from './embed.subtitles.js';
+import {
+  ensureTransparentMenuButton,
+  styleBackButton,
+  withSubmenuChevron,
+  buildScrollableListContainer,
+  normalizeQualitySectionTypography,
+  removeFutureSubtitlesSection,
+  insertMainEntry,
+  speedOptions,
+  buildSpeedMenuView,
+  applySpeed,
+  MenuManager
+} from './embed.menu.js';
 
 function detectPlayerName() {
   try {
@@ -148,10 +175,8 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
   let userTouchedVolume = false;
   let autoMuteApplied = false;
 
-  // ---- submenu/menu state (Variant A like main player) ----
-  let menuView = 'main'; // main | speed | langs | subs
-  let menuMainHTML = '';
-  let menuFixedMinHeight = 0;
+  // ---- submenu/menu state managed by MenuManager ----
+  const menuManager = new MenuManager(menu);
 
   // ---- subtitles selection state ----
   let overlayActive = true;
@@ -159,32 +184,6 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
 
   const prefLang = (function(){ try { return String(localStorage.getItem('subtitle_lang') || ''); } catch (_) { return ''; } })();
   const prefSpeed = (function(){ try { return parseFloat(localStorage.getItem('playback_speed') || ''); } catch (_) { return NaN; } })();
-
-  // --- English language display helpers ---
-  let _langNamesEn = null;
-  function _getLangNamesEn() {
-    if (_langNamesEn) return _langNamesEn;
-    try {
-      if (typeof Intl !== 'undefined' && Intl.DisplayNames) {
-        _langNamesEn = new Intl.DisplayNames(['en'], { type: 'language' });
-      }
-    } catch {}
-    return _langNamesEn;
-  }
-  function langDisplayNameEn(code, fallbackLabel) {
-    const raw = String(code || '').trim();
-    if (!raw) return String(fallbackLabel || '');
-    if (raw.toLowerCase() === 'auto') return 'Auto';
-    const base = raw.split('-', 1)[0].toLowerCase();
-    try {
-      const dn = _getLangNamesEn();
-      if (dn && typeof dn.of === 'function') {
-        const name = dn.of(base);
-        if (name) return name.charAt(0).toUpperCase() + name.slice(1);
-      }
-    } catch {}
-    return String(fallbackLabel || raw);
-  }
 
   // Captions overlay (draggable, pointer events)
   function createCaptionsOverlay(container) {
@@ -262,91 +261,35 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
 
   const overlay = createCaptionsOverlay(wrap);
 
-  function subtitleTracks() {
-    try {
-      return video.textTracks ? Array.prototype.filter.call(video.textTracks, function (tr) {
-        return tr.kind === 'subtitles' || tr.kind === 'captions';
-      }) : [];
-    } catch { return []; }
+  // Wrapper functions to call imported subtitles functions with proper parameters
+  function wrappedChooseActiveTrack() {
+    return chooseActiveTrack(video, activeTrackIndex);
   }
-  function anySubtitleTracks() { return subtitleTracks().length > 0; }
-  function chooseActiveTrack() {
-    const subs = subtitleTracks();
-    if (subs.length === 0) return null;
-    if (activeTrackIndex < 0 || activeTrackIndex >= subs.length) activeTrackIndex = 0;
-    return subs[activeTrackIndex];
+  function wrappedApplyTrackModes() {
+    applyTrackModes(video, activeTrackIndex, overlayActive);
   }
-  function applyTrackModes() {
-    const subs = subtitleTracks();
-    subs.forEach(function (tr, i) {
-      tr.mode = (i === activeTrackIndex && overlayActive) ? 'hidden' : 'disabled';
-    });
+  function wrappedUpdateOverlayText() {
+    updateOverlayText(overlay, video, activeTrackIndex, overlayActive);
   }
-  function currentCueText(track) {
-    if (!track || !track.cues || track.cues.length === 0) return '';
-    const t = video.currentTime || 0;
-    for (let i = 0; i < track.cues.length; i++) {
-      const c = track.cues[i];
-      if (t >= c.startTime && t <= c.endTime) return (c.text || '').replace(/\r/g, '');
-    }
-    return '';
-  }
-  function updateOverlayText() {
-    const tr = chooseActiveTrack();
-    applyTrackModes();
-    overlay.box.textContent = overlayActive ? currentCueText(tr) : '';
-    overlay.layer.style.display = overlayActive ? '' : 'none';
-  }
-
-  function refreshSubtitlesBtnUI() {
-    if (!ccBtn) return;
-    const has = anySubtitleTracks();
-    ccBtn.disabled = !has;
-    ccBtn.style.visibility = has ? 'visible' : 'hidden';
-    ccBtn.classList.toggle('no-tracks', !has);
-    ccBtn.classList.toggle('has-tracks', has);
-    ccBtn.classList.toggle('active', has && overlayActive);
-    ccBtn.classList.toggle('disabled-track', has && !overlayActive);
-    ccBtn.setAttribute('aria-pressed', overlayActive ? 'true' : 'false');
-    ccBtn.title = overlayActive ? 'Subtitles: on' : 'Subtitles: off';
-    ccBtn.setAttribute('aria-label', overlayActive ? 'Subtitles enabled' : 'Subtitles disabled');
-  }
-
-  function trackInfoList() {
-    const subs = subtitleTracks();
-    return subs.map(function (tr, i) {
-      // IMPORTANT: TextTrack.language is unreliable, prefer srclang fallback
-      const code = String(tr.language || tr.srclang || '').toLowerCase();
-      const rawLabel = String(tr.label || code || ('Lang ' + (i + 1)));
-      const label = langDisplayNameEn(code, rawLabel);
-      return { index: i, lang: code, label: label };
-    });
-  }
-  function findTrackIndexByLang(code) {
-    const c = String(code || '').toLowerCase();
-    const list = trackInfoList();
-    for (let i = 0; i < list.length; i++) {
-      if (list[i].lang === c) return list[i].index;
-      if (list[i].label.toLowerCase() === c) return list[i].index;
-    }
-    return -1;
+  function wrappedRefreshSubtitlesBtnUI() {
+    refreshSubtitlesBtnUI(ccBtn, video, overlayActive);
   }
   function selectSubtitleLang(code) {
-    const idx = findTrackIndexByLang(code);
+    const idx = findTrackIndexByLang(video, code);
     if (idx >= 0) {
       activeTrackIndex = idx;
       overlayActive = true;
       try { localStorage.setItem('subtitle_lang', String(code || '')); } catch (_){}
-      applyTrackModes();
-      updateOverlayText();
-      refreshSubtitlesBtnUI();
+      wrappedApplyTrackModes();
+      wrappedUpdateOverlayText();
+      wrappedRefreshSubtitlesBtnUI();
     }
   }
   function setSubtitlesEnabled(flag) {
     overlayActive = !!flag;
-    applyTrackModes();
-    updateOverlayText();
-    refreshSubtitlesBtnUI();
+    wrappedApplyTrackModes();
+    wrappedUpdateOverlayText();
+    wrappedRefreshSubtitlesBtnUI();
   }
 
   // Sprites preview
@@ -520,11 +463,55 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
     tt.hidden = false;
   }
 
-  // ---- Menu helpers (Variant A) ----
+  // Wrapper functions for menu operations using imported functions
+  function wrappedBuildLangsMenuView() {
+    buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
+    menuManager.setView('langs');
+    menuManager.constrainToPlayerHeight(2/3);
+  }
+
+  function wrappedBuildSpeedMenuView() {
+    buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
+    menuManager.setView('speed');
+    menuManager.constrainToPlayerHeight(2/3);
+  }
+
+  function wrappedBuildSubtitlesMenuView() {
+    buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
+    menuManager.setView('subs');
+    menuManager.constrainToPlayerHeight(2/3);
+  }
+
+  function openMainMenuView() {
+    menuManager.openMainView({
+      injectSpeed: function() {
+        if (!menu.querySelector('.yrp-menu-item[data-action="open-speed"]')) {
+          insertMainEntry(menu, 'Speed', 'open-speed', { hasSubmenu: true });
+        }
+      },
+      injectLanguages: function() {
+        if (!menu.querySelector('.yrp-menu-item[data-action="open-langs"]')) {
+          insertMainEntry(menu, 'Languages', 'open-langs', { hasSubmenu: true });
+        }
+      },
+      injectSubtitles: function() {
+        const hasSubs = anySubtitleTracks(video);
+        if (!menu.querySelector('.yrp-menu-item[data-action="open-subs"]')) {
+          const btn = insertMainEntry(menu, 'Subtitles', 'open-subs', { hasSubmenu: true, disabled: !hasSubs });
+          if (btn && !hasSubs) btn.title = 'No subtitles tracks';
+        }
+      }
+    });
+  }
+
+  let menuMainHTML = '';
+  let menuFixedMinHeight = 0;
+
   function ensureMenuMainSnapshot() {
     if (!menu) return;
     if (!menuMainHTML) menuMainHTML = menu.innerHTML || '';
   }
+
   function lockMenuHeightFromCurrent() {
     if (!menu) return;
     if (menuFixedMinHeight > 0) return;
@@ -534,259 +521,19 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
       if (menuFixedMinHeight > 0) menu.style.minHeight = menuFixedMinHeight + 'px';
     } catch {}
   }
+
   function resetMenuHeightLock() {
     if (!menu) return;
     menuFixedMinHeight = 0;
     menu.style.minHeight = '';
   }
 
-  function ensureTransparentMenuButton(btn) {
-    try {
-      btn.style.background = 'transparent';
-      btn.style.backgroundColor = 'transparent';
-      btn.style.border = 'none';
-      btn.style.boxShadow = 'none';
-      btn.style.color = 'inherit';
-      btn.style.textAlign = 'left';
-      btn.style.width = '100%';
-      btn.style.display = 'block';
-    } catch {}
-  }
-  function styleBackButton(btn) {
-    ensureTransparentMenuButton(btn);
-    try {
-      btn.style.background = 'rgba(255,255,255,0.12)';
-      btn.style.backgroundColor = 'rgba(255,255,255,0.12)';
-      btn.style.borderRadius = '4px';
-      btn.style.fontWeight = '700';
-      btn.style.marginBottom = '6px';
-      btn.style.paddingLeft = '8px';
-      btn.style.paddingRight = '8px';
-    } catch {}
-  }
-  function withSubmenuChevron(btn) {
-    try { btn.classList.add('has-submenu'); } catch {}
-  }
-
-  function normalizeQualitySectionTypography() {
-    if (!menu) return;
-    try {
-      const secQ = menu.querySelector('.yrp-menu-section[data-section="quality"]');
-      if (!secQ) return;
-
-      const oldTitle = secQ.querySelector('.yrp-menu-title');
-      if (oldTitle && oldTitle.parentNode) oldTitle.parentNode.removeChild(oldTitle);
-
-      if (secQ.querySelector('.yrp-menu-item.quality-future')) return;
-
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'yrp-menu-item quality-future';
-      btn.textContent = 'Quality (future)';
-      btn.disabled = true;
-      ensureTransparentMenuButton(btn);
-      btn.style.opacity = '0.75';
-      secQ.appendChild(btn);
-    } catch {}
-  }
-  function removeFutureSubtitlesSection() {
-    if (!menu) return;
-    try {
-      const sec = menu.querySelector('.yrp-menu-section[data-section="subtitles"]');
-      if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
-    } catch {}
-  }
-
-  function insertMainEntry(label, action, extra = {}) {
-    if (!menu) return null;
-    const firstSection = menu.querySelector('.yrp-menu-section') || null;
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'yrp-menu-item';
-    btn.setAttribute('data-action', action);
-    btn.textContent = label;
-
-    ensureTransparentMenuButton(btn);
-
-    if (extra.disabled === true) {
-      btn.disabled = true;
-      btn.style.opacity = '0.6';
-    }
-    if (extra.hasSubmenu === true) {
-      withSubmenuChevron(btn);
-    }
-
-    if (firstSection && firstSection.parentNode === menu) menu.insertBefore(btn, firstSection);
-    else menu.appendChild(btn);
-
-    return btn;
-  }
-
-  function openMainMenuView() {
-    if (!menu) return;
-    ensureMenuMainSnapshot();
-    menu.innerHTML = menuMainHTML;
-    menuView = 'main';
-
-    // remove old speed grid
-    try {
-      const secSpeed = menu.querySelector('.yrp-menu-section[data-section="speed"]');
-      if (secSpeed && secSpeed.parentNode) secSpeed.parentNode.removeChild(secSpeed);
-    } catch {}
-
-    removeFutureSubtitlesSection();
-    normalizeQualitySectionTypography();
-
-    // add our top entries
-    if (!menu.querySelector('.yrp-menu-item[data-action="open-speed"]')) {
-      insertMainEntry('Speed', 'open-speed', { hasSubmenu: true });
-    }
-    if (!menu.querySelector('.yrp-menu-item[data-action="open-langs"]')) {
-      insertMainEntry('Languages', 'open-langs', { hasSubmenu: true });
-    }
-    const hasSubs = anySubtitleTracks();
-    if (!menu.querySelector('.yrp-menu-item[data-action="open-subs"]')) {
-      const btn = insertMainEntry('Subtitles', 'open-subs', { hasSubmenu: true, disabled: !hasSubs });
-      if (btn && !hasSubs) btn.title = 'No subtitles tracks';
-    }
-  }
-
-  function buildScrollableListContainer() {
-    const wrap = document.createElement('div');
-    wrap.className = 'yrp-menu-scroll';
-    Object.assign(wrap.style, {
-      overflowY: 'auto',
-      overflowX: 'hidden',
-      maxHeight: 'calc(100% - 40px)',
-      paddingRight: '2px'
-    });
-    return wrap;
-  }
-
-  function buildLangsMenuView() {
-    if (!menu) return;
-    menuView = 'langs';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const sc = buildScrollableListContainer();
-    menu.appendChild(sc);
-
-    const list = trackInfoList();
-    const cur = chooseActiveTrack();
-    const curLang = (cur && (cur.language || cur.srclang)) ? String(cur.language || cur.srclang).toLowerCase() : '';
-
-    const sorted = list.slice().sort(function (a, b) {
-      const aa = (a.lang || '').toLowerCase();
-      const bb = (b.lang || '').toLowerCase();
-      if (aa === 'auto' && bb !== 'auto') return -1;
-      if (bb === 'auto' && aa !== 'auto') return 1;
-      return (a.label || '').localeCompare(b.label || '');
-    });
-
-    sorted.forEach(function (ti) {
-      const it = document.createElement('button');
-      it.type = 'button';
-      it.className = 'yrp-menu-item';
-      it.setAttribute('data-action', 'select-lang');
-      it.setAttribute('data-lang', ti.lang || '');
-      const suffix = ti.lang ? ` (${ti.lang})` : '';
-      it.textContent = ti.label + suffix + (ti.lang === curLang ? ' ✓' : '');
-      ensureTransparentMenuButton(it);
-      sc.appendChild(it);
-    });
-
-    if (!sorted.length) {
-      const empty = document.createElement('div');
-      empty.className = 'yrp-menu-title';
-      empty.style.marginTop = '6px';
-      empty.style.fontSize = '12px';
-      empty.style.opacity = '0.8';
-      empty.textContent = 'No subtitles tracks';
-      sc.appendChild(empty);
-    }
-  }
-
-  function speedOptions() { return [0.5, 0.75, 1, 1.25, 1.5, 2]; }
-  function applySpeed(sp) {
-    const s = parseFloat(String(sp));
-    if (!isFinite(s) || s <= 0) return;
-    video.playbackRate = s;
-    try { localStorage.setItem('playback_speed', String(s)); } catch {}
-  }
-  function buildSpeedMenuView() {
-    if (!menu) return;
-    menuView = 'speed';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const cur = isFinite(video.playbackRate) ? video.playbackRate : 1;
-    speedOptions().forEach(function (s) {
-      const it = document.createElement('button');
-      it.type = 'button';
-      it.className = 'yrp-menu-item';
-      it.setAttribute('data-action', 'set-speed');
-      it.setAttribute('data-speed', String(s));
-      it.textContent = (s === 1 ? '1.0x' : (String(s) + 'x')) + (Math.abs(s - cur) < 0.001 ? ' ✓' : '');
-      ensureTransparentMenuButton(it);
-      menu.appendChild(it);
-    });
-  }
-
-  function buildSubtitlesMenuView() {
-    if (!menu) return;
-    menuView = 'subs';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const onBtn = document.createElement('button');
-    onBtn.type = 'button';
-    onBtn.className = 'yrp-menu-item';
-    onBtn.setAttribute('data-action', 'subs-on');
-    onBtn.textContent = 'On' + (overlayActive ? ' ✓' : '');
-    ensureTransparentMenuButton(onBtn);
-    menu.appendChild(onBtn);
-
-    const offBtn = document.createElement('button');
-    offBtn.type = 'button';
-    offBtn.className = 'yrp-menu-item';
-    offBtn.setAttribute('data-action', 'subs-off');
-    offBtn.textContent = 'Off' + (!overlayActive ? ' ✓' : '');
-    ensureTransparentMenuButton(offBtn);
-    menu.appendChild(offBtn);
-  }
-
   function hideMenus() {
     if (menu) { menu.hidden = true; if (btnSettings) btnSettings.setAttribute('aria-expanded', 'false'); }
     if (ctx) ctx.hidden = true;
     root.classList.remove('vol-open');
-    menuView = 'main';
-    resetMenuHeightLock();
+    menuManager.setView('main');
+    menuManager.resetHeightLock();
   }
 
   function refreshPlayBtn() {
@@ -994,7 +741,7 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
       if (isOpen) {
         menu.hidden = true;
         btnSettings.setAttribute('aria-expanded', 'false');
-        menuView = 'main';
+        menuManager.setView('main');
         resetMenuHeightLock();
       } else {
         hideMenus();
@@ -1014,26 +761,26 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
       const act = item.getAttribute('data-action') || '';
       const lang = item.getAttribute('data-lang') || '';
 
-      if (menuView === 'main') {
+      if (menuManager.getView() === 'main') {
         if (act === 'open-speed') {
           e.preventDefault(); e.stopPropagation();
-          buildSpeedMenuView();
-          lockMenuHeightFromCurrent();
+          wrappedBuildSpeedMenuView();
+          menuManager.lockHeightFromCurrent();
           root.classList.add('vol-open'); showControls();
           return;
         }
         if (act === 'open-langs') {
           e.preventDefault(); e.stopPropagation();
-          buildLangsMenuView();
-          lockMenuHeightFromCurrent();
+          wrappedBuildLangsMenuView();
+          menuManager.lockHeightFromCurrent();
           root.classList.add('vol-open'); showControls();
           return;
         }
         if (act === 'open-subs') {
           e.preventDefault(); e.stopPropagation();
-          if (!anySubtitleTracks()) return;
-          buildSubtitlesMenuView();
-          lockMenuHeightFromCurrent();
+          if (!anySubtitleTracks(video)) return;
+          wrappedBuildSubtitlesMenuView();
+          menuManager.lockHeightFromCurrent();
           root.classList.add('vol-open'); showControls();
           return;
         }
@@ -1043,46 +790,46 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
       if (act === 'back') {
         e.preventDefault(); e.stopPropagation();
         openMainMenuView();
-        lockMenuHeightFromCurrent();
+        menuManager.lockHeightFromCurrent();
         root.classList.add('vol-open'); showControls();
         return;
       }
 
-      if (menuView === 'speed') {
+      if (menuManager.getView() === 'speed') {
         if (act === 'set-speed') {
           const sp = parseFloat(item.getAttribute('data-speed') || 'NaN');
           if (!isNaN(sp)) {
             e.preventDefault(); e.stopPropagation();
-            applySpeed(sp);
+            applySpeed(video, sp);
             menu.hidden = true;
             btnSettings.setAttribute('aria-expanded', 'false');
-            menuView = 'main';
-            resetMenuHeightLock();
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
             return;
           }
         }
       }
 
-      if (menuView === 'langs') {
+      if (menuManager.getView() === 'langs') {
         if (act === 'select-lang' && lang) {
           e.preventDefault(); e.stopPropagation();
           selectSubtitleLang(lang);
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
-          menuView = 'main';
-          resetMenuHeightLock();
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
           return;
         }
       }
 
-      if (menuView === 'subs') {
+      if (menuManager.getView() === 'subs') {
         if (act === 'subs-on') {
           e.preventDefault(); e.stopPropagation();
           setSubtitlesEnabled(true);
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
-          menuView = 'main';
-          resetMenuHeightLock();
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
           return;
         }
         if (act === 'subs-off') {
@@ -1090,8 +837,8 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
           setSubtitlesEnabled(false);
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
-          menuView = 'main';
-          resetMenuHeightLock();
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
           return;
         }
       }
@@ -1101,8 +848,8 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
       if (!menu.hidden && !menu.contains(e.target) && e.target !== btnSettings) {
         menu.hidden = true;
         btnSettings.setAttribute('aria-expanded', 'false');
-        menuView = 'main';
-        resetMenuHeightLock();
+        menuManager.setView('main');
+        menuManager.resetHeightLock();
       }
     });
 
@@ -1111,8 +858,8 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
         if (!menu.hidden) {
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
-          menuView = 'main';
-          resetMenuHeightLock();
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
         }
       }
     });
@@ -1219,23 +966,23 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
 
   function attachCue() {
     try {
-      const tr = chooseActiveTrack();
+      const tr = wrappedChooseActiveTrack();
       if (!tr) return;
-      tr.addEventListener('cuechange', updateOverlayText);
-      tr.addEventListener('load', updateOverlayText);
+      tr.addEventListener('cuechange', wrappedUpdateOverlayText);
+      tr.addEventListener('load', wrappedUpdateOverlayText);
     } catch {}
   }
 
   video.addEventListener('loadedmetadata', function () {
     // restore preferred lang (if exists)
     if (prefLang) {
-      const idx = findTrackIndexByLang(prefLang);
+      const idx = findTrackIndexByLang(video, prefLang);
       if (idx >= 0) activeTrackIndex = idx;
     }
     // apply initial modes and ui
-    applyTrackModes();
-    updateOverlayText();
-    refreshSubtitlesBtnUI();
+    wrappedApplyTrackModes();
+    wrappedUpdateOverlayText();
+    wrappedRefreshSubtitlesBtnUI();
     attachCue();
 
     updateTimes();
@@ -1246,23 +993,24 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
 
     // if menu already open, refresh current view
     if (menu && !menu.hidden) {
-      if (menuView === 'main') openMainMenuView();
-      else if (menuView === 'langs') buildLangsMenuView();
-      else if (menuView === 'speed') buildSpeedMenuView();
-      else if (menuView === 'subs') buildSubtitlesMenuView();
+      const currentView = menuManager.getView();
+      if (currentView === 'main') openMainMenuView();
+      else if (currentView === 'langs') wrappedBuildLangsMenuView();
+      else if (currentView === 'speed') wrappedBuildSpeedMenuView();
+      else if (currentView === 'subs') wrappedBuildSubtitlesMenuView();
     }
   });
 
-  video.addEventListener('timeupdate', function () { updateTimes(); updateProgress(); updateOverlayText(); });
+  video.addEventListener('timeupdate', function () { updateTimes(); updateProgress(); wrappedUpdateOverlayText(); });
   video.addEventListener('progress', function () { updateProgress(); });
 
   if (ccBtn) {
     ccBtn.addEventListener('click', function (e) {
       e.preventDefault(); e.stopPropagation();
-      if (!anySubtitleTracks()) return;
+      if (!anySubtitleTracks(video)) return;
       overlayActive = !overlayActive;
-      updateOverlayText();
-      refreshSubtitlesBtnUI();
+      wrappedUpdateOverlayText();
+      wrappedRefreshSubtitlesBtnUI();
       showControls();
     });
   }
