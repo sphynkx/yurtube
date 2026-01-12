@@ -43,16 +43,107 @@ export function withSubmenuChevron(btn) {
 
 /**
  * Build a scrollable container for menu lists
+ * @param {HTMLElement} backBtn - The back button element (optional, used for height calculation)
+ * @param {HTMLElement} menu - The menu element (optional, used to get player context)
  */
-export function buildScrollableListContainer(backBtn) {
+export function buildScrollableListContainer(backBtn, menu) {
   const wrap = document.createElement('div');
   wrap.className = 'yrp-menu-scroll';
+  
+  // Calculate absolute pixel height for the scrollable area
+  let maxHeightPx = 300; // Reasonable default
+  
+  // If we have menu context, calculate based on player height
+  if (menu) {
+    try {
+      const playerContainer = menu.closest('.yrp-container');
+      if (playerContainer) {
+        const videoWrap = playerContainer.querySelector('.yrp-video-wrap');
+        if (videoWrap) {
+          const playerHeight = videoWrap.getBoundingClientRect().height;
+          // 2/3 of player height minus controls (34px) minus back button (50px) minus padding (20px)
+          const calculated = Math.floor(playerHeight * 2 / 3) - 34 - 50 - 20;
+          if (calculated > 150) { // Minimum reasonable height
+            maxHeightPx = calculated;
+          }
+        }
+      }
+    } catch {}
+  }
+  
+  // Set explicit pixel height
   Object.assign(wrap.style, {
-    overflowY: 'auto',
+    overflowY: 'scroll', // Always show scrollbar track
     overflowX: 'hidden',
-    maxHeight: 'calc(100% - 40px)',
-    paddingRight: '2px'
+    maxHeight: maxHeightPx + 'px',
+    minHeight: '100px', // Minimum to ensure some content is visible
+    height: 'auto',
+    paddingRight: '8px', // Space for scrollbar
+    paddingLeft: '2px',
+    marginTop: '4px',
+    // Ensure the container can receive mouse events and scroll
+    pointerEvents: 'auto',
+    position: 'relative',
+    // Explicitly set display to ensure proper layout
+    display: 'block',
+    // Box sizing to include padding in height calculations
+    boxSizing: 'border-box',
+    // Force scrollbar visibility with webkit styles
+    WebkitOverflowScrolling: 'touch'
   });
+  
+  // Add explicit scrollbar styling for webkit browsers
+  const style = document.createElement('style');
+  style.textContent = `
+    .yrp-menu-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.4) rgba(255,255,255,0.1);
+    }
+    .yrp-menu-scroll::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-track {
+      background: rgba(255,255,255,0.1);
+      border-radius: 5px;
+      margin: 2px;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.4);
+      border-radius: 5px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.6);
+      background-clip: padding-box;
+    }
+    .yrp-menu-scroll::-webkit-scrollbar-thumb:active {
+      background: rgba(255,255,255,0.8);
+      background-clip: padding-box;
+    }
+  `;
+  // Only add style once
+  if (!document.querySelector('#yrp-menu-scroll-style')) {
+    style.id = 'yrp-menu-scroll-style';
+    document.head.appendChild(style);
+  }
+  
+  // Prevent scroll events from bubbling to parent (page)
+  // Use non-passive to allow preventDefault if needed
+  wrap.addEventListener('wheel', function(e) {
+    const atTop = wrap.scrollTop === 0;
+    const atBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 1;
+    
+    // Only stop propagation if we're actually scrolling within bounds
+    if ((e.deltaY < 0 && !atTop) || (e.deltaY > 0 && !atBottom)) {
+      e.stopPropagation();
+    } else if (!atTop && !atBottom) {
+      // In the middle, always capture
+      e.stopPropagation();
+    }
+  }, { passive: false });
+  
   return wrap;
 }
 
@@ -214,6 +305,9 @@ export class MenuManager {
     this.ensureMainSnapshot();
     this.menu.innerHTML = this.menuMainHTML;
     this.menuView = 'main';
+    
+    // Reset any height constraints when opening main view
+    this.menu.style.maxHeight = '';
 
     try {
       const secSpeed = this.menu.querySelector('.yrp-menu-section[data-section="speed"]');
@@ -228,5 +322,28 @@ export class MenuManager {
       callbacks.injectLanguages && callbacks.injectLanguages();
       callbacks.injectSubtitles && callbacks.injectSubtitles();
     }
+  }
+
+  /**
+   * Constrain menu height to a fraction of player height
+   * @param {number} fraction - Fraction of player height (default 2/3)
+   */
+  constrainToPlayerHeight(fraction = 2/3) {
+    if (!this.menu) return;
+    try {
+      const playerContainer = this.menu.closest('.yrp-container');
+      if (playerContainer) {
+        const videoWrap = playerContainer.querySelector('.yrp-video-wrap');
+        if (videoWrap) {
+          const playerHeight = videoWrap.getBoundingClientRect().height;
+          // Account for controls height (34px) and some padding
+          const maxMenuHeight = Math.floor(playerHeight * fraction) - 34;
+          if (maxMenuHeight > 100) {
+            this.menu.style.maxHeight = maxMenuHeight + 'px';
+            // Don't set overflowY here - let the scrollable container inside handle it
+          }
+        }
+      }
+    } catch {}
   }
 }

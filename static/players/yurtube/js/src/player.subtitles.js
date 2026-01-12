@@ -163,7 +163,7 @@ export function buildLangsMenuView(menu, video, activeTrackIndex, styleBackButto
   styleBackButton(back);
   menu.appendChild(back);
 
-  const sc = buildScrollableListContainer(back);
+  const sc = buildScrollableListContainer(back, menu);
   menu.appendChild(sc);
 
   const list = trackInfoList(video);
@@ -186,7 +186,9 @@ export function buildLangsMenuView(menu, video, activeTrackIndex, styleBackButto
     it.setAttribute('data-lang', ti.lang || '');
 
     const suffix = ti.lang ? ` (${ti.lang})` : '';
-    it.textContent = ti.label + suffix + (ti.lang === curLang ? ' ✓' : '');
+    // Check if this is the current language - compare both by index and by language code
+    const isCurrentLang = (ti.index === activeTrackIndex) || (ti.lang && curLang && ti.lang === curLang);
+    it.textContent = ti.label + suffix + (isCurrentLang ? ' ✓' : '');
 
     ensureTransparentMenuButton(it);
     sc.appendChild(it);
