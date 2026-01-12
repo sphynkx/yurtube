@@ -2,6 +2,33 @@ import { fmtTime, clamp, cssPxToNum, throttle, parseJSONAttr, copyText } from '.
 import { load, save } from './storage.js';
 import { installFallbackGuards } from './fallback.js';
 import { attachPlaylist } from './playlist.js';
+import {
+  subtitleTracks,
+  anySubtitleTracks,
+  chooseActiveTrack,
+  applyPageModes,
+  currentCueText,
+  trackInfoList,
+  findTrackIndexByLang,
+  buildSubtitlesMenuView,
+  buildLangsMenuView,
+  refreshSubtitlesBtn,
+  updateOverlayText,
+  logTracks
+} from './player.subtitles.js';
+import {
+  ensureTransparentMenuButton,
+  styleBackButton,
+  withSubmenuChevron,
+  buildScrollableListContainer,
+  normalizeQualitySectionTypography,
+  removeFutureSubtitlesSection,
+  insertMainEntry,
+  speedOptions,
+  buildSpeedMenuView,
+  applySpeed,
+  MenuManager
+} from './player.menu.js';
 
 function detectPlayerName() {
   try {
@@ -294,262 +321,57 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   let prefLang = (function(){ try { return String(localStorage.getItem('subtitle_lang') || ''); } catch (_) { return ''; } })();
   let prefSpeed = (function(){ try { return parseFloat(localStorage.getItem('playback_speed') || ''); } catch (_) { return NaN; } })();
 
-  // Variant A: reuse the same .yrp-menu container with "views"
-  let menuView = 'main'; // 'main' | 'langs' | 'speed' | 'subs'
-  let menuMainHTML = '';
-  let menuFixedMinHeight = 0;
+  // Menu manager
+  const menuManager = new MenuManager(menu);
   let menuBound = false;
 
-  // --- English language display helpers ---
-  let _langNamesEn = null;
-  function _getLangNamesEn() {
-    if (_langNamesEn) return _langNamesEn;
-    try {
-      if (typeof Intl !== 'undefined' && Intl.DisplayNames) {
-        _langNamesEn = new Intl.DisplayNames(['en'], { type: 'language' });
-      }
-    } catch {}
-    return _langNamesEn;
-  }
-  function langDisplayNameEn(code, fallbackLabel) {
-    const raw = String(code || '').trim();
-    if (!raw) return String(fallbackLabel || '');
-    if (raw.toLowerCase() === 'auto') return 'Auto';
 
-    // for Intl.DisplayNames we pass primary language subtag only
-    const base = raw.split('-', 1)[0].toLowerCase();
-    try {
-      const dn = _getLangNamesEn();
-      if (dn && typeof dn.of === 'function') {
-        const name = dn.of(base);
-        if (name) return name.charAt(0).toUpperCase() + name.slice(1);
-      }
-    } catch {}
-    return String(fallbackLabel || raw);
-  }
-
-  function subtitleTracks() {
-    try {
-      return video.textTracks ? Array.prototype.filter.call(video.textTracks, function (tr) {
-        return tr.kind === 'subtitles' || tr.kind === 'captions';
-      }) : [];
-    } catch {
-      return [];
-    }
-  }
-  function anySubtitleTracks() { return subtitleTracks().length > 0; }
-  function chooseActiveTrack() {
-    const subs = subtitleTracks();
-    if (subs.length === 0) return null;
-    if (activeTrackIndex < 0 || activeTrackIndex >= subs.length) activeTrackIndex = 0;
-    return subs[activeTrackIndex];
-  }
-  function applyPageModes() {
-    const subs = subtitleTracks();
-    subs.forEach(function (tr, i) {
-      tr.mode = (i === activeTrackIndex && overlayActive) ? 'hidden' : 'disabled';
-    });
-    logTracks('applyPageModes');
-  }
-  function currentCueText() {
-    const tr = chooseActiveTrack();
-    if (!tr || !tr.cues) return '';
-    const ct = video.currentTime || 0;
-    for (let i = 0; i < tr.cues.length; i++) {
-      const c = tr.cues[i];
-      if (ct >= c.startTime && ct <= c.endTime) return (c.text || '').replace(/\r/g, '');
-    }
-    return '';
-  }
-  function updateOverlayText() {
-    if (!hooks || !hooks.textBox) return;
-    hooks.textBox.textContent = overlayActive ? currentCueText() : '';
-  }
-
-  function trackInfoList() {
-    const subs = subtitleTracks();
-    return subs.map(function (tr, i) {
-      // IMPORTANT: use srclang fallback (most browsers don't populate TextTrack.language reliably)
-      const code = String(tr.language || tr.srclang || '').toLowerCase();
-      const rawLabel = String(tr.label || code || ('Lang ' + (i + 1)));
-      const label = langDisplayNameEn(code, rawLabel);
-      return { index: i, lang: code, label: label };
-    });
-  }
-  function findTrackIndexByLang(code) {
-    const c = String(code || '').toLowerCase();
-    const list = trackInfoList();
-    for (var i = 0; i < list.length; i++) {
-      if (list[i].lang === c) return list[i].index;
-      if (list[i].label.toLowerCase() === c) return list[i].index;
-    }
-    return -1;
-  }
   function selectSubtitleLang(code) {
-    const idx = findTrackIndexByLang(code);
+    const idx = findTrackIndexByLang(video, code);
     if (idx >= 0) {
       activeTrackIndex = idx;
       overlayActive = true;
-      applyPageModes();
-      updateOverlayText();
+      applyPageModes(video, activeTrackIndex, overlayActive);
+      updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
       try { localStorage.setItem('subtitle_lang', String(code || '')); } catch (_){}
-      refreshSubtitlesBtn && refreshSubtitlesBtn();
+      refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
     }
   }
 
   function setSubtitlesEnabled(flag) {
     overlayActive = !!flag;
-    applyPageModes();
-    updateOverlayText();
-    refreshSubtitlesBtn && refreshSubtitlesBtn();
-  }
-
-  function ensureMenuMainSnapshot() {
-    if (!menu) return;
-    if (!menuMainHTML) menuMainHTML = menu.innerHTML || '';
-  }
-
-  function lockMenuHeightFromCurrent() {
-    if (!menu) return;
-    if (menuFixedMinHeight > 0) return;
-    try {
-      const r = menu.getBoundingClientRect();
-      menuFixedMinHeight = Math.ceil(r.height || 0);
-      if (menuFixedMinHeight > 0) menu.style.minHeight = menuFixedMinHeight + 'px';
-    } catch {}
-  }
-
-  function resetMenuHeightLock() {
-    if (!menu) return;
-    menuFixedMinHeight = 0;
-    menu.style.minHeight = '';
-  }
-
-  function ensureTransparentMenuButton(btn) {
-    try {
-      btn.style.background = 'transparent';
-      btn.style.backgroundColor = 'transparent';
-      btn.style.border = 'none';
-      btn.style.boxShadow = 'none';
-      btn.style.color = 'inherit';
-      btn.style.textAlign = 'left';
-      btn.style.width = '100%';
-      btn.style.display = 'block';
-    } catch {}
-  }
-
-  function styleBackButton(btn) {
-    ensureTransparentMenuButton(btn);
-    try {
-      btn.style.background = 'rgba(255,255,255,0.12)';
-      btn.style.backgroundColor = 'rgba(255,255,255,0.12)';
-      btn.style.borderRadius = '4px';
-      btn.style.fontWeight = '700';
-      btn.style.marginBottom = '6px';
-      btn.style.paddingLeft = '8px';
-      btn.style.paddingRight = '8px';
-    } catch {}
-  }
-
-  function withSubmenuChevron(btn) {
-    try { btn.classList.add('has-submenu'); } catch {}
-  }
-
-  function normalizeQualitySectionTypography() {
-    if (!menu) return;
-    try {
-      const secQ = menu.querySelector('.yrp-menu-section[data-section="quality"]');
-      if (!secQ) return;
-
-      const oldTitle = secQ.querySelector('.yrp-menu-title');
-      if (oldTitle) oldTitle.parentNode && oldTitle.parentNode.removeChild(oldTitle);
-
-      if (secQ.querySelector('.yrp-menu-item.quality-future')) return;
-
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'yrp-menu-item quality-future';
-      btn.textContent = 'Quality (future)';
-      btn.disabled = true;
-      ensureTransparentMenuButton(btn);
-      btn.style.opacity = '0.75';
-      secQ.appendChild(btn);
-    } catch {}
-  }
-
-  function removeFutureSubtitlesSection() {
-    if (!menu) return;
-    try {
-      const sec = menu.querySelector('.yrp-menu-section[data-section="subtitles"]');
-      if (sec && sec.parentNode) sec.parentNode.removeChild(sec);
-    } catch {}
+    applyPageModes(video, activeTrackIndex, overlayActive);
+    updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+    refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
   }
 
   function openMainMenuView() {
-    if (!menu) return;
-    ensureMenuMainSnapshot();
-    menu.innerHTML = menuMainHTML;
-    menuView = 'main';
-
-    try {
-      const secSpeed = menu.querySelector('.yrp-menu-section[data-section="speed"]');
-      if (secSpeed && secSpeed.parentNode) secSpeed.parentNode.removeChild(secSpeed);
-    } catch {}
-
-    removeFutureSubtitlesSection();
-    normalizeQualitySectionTypography();
-
-    injectSpeedEntryIntoMain();
-    injectLanguagesEntryIntoMain();
-    injectSubtitlesEntryIntoMain();
-  }
-
-  function insertMainEntry(label, action, extra = {}) {
-    if (!menu) return null;
-
-    const firstSection = menu.querySelector('.yrp-menu-section') || null;
-
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'yrp-menu-item';
-    btn.setAttribute('data-action', action);
-    btn.textContent = label;
-
-    ensureTransparentMenuButton(btn);
-
-    if (extra && extra.disabled === true) {
-      btn.disabled = true;
-      btn.style.opacity = '0.6';
-    }
-
-    if (extra && extra.hasSubmenu === true) {
-      withSubmenuChevron(btn);
-    }
-
-    if (firstSection && firstSection.parentNode === menu) menu.insertBefore(btn, firstSection);
-    else menu.appendChild(btn);
-    return btn;
+    menuManager.openMainView({
+      injectSpeed: injectSpeedEntryIntoMain,
+      injectLanguages: injectLanguagesEntryIntoMain,
+      injectSubtitles: injectSubtitlesEntryIntoMain
+    });
   }
 
   function injectLanguagesEntryIntoMain() {
     if (!menu) return;
     if (menu.querySelector('.yrp-menu-item[data-action="open-langs"]')) return;
-    insertMainEntry('Languages', 'open-langs', { hasSubmenu: true });
+    insertMainEntry(menu, 'Languages', 'open-langs', { hasSubmenu: true }, ensureTransparentMenuButton, withSubmenuChevron);
   }
 
   function injectSpeedEntryIntoMain() {
     if (!menu) return;
     if (menu.querySelector('.yrp-menu-item[data-action="open-speed"]')) return;
-    insertMainEntry('Speed', 'open-speed', { hasSubmenu: true });
+    insertMainEntry(menu, 'Speed', 'open-speed', { hasSubmenu: true }, ensureTransparentMenuButton, withSubmenuChevron);
   }
 
   function injectSubtitlesEntryIntoMain() {
     if (!menu) return;
     if (menu.querySelector('.yrp-menu-item[data-action="open-subs"]')) return;
 
-    const has = anySubtitleTracks();
-    const btn = insertMainEntry('Subtitles', 'open-subs', { hasSubmenu: true, disabled: !has });
-    if (btn && !has) btn.title = 'No subtitles tracks';
+    const has = anySubtitleTracks(video);
+    const btn = insertMainEntry(menu, 'Subtitles', 'open-subs', { hasSubmenu: true, disabled: !has }, ensureTransparentMenuButton, withSubmenuChevron);
+    if (btn && !has) btn.title = 'No subtitle tracks';
   }
 
   function buildScrollableListContainer(backBtn) {
@@ -564,146 +386,19 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     return wrap;
   }
 
-  function buildLangsMenuView() {
-    if (!menu) return;
-    menuView = 'langs';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const sc = buildScrollableListContainer(back);
-    menu.appendChild(sc);
-
-    // Ensure lang list scrolls and wheel doesn't scroll the whole page behind the player
-    sc.style.maxHeight = '70vh';
-    sc.style.overflowY = 'auto';
-    sc.style.overflowX = 'hidden';
-    sc.style.webkitOverflowScrolling = 'touch';
-
-sc.addEventListener('wheel', function(e) {
-  let delta = e.deltaY;
-  if (e.deltaMode === 1) delta = delta * 16;           // lines -> px
-  else if (e.deltaMode === 2) delta = delta * sc.clientHeight; // pages -> px
-
-  sc.scrollTop = sc.scrollTop + delta;
-
-  e.preventDefault();
-  // DO NOT stopPropagation here; it can cause weird menu click issues
-}, { passive: false });
-
-
-    const list = trackInfoList();
-    const cur = chooseActiveTrack();
-    const curLang = (cur && (cur.language || cur.srclang)) ? String(cur.language || cur.srclang).toLowerCase() : '';
-
-    const sorted = list.slice().sort(function (a, b) {
-      const aa = (a.lang || '').toLowerCase();
-      const bb = (b.lang || '').toLowerCase();
-      if (aa === 'auto' && bb !== 'auto') return -1;
-      if (bb === 'auto' && aa !== 'auto') return 1;
-      return (a.label || '').localeCompare(b.label || '');
-    });
-
-    sorted.forEach(function (ti) {
-      const it = document.createElement('button');
-      it.type = 'button';
-      it.className = 'yrp-menu-item';
-      it.setAttribute('data-action', 'select-lang');
-      it.setAttribute('data-lang', ti.lang || '');
-
-      const suffix = ti.lang ? ` (${ti.lang})` : '';
-      it.textContent = ti.label + suffix + (ti.lang === curLang ? ' ✓' : '');
-
-      ensureTransparentMenuButton(it);
-      sc.appendChild(it);
-    });
-
-    if (!sorted.length) {
-      const empty = document.createElement('div');
-      empty.className = 'yrp-menu-title';
-      empty.style.marginTop = '6px';
-      empty.style.fontSize = '12px';
-      empty.style.opacity = '0.8';
-      empty.textContent = 'No subtitles tracks';
-      sc.appendChild(empty);
-    }
+  function wrappedBuildLangsMenuView() {
+    buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
+    menuManager.setView('langs');
   }
 
-  function speedOptions() {
-    return [0.5, 0.75, 1, 1.25, 1.5, 2];
+  function wrappedBuildSpeedMenuView() {
+    buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
+    menuManager.setView('speed');
   }
 
-  function applySpeed(sp) {
-    const s = parseFloat(String(sp));
-    if (!isFinite(s) || s <= 0) return;
-    video.playbackRate = s;
-    try { localStorage.setItem('playback_speed', String(s)); } catch {}
-  }
-
-  function buildSpeedMenuView() {
-    if (!menu) return;
-    menuView = 'speed';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const cur = isFinite(video.playbackRate) ? video.playbackRate : 1;
-
-    speedOptions().forEach(function (s) {
-      const it = document.createElement('button');
-      it.type = 'button';
-      it.className = 'yrp-menu-item';
-      it.setAttribute('data-action', 'set-speed');
-      it.setAttribute('data-speed', String(s));
-      it.textContent = (s === 1 ? '1.0x' : (String(s) + 'x')) + (Math.abs(s - cur) < 0.001 ? ' ✓' : '');
-      ensureTransparentMenuButton(it);
-      menu.appendChild(it);
-    });
-  }
-
-  function buildSubtitlesMenuView() {
-    if (!menu) return;
-    menuView = 'subs';
-
-    while (menu.firstChild) menu.removeChild(menu.firstChild);
-
-    const back = document.createElement('button');
-    back.type = 'button';
-    back.className = 'yrp-menu-item';
-    back.setAttribute('data-action', 'back');
-    back.textContent = '← Back';
-    styleBackButton(back);
-    menu.appendChild(back);
-
-    const onBtn = document.createElement('button');
-    onBtn.type = 'button';
-    onBtn.className = 'yrp-menu-item';
-    onBtn.setAttribute('data-action', 'subs-on');
-    onBtn.textContent = 'On' + (overlayActive ? ' ✓' : '');
-    ensureTransparentMenuButton(onBtn);
-    menu.appendChild(onBtn);
-
-    const offBtn = document.createElement('button');
-    offBtn.type = 'button';
-    offBtn.className = 'yrp-menu-item';
-    offBtn.setAttribute('data-action', 'subs-off');
-    offBtn.textContent = 'Off' + (!overlayActive ? ' ✓' : '');
-    ensureTransparentMenuButton(offBtn);
-    menu.appendChild(offBtn);
+  function wrappedBuildSubtitlesMenuView() {
+    buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
+    menuManager.setView('subs');
   }
 
   function applyIcon(button, varOn, varOff, isOn, fallbackEmoji) {
@@ -872,18 +567,6 @@ sc.addEventListener('wheel', function(e) {
       maskSize: '20px 20px'
     });
   }
-  function refreshSubtitlesBtn() {
-    if (!btnSubtitles) return;
-    const has = anySubtitleTracks();
-    btnSubtitles.disabled = !has;
-    btnSubtitles.style.visibility = has ? 'visible' : 'hidden';
-    btnSubtitles.classList.toggle('no-tracks', !has);
-    btnSubtitles.classList.toggle('has-tracks', has);
-    btnSubtitles.classList.toggle('active', has && overlayActive);
-    btnSubtitles.classList.toggle('disabled-track', has && !overlayActive);
-    btnSubtitles.setAttribute('aria-pressed', overlayActive ? 'true' : 'false');
-  }
-
   function scheduleAutoHide(ms) {
     if (hideTimer) clearTimeout(hideTimer);
     hideTimer = setTimeout(function () {
@@ -1024,22 +707,23 @@ sc.addEventListener('wheel', function(e) {
     refreshVolIcon();
     refreshAutoplayBtn();
     refreshPlayBtn();
+    refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
 
     if (prefLang) {
-      const idxPref = findTrackIndexByLang(prefLang);
+      const idxPref = findTrackIndexByLang(video, prefLang);
       if (idxPref >= 0) activeTrackIndex = idxPref;
     }
     if (isFinite(prefSpeed) && prefSpeed > 0) {
       applySpeed(prefSpeed);
     }
 
-    chooseActiveTrack();
-    applyPageModes();
-    refreshSubtitlesBtn();
+    chooseActiveTrack(video, activeTrackIndex);
+    applyPageModes(video, activeTrackIndex, overlayActive);
+    refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
     scheduleAutoHide(1200);
 
     loadSpritesVTT();
-    updateOverlayText();
+    updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
 
     const r = root.querySelector('.yrp-video-wrap').getBoundingClientRect();
     const centerX = r.width / 2, tb = root.querySelector('.yrp-captions-text');
@@ -1048,29 +732,19 @@ sc.addEventListener('wheel', function(e) {
       const pad = 12, minW = 220;
       tb.style.maxWidth = Math.max(minW, Math.floor(avail - pad)) + 'px';
     }
-    logTracks('after loadedmetadata');
+    logTracks(video, d, 'after loadedmetadata');
 
     if (menu && !menu.hidden) {
-      if (menuView === 'main') openMainMenuView();
-      else if (menuView === 'langs') buildLangsMenuView();
-      else if (menuView === 'speed') buildSpeedMenuView();
-      else if (menuView === 'subs') buildSubtitlesMenuView();
+      const currentView = menuManager.getView();
+      if (currentView === 'main') openMainMenuView();
+      else if (currentView === 'langs') wrappedBuildLangsMenuView();
+      else if (currentView === 'speed') wrappedBuildSpeedMenuView();
+      else if (currentView === 'subs') wrappedBuildSubtitlesMenuView();
     }
   });
 
-  function logTracks(prefix) {
-    const subs = subtitleTracks();
-    const info = subs.map(function (tr, i) {
-      return {
-        i: i,
-        mode: tr.mode,
-        label: tr.label,
-        srclang: tr.language || tr.srclang,
-        cues: tr.cues ? tr.cues.length : 0,
-        kind: tr.kind
-      };
-    });
-    d(prefix, info);
+  function wrappedLogTracks(prefix) {
+    logTracks(video, d, prefix);
   }
 
   function adjustWidthByAspect() {
@@ -1145,7 +819,7 @@ sc.addEventListener('wheel', function(e) {
   })();
 
   window.addEventListener('resize', adjustWidthByAspect);
-  video.addEventListener('timeupdate', function () { updateTimes(); updateProgress(); updateOverlayText(); });
+  video.addEventListener('timeupdate', function () { updateTimes(); updateProgress(); updateOverlayText(hooks, video, activeTrackIndex, overlayActive); });
   video.addEventListener('progress', updateProgress);
   video.addEventListener('play', function () { root.classList.add('playing'); refreshPlayBtn(); showControls(); });
   video.addEventListener('pause', function () { root.classList.remove('playing'); refreshPlayBtn(); showControls(); });
@@ -1418,12 +1092,12 @@ sc.addEventListener('wheel', function(e) {
     if (ctx) ctx.hidden = true;
     root.classList.remove('vol-open');
 
-    menuView = 'main';
-    resetMenuHeightLock();
+    menuManager.setView('main');
+    menuManager.resetHeightLock();
   }
 
   if (btnSettings && menu) {
-    ensureMenuMainSnapshot();
+    menuManager.ensureMainSnapshot();
 
     if (!menuBound) {
       menuBound = true;
@@ -1433,14 +1107,14 @@ sc.addEventListener('wheel', function(e) {
         if (open) {
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
-          menuView = 'main';
-          resetMenuHeightLock();
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
         } else {
           hideMenus();
           openMainMenuView();
           menu.hidden = false;
           btnSettings.setAttribute('aria-expanded', 'true');
-          lockMenuHeightFromCurrent();
+          menuManager.lockHeightFromCurrent();
         }
         e.stopPropagation();
         root.classList.add('vol-open');
@@ -1453,27 +1127,28 @@ sc.addEventListener('wheel', function(e) {
 
         const act = item.getAttribute('data-action') || '';
         const lang = item.getAttribute('data-lang') || '';
+        const currentView = menuManager.getView();
 
-        if (menuView === 'main') {
+        if (currentView === 'main') {
           if (act === 'open-langs') {
             e.preventDefault(); e.stopPropagation();
-            buildLangsMenuView();
-            lockMenuHeightFromCurrent();
+            wrappedBuildLangsMenuView();
+            menuManager.lockHeightFromCurrent();
             root.classList.add('vol-open'); showControls();
             return;
           }
           if (act === 'open-speed') {
             e.preventDefault(); e.stopPropagation();
-            buildSpeedMenuView();
-            lockMenuHeightFromCurrent();
+            wrappedBuildSpeedMenuView();
+            menuManager.lockHeightFromCurrent();
             root.classList.add('vol-open'); showControls();
             return;
           }
           if (act === 'open-subs') {
             e.preventDefault(); e.stopPropagation();
-            if (!anySubtitleTracks()) return;
-            buildSubtitlesMenuView();
-            lockMenuHeightFromCurrent();
+            if (!anySubtitleTracks(video)) return;
+            wrappedBuildSubtitlesMenuView();
+            menuManager.lockHeightFromCurrent();
             root.classList.add('vol-open'); showControls();
             return;
           }
@@ -1483,46 +1158,46 @@ sc.addEventListener('wheel', function(e) {
         if (act === 'back') {
           e.preventDefault(); e.stopPropagation();
           openMainMenuView();
-          lockMenuHeightFromCurrent();
+          menuManager.lockHeightFromCurrent();
           root.classList.add('vol-open'); showControls();
           return;
         }
 
-        if (menuView === 'langs') {
+        if (currentView === 'langs') {
           if (act === 'select-lang' && lang) {
             e.preventDefault(); e.stopPropagation();
             selectSubtitleLang(lang);
             menu.hidden = true;
             btnSettings.setAttribute('aria-expanded', 'false');
-            menuView = 'main';
-            resetMenuHeightLock();
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
             return;
           }
         }
 
-        if (menuView === 'speed') {
+        if (currentView === 'speed') {
           if (act === 'set-speed') {
             const sp2 = parseFloat(item.getAttribute('data-speed') || 'NaN');
             if (!isNaN(sp2)) {
               e.preventDefault(); e.stopPropagation();
-              applySpeed(sp2);
+              applySpeed(video, sp2);
               menu.hidden = true;
               btnSettings.setAttribute('aria-expanded', 'false');
-              menuView = 'main';
-              resetMenuHeightLock();
+              menuManager.setView('main');
+              menuManager.resetHeightLock();
               return;
             }
           }
         }
 
-        if (menuView === 'subs') {
+        if (currentView === 'subs') {
           if (act === 'subs-on') {
             e.preventDefault(); e.stopPropagation();
             setSubtitlesEnabled(true);
             menu.hidden = true;
             btnSettings.setAttribute('aria-expanded', 'false');
-            menuView = 'main';
-            resetMenuHeightLock();
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
             return;
           }
           if (act === 'subs-off') {
@@ -1530,8 +1205,8 @@ sc.addEventListener('wheel', function(e) {
             setSubtitlesEnabled(false);
             menu.hidden = true;
             btnSettings.setAttribute('aria-expanded', 'false');
-            menuView = 'main';
-            resetMenuHeightLock();
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
             return;
           }
         }
@@ -1541,8 +1216,8 @@ sc.addEventListener('wheel', function(e) {
         if (!menu.hidden && !menu.contains(e.target) && e.target !== btnSettings) {
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
-          menuView = 'main';
-          resetMenuHeightLock();
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
         }
       });
     }
@@ -1567,11 +1242,11 @@ sc.addEventListener('wheel', function(e) {
   btnSubtitles && btnSubtitles.addEventListener('click', function (e) {
     e.preventDefault();
     e.stopPropagation();
-    if (!anySubtitleTracks()) return;
+    if (!anySubtitleTracks(video)) return;
     overlayActive = !overlayActive;
-    applyPageModes();
-    updateOverlayText();
-    refreshSubtitlesBtn();
+    applyPageModes(video, activeTrackIndex, overlayActive);
+    updateOverlayText(hooks, video, activeTrackIndex, overlayActive);
+    refreshSubtitlesBtn(btnSubtitles, video, overlayActive);
   });
 
   root.addEventListener('contextmenu', function (e) {
