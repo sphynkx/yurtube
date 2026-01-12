@@ -37,6 +37,7 @@ Design notes
 For a minimal version with limited functionality, installing this app is sufficient. However, for full functionality, there are separate services with separate repositories:
 
 * [ytcms](https://github.com/sphynkx/ytcms) - service for captions generation
+* [yttrans](https://github.com/sphynkx/yttrans) - service for captions translations
 * [ytcomments](https://github.com/sphynkx/ytcomments) - service for comments
 * [ytsprites](https://github.com/sphynkx/ytsprites) - service for WebVTT sprites generation
 * [ytstorage](https://github.com/sphynkx/ytstorage) - service for external storage systems
