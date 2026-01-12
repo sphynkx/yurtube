@@ -216,6 +216,8 @@ async def video_translations_page(request: Request, video_id: str) -> Any:
             if not c:
                 continue
             target_langs_view.append({"code": c, "name": _lang_display_name_en(c)})
+        # Sort by display name
+        target_langs_view.sort(key=lambda x: ((x.get("name") or "").lower(), (x.get("code") or "").lower()))
 
         csrf_token = _get_csrf_cookie(request)
         return templates.TemplateResponse(
