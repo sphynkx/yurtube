@@ -504,6 +504,30 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
     });
   }
 
+  let menuMainHTML = '';
+  let menuFixedMinHeight = 0;
+
+  function ensureMenuMainSnapshot() {
+    if (!menu) return;
+    if (!menuMainHTML) menuMainHTML = menu.innerHTML || '';
+  }
+
+  function lockMenuHeightFromCurrent() {
+    if (!menu) return;
+    if (menuFixedMinHeight > 0) return;
+    try {
+      const r = menu.getBoundingClientRect();
+      menuFixedMinHeight = Math.ceil(r.height || 0);
+      if (menuFixedMinHeight > 0) menu.style.minHeight = menuFixedMinHeight + 'px';
+    } catch {}
+  }
+
+  function resetMenuHeightLock() {
+    if (!menu) return;
+    menuFixedMinHeight = 0;
+    menu.style.minHeight = '';
+  }
+
   function hideMenus() {
     if (menu) { menu.hidden = true; if (btnSettings) btnSettings.setAttribute('aria-expanded', 'false'); }
     if (ctx) ctx.hidden = true;
@@ -717,7 +741,7 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
       if (isOpen) {
         menu.hidden = true;
         btnSettings.setAttribute('aria-expanded', 'false');
-        menuView = 'main';
+        menuManager.setView('main');
         resetMenuHeightLock();
       } else {
         hideMenus();
