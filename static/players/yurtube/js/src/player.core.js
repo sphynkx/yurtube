@@ -374,18 +374,6 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     if (btn && !has) btn.title = 'No subtitle tracks';
   }
 
-  function buildScrollableListContainer(backBtn) {
-    const wrap = document.createElement('div');
-    wrap.className = 'yrp-menu-scroll';
-    Object.assign(wrap.style, {
-      overflowY: 'auto',
-      overflowX: 'hidden',
-      maxHeight: 'calc(100% - 40px)',
-      paddingRight: '2px'
-    });
-    return wrap;
-  }
-
   function wrappedBuildLangsMenuView() {
     buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
     menuManager.setView('langs');
