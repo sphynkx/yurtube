@@ -69,6 +69,13 @@
                       formaction="/manage/video/{{ video_id }}/translations/delete"
                       style="margin-left:8px;"
                       title="Delete selected translations">Delete</button>
+			  <button type="submit"
+                      formaction="/manage/video/{{ video_id }}/translations/reset_all"
+                      style="margin-left:8px; background:#b00020; color:#fff;"
+                      title="Delete ALL translations and reset translation job"
+                      onclick="return confirm('Reset ALL translations for this video? This will delete all translated VTT files and reset translations.meta.json.');">
+                Reset All
+              </button>
               <span id="trans-status" style="margin-left:10px;font-size:12px;color:#555;"></span>
             </div>
           </form>
