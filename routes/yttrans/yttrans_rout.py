@@ -449,6 +449,108 @@ async def translations_delete(
     return RedirectResponse(url=f"/manage/video/{video_id}/translations", status_code=303)
 
 
+@router.post("/manage/video/{video_id}/translations/reset_all", response_class=HTMLResponse)
+async def translations_reset_all(
+    request: Request,
+    video_id: str,
+    csrf_token: Optional[str] = Form(None),
+) -> Any:
+    """
+    Hard reset translations state for video:
+    - removes captions/*.vtt except captions.vtt
+    - removes captions/translations.meta.json
+    Fixes issues then service fail or redis was cleaned.. and job is removed on other side. Permit 502 errors.
+    """
+    user = get_current_user(request)
+    if not user:
+        return RedirectResponse("/auth/login", status_code=302)
+
+    if not _validate_csrf(request, csrf_token):
+        return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
+
+    conn = await get_conn()
+    try:
+        owned = await get_owned_video(conn, video_id, user["user_uid"])
+        if not owned:
+            return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+        storage_rel = owned["storage_path"].rstrip("/")
+    finally:
+        await release_conn(conn)
+
+    storage_client: StorageClient = request.app.state.storage
+    captions_dir = os.path.join(storage_rel, "captions").rstrip("/")
+
+    # 1) list caption dir and delete all *.vtt except captions.vtt
+    # StorageClient API differs between backends; try common patterns.
+    removed_any = False
+    try:
+        # Prefer listdir if exists
+        if hasattr(storage_client, "listdir"):
+            items = storage_client.listdir(captions_dir)
+            if inspect.isawaitable(items):
+                items = await items
+
+            # items could be names or dicts; normalize to string names
+            names: List[str] = []
+            for it in (items or []):
+                if isinstance(it, str):
+                    names.append(it)
+                elif isinstance(it, dict):
+                    n = (it.get("name") or it.get("key") or it.get("path") or "")
+                    if n:
+                        names.append(str(n))
+                else:
+                    n = getattr(it, "name", None) or getattr(it, "key", None) or getattr(it, "path", None)
+                    if n:
+                        names.append(str(n))
+
+            for name in names:
+                # name might be "en.vtt" or "captions/en.vtt"
+                base = name.split("/")[-1]
+                if not base.endswith(".vtt"):
+                    continue
+                if base == "captions.vtt":
+                    continue
+                rel = os.path.join(captions_dir, base)
+                try:
+                    rm = storage_client.remove(rel)
+                    if inspect.isawaitable(rm):
+                        await rm
+                    removed_any = True
+                except Exception:
+                    pass
+    except Exception:
+        # if listing isn't supported, we still can at least delete meta
+        pass
+
+    # 2) remove translations meta
+    meta_rel = os.path.join(captions_dir, "translations.meta.json")
+    try:
+        rm = storage_client.remove(meta_rel)
+        if inspect.isawaitable(rm):
+            await rm
+        removed_any = True
+    except Exception:
+        # Fallback: overwrite meta with empty reset structure (so UI stops polling job_id)
+        try:
+            trans_meta = await _read_translations_meta(storage_client, storage_rel)
+            trans_meta["video_id"] = video_id
+            trans_meta["langs"] = []
+            trans_meta["default_lang"] = "auto"
+            trans_meta["job_id"] = ""
+            trans_meta["job_state"] = ""
+            trans_meta["job_message"] = ""
+            trans_meta["job_result_fetched"] = False
+            import time
+            trans_meta["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+            await _write_translations_meta(storage_client, storage_rel, trans_meta)
+            removed_any = True
+        except Exception:
+            pass
+
+    return RedirectResponse(url=f"/manage/video/{video_id}/translations", status_code=303)
+
+
 @router.get("/internal/yttrans/translations/status")
 async def translations_status(request: Request, video_id: str = Query(...)) -> Any:
     user = get_current_user(request)
