@@ -22,7 +22,12 @@
       </p>
     {% else %}
       <section style="margin-top:16px;">
-        <h2>Available target languages</h2>
+        <h2>
+			Available target languages
+			{% if target_langs %}
+				({{ target_langs|length }})
+			{% endif %}
+		</h2>
 
         {% if yttrans_meta and yttrans_meta.error %}
           <div class="alert alert-error" style="margin-bottom:10px;">
