@@ -22,12 +22,7 @@
       </p>
     {% else %}
       <section style="margin-top:16px;">
-        <h2>
-			Available target languages
-			{% if target_langs %}
-				({{ target_langs|length }})
-			{% endif %}
-		</h2>
+        <h2>Available target languages</h2>
 
         {% if yttrans_meta and yttrans_meta.error %}
           <div class="alert alert-error" style="margin-bottom:10px;">
@@ -37,7 +32,11 @@
 
         {% if target_langs %}
           <div style="font-size:12px; color:#555; margin-bottom:6px;">
-            Default source language: <code>{{ default_source_lang }}</code>
+		    Provider: <code>{{ yttrans_meta["engine"] }}</code><br>
+		    Model: <code>{{ yttrans_meta["model"] or "unknown" }}</code><br>
+		    Device: <code>{{ yttrans_meta["device"] or "unknown" }}</code><br>
+		    Langs amount: <code>{{ target_langs|length or 0 }}</code><br>
+            Default source lang: <code>{{ default_source_lang }}</code>
           </div>
 
           <form id="form-translations" method="post">
