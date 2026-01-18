@@ -294,7 +294,15 @@ deactivate
 ### Caption generation service (external)
 This is separate service based on gRPC+protobuf and faster-whisper. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/ytcms) for details about it's install and configuration.
 
-At app config you need to set IP address (`YTCMS_HOST`) and port (`YTCMS_PORT`) of `ytcms` service, `YTCMS_TOKEN` same as on service side. Also make sure that file `services/ytcms/ytcms_proto/captions.proto` is identical with one at `ytcms` service. If not - you have to regenerate stubs:
+Default config is 127.0.0.1:9099 but you may reconfigure it to multiserver configuration and redefine other params via `.env`:
+```conf
+YTCMS_SERVERS=192.168.7.20:9099,127.0.0.1:9099,[::1]:9099
+YTCMS_TOKEN=CHANGE_ME
+YTCMS_HEALTH_TIMEOUT=0.7
+YTCMS_SERVER_TTL=10
+YTCMS_AUDIO_PREPROCESS=demux
+```
+Also make sure that file `services/ytcms/ytcms_proto/captions.proto` is identical with one at `ytcms` service. If not - you have to regenerate stubs:
 ```bash
 cd services/ytcms_proto
 ./gen_proto.sh
@@ -303,7 +311,7 @@ cd services/ytcms_proto
 
 ### Caption translation service (external)
 This is separate service based on gRPC+protobuf and different translation providers. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/yttrans) for details about it's install and configuration.
-At app config you need to set IP address (`YTTRANS_HOST`) and port (`YTTRANS_PORT`) of `ytcms` service, `YTTRANS_TOKEN` same as on service side. Also make sure that file `services/yttrans/yttrans_proto/yttrans.proto` is identical with one at `yttrans` service. If not - you have to regenerate stubs:
+At app config you need to set IP address (`YTTRANS_HOST`) and port (`YTTRANS_PORT`) of `yttrans` service, `YTTRANS_TOKEN` same as on service side. Also make sure that file `services/yttrans/yttrans_proto/yttrans.proto` is identical with one at `yttrans` service. If not - you have to regenerate stubs:
 ```bash
 cd services/yttrans_proto
 ./gen_proto.sh
@@ -332,8 +340,14 @@ Make sure that the `services/ytcomments/ytcomments.proto` is same as one for the
 ### Sprites preview service (external)
 This is separate service for generation sprites preview, based on gRPC+protobuf. It could be installed locally or on some other server. Download it from [this repository](https://github.com/sphynkx/ytsprites), follow [instructions](https://github.com/sphynkx/ytsprites/README.md) for install, configure and run. 
 
-Configure app to communicate with that service - set necessary params to `.env`, about params and current defaults - see in the `config/ytsprites/ytsprites_cfg.py`.
-
+Default config is 127.0.0.1:9094 but you may reconfigure it to multiserver configuration and redefine other params via `.env`:
+```conf
+YTSPRITES_GRPC_ADDR="127.0.0.1:9094"
+YTSPRITES_SERVERS=192.168.7.20:9094,127.0.0.1:9094,[::1]:9094
+YTSPRITES_HEALTH_TIMEOUT=2.0
+YTSPRITES_SERVER_TTL=10
+YTSPRITES_TOKEN=CHANGE_ME
+```
 Also make sure that file `services/ytsprites/ytsprites_proto/ytsprites.proto` is identical with one at `ytsprites` service. If not - you have to regenerate stubs:
 ```bash
 cd services/ytsprites/ytsprites_proto
