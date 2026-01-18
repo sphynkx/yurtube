@@ -12,7 +12,7 @@ import os
 
 STORAGE_PROVIDER: str = os.getenv("STORAGE_PROVIDER", "local").strip()
 
-STORAGE_REMOTE_ADDRESS: str = os.getenv("STORAGE_REMOTE_ADDRESS", "127.0.0.1:50070").strip()
+STORAGE_REMOTE_ADDRESS: str = os.getenv("STORAGE_REMOTE_ADDRESS", "127.0.0.1:9092").strip()
 STORAGE_REMOTE_TLS: bool = (os.getenv("STORAGE_REMOTE_TLS", "").strip().lower() in ("1", "true", "yes", "on"))
 STORAGE_REMOTE_TOKEN: str = os.getenv("STORAGE_REMOTE_TOKEN", "").strip()
 STORAGE_REMOTE_BASE_PREFIX: str = os.getenv("STORAGE_REMOTE_BASE_PREFIX", "").strip()

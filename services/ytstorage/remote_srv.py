@@ -60,7 +60,7 @@ def _auth_md() -> List[tuple]:
 
 
 def _grpc_channel() -> grpc.aio.Channel:
-    target = _cfg_str("STORAGE_REMOTE_ADDRESS", "127.0.0.1:50070")
+    target = _cfg_str("STORAGE_REMOTE_ADDRESS", "127.0.0.1:9092")
     use_tls = _cfg_bool("STORAGE_REMOTE_TLS", False)
     max_msg = _cfg_int("STORAGE_GRPC_MAX_MSG_MB", 64) * 1024 * 1024
     opts = [
