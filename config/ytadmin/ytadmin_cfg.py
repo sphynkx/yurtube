@@ -89,7 +89,7 @@ class YTAdminConfig:
     version: str = os.getenv("SERVICE_VERSION", "")
 
     # Public address of the app itself (shown to admin in identity.host)
-    identity_host: str = os.getenv("YTADMIN_IDENTITY_HOST", "127.0.0.1:50051")
+    identity_host: str = os.getenv("YTADMIN_IDENTITY_HOST", "127.0.0.1:9090")
 
     # Push intervals
     push_health_interval_sec: int = _get_int("YTADMIN_HEALTH_INTERVAL_SEC", 30)

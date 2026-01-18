@@ -16,11 +16,11 @@ class GrpcConfig:
     """
     Parameters:
     - host: interface on which the application listens (default 0.0.0.0).
-    - port: gRPC port (default 50051).
+    - port: gRPC port (default 9090).
     - tls_*: future-proof
     """
     host: str = os.getenv("APP_GRPC_HOST", "0.0.0.0")
-    port: int = _get_int("APP_GRPC_PORT", 50051)
+    port: int = _get_int("APP_GRPC_PORT", 9090)
 
     tls_enabled: bool = False
     tls_ca_path: str | None = None
