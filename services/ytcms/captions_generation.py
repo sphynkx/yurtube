@@ -9,7 +9,7 @@ from typing import Tuple, Dict, Optional, Callable
 from services.ytcms.ytcms_client_srv import submit_and_wait
 from services.ffmpeg_srv import async_extract_audio_demux, async_transcode_audio
 
-from config.ytcms_cfg import (
+from config.ytcms.ytcms_cfg import (
     YTCMS_AUDIO_PREPROCESS,
     YTCMS_AUDIO_CODEC,
     YTCMS_AUDIO_SR,

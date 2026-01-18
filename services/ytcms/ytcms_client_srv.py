@@ -8,7 +8,7 @@ from typing import Iterator, Optional, Tuple, Callable, Any, Dict, List
 
 from grpc_health.v1 import health_pb2, health_pb2_grpc  # type: ignore
 
-from config.ytcms_cfg import (
+from config.ytcms.ytcms_cfg import (
     load_ytcms_config,
     YTCMS_TOKEN,
     YTCMS_DEFAULT_LANG,
