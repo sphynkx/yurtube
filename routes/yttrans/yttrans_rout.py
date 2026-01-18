@@ -23,6 +23,8 @@ from services.yttrans.yttrans_client_srv import (
     get_result,
 )
 
+from utils.yttrans.yttrans_ut import lang_display_name_en
+
 router = APIRouter(tags=["yttrans"])
 templates = Jinja2Templates(directory="templates")
 
@@ -45,31 +47,6 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
         return _sec.compare_digest(cookie_tok, form_tok)
     except Exception:
         return False
-
-
-def _lang_display_name_en(code: str) -> str:
-    """
-    Convert BCP47/ISO code (e.g. 'en', 'pt-BR', 'zh-Hans') to English display name using Babel.
-    Falls back to the code itself if unknown / Babel missing.
-    """
-    c = (code or "").strip()
-    if not c:
-        return ""
-    try:
-        from babel.core import Locale  # type: ignore
-
-        loc_code = c.replace("-", "_")
-        try:
-            loc = Locale.parse(loc_code)
-        except Exception:
-            base = loc_code.split("_", 1)[0]
-            loc = Locale.parse(base)
-        name = loc.get_display_name("en")
-        if not name:
-            return c
-        return name[:1].upper() + name[1:]
-    except Exception:
-        return c
 
 
 async def _read_text(storage_client: StorageClient, rel_path: str, encoding: str = "utf-8") -> str:
@@ -218,7 +195,8 @@ async def video_translations_page(request: Request, video_id: str) -> Any:
             c = (code or "").strip()
             if not c:
                 continue
-            target_langs_view.append({"code": c, "name": _lang_display_name_en(c)})
+            target_langs_view.append({"code": c, "name": lang_display_name_en(c)})
+
         # Sort by display name
         target_langs_view.sort(key=lambda x: ((x.get("name") or "").lower(), (x.get("code") or "").lower()))
 
@@ -233,6 +211,7 @@ async def video_translations_page(request: Request, video_id: str) -> Any:
                 "target_langs": target_langs_view,
                 "default_source_lang": default_src,
                 "yttrans_meta": meta,
+                "trans_meta": trans_meta,
                 "existing_langs": existing_langs,
                 "csrf_token": csrf_token,
                 "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -315,17 +294,9 @@ async def translations_generate(
         print(f"[YTTRANS] meta job_id write failed video_id={video_id}: {e}")
 
     async def _bg_worker() -> None:
-        print(
-            f"[YTTRANS] job queued video_id={video_id} job_id={job_id} server={job_server} langs={target_langs}"
-        )
+        print(f"[YTTRANS] job queued video_id={video_id} job_id={job_id} server={job_server} langs={target_langs}")
         try:
-            pr: Dict[str, Any] = {
-                "state": "running",
-                "percent": -1,
-                "message": "",
-                "ready_langs": [],
-                "total_langs": 0,
-            }
+            pr: Dict[str, Any] = {"state": "running", "percent": -1, "message": "", "ready_langs": [], "total_langs": 0}
 
             # Poll partial until DONE/FAILED
             for _ in range(900):  # ~15 min
@@ -351,9 +322,7 @@ async def translations_generate(
                 await asyncio.sleep(1.0)
 
             if (pr.get("state") or "").lower() != "done":
-                print(
-                    f"[YTTRANS] job failed video_id={video_id} job_id={job_id} server={job_server} msg={pr.get('message')}"
-                )
+                print(f"[YTTRANS] job failed video_id={video_id} job_id={job_id} server={job_server} msg={pr.get('message')}")
                 return
 
             # DONE: fetch VTT exactly once (one-shot contract)
