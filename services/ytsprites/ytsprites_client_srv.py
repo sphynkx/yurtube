@@ -7,7 +7,7 @@ import grpc
 from typing import Callable, Dict, List, Optional, Tuple, Any
 
 from config.ytsprites.ytsprites_cfg import (
-    ytsprites_address,
+    ytsprites_servers,
     YTSPRITES_TOKEN,
     YTSPRITES_SUBMIT_TIMEOUT,
     YTSPRITES_STATUS_TIMEOUT,
@@ -22,6 +22,8 @@ from config.ytsprites.ytsprites_cfg import (
     YTSPRITES_GRPC_MAX_SEND_MB,
     YTSPRITES_GRPC_MAX_RECV_MB,
     YTSPRITES_GRPC_COMPRESSION,
+    YTSPRITES_HEALTH_TIMEOUT,
+    YTSPRITES_SERVER_TTL,
 )
 
 # Import protobuf stubs: add the ytsprites_proto directory to sys.path
@@ -29,6 +31,9 @@ from config.ytsprites.ytsprites_cfg import (
 sys.path.append(str(pathlib.Path(__file__).resolve().parent / "ytsprites_proto"))
 import ytsprites_pb2 as pb
 import ytsprites_pb2_grpc as pbg
+
+
+_last_good: Dict[str, Any] = {"addr": None, "ts": 0.0}
 
 
 def _auth_metadata() -> List[Tuple[str, str]]:
@@ -59,15 +64,14 @@ def _read_file_bytes(abs_path: str) -> bytes:
         return f.read()
 
 
-def _open_stub() -> pbg.SpritesStub:
-    addr = ytsprites_address()
+def _channel_for_addr(addr: str) -> grpc.Channel:
     max_send = int(YTSPRITES_GRPC_MAX_SEND_MB) * 1024 * 1024
     max_recv = int(YTSPRITES_GRPC_MAX_RECV_MB) * 1024 * 1024
     compression = None
     if (YTSPRITES_GRPC_COMPRESSION or "").lower() == "gzip":
         compression = grpc.Compression.Gzip
 
-    channel = grpc.insecure_channel(
+    return grpc.insecure_channel(
         addr,
         options=[
             ("grpc.max_send_message_length", max_send),
@@ -75,20 +79,68 @@ def _open_stub() -> pbg.SpritesStub:
         ],
         compression=compression,
     )
+
+
+def _open_stub(addr: str) -> pbg.SpritesStub:
+    channel = _channel_for_addr(addr)
     return pbg.SpritesStub(channel)
 
 
-def health_check() -> bool:
-    stub = _open_stub()
+def health_check(addr: Optional[str] = None) -> bool:
+    """
+    Service-native healthcheck (Sprites/Health).
+    """
+    if not addr:
+        # best effort pick: try cached, then first configured
+        cached = _last_good.get("addr")
+        if cached:
+            addr = str(cached)
+        else:
+            s0 = ytsprites_servers()[0]
+            addr = s0.target
+
+    stub = _open_stub(addr)
     try:
-        rep = stub.Health(pb.HealthRequest(), timeout=10.0, metadata=_auth_metadata())
+        rep = stub.Health(pb.HealthRequest(), timeout=float(YTSPRITES_HEALTH_TIMEOUT), metadata=_auth_metadata())
         return (rep.status or "").lower() == "ok"
     except Exception:
         return False
 
 
+def pick_ytsprites_addr() -> str:
+    """
+    Pick first healthy server from YTSPRITES_SERVERS (preferred order).
+    TTL-cached.
+    """
+    servers = ytsprites_servers()
+    if not servers:
+        return "127.0.0.1:9094"
+
+    now = time.time()
+    cached = _last_good.get("addr")
+    ts = float(_last_good.get("ts") or 0.0)
+    if cached and (now - ts) < float(YTSPRITES_SERVER_TTL):
+        return str(cached)
+
+    for s in servers:
+        addr = s.target
+        if health_check(addr):
+            _last_good["addr"] = addr
+            _last_good["ts"] = now
+            return addr
+
+    # none healthy -> fallback to first
+    addr0 = servers[0].target
+    _last_good["addr"] = addr0
+    _last_good["ts"] = now
+    return addr0
+
+
 # Send only (get job_id), without waiting for the result
-def submit_only(video_id: str, video_abs_path: str, video_mime: Optional[str] = None) -> str:
+def submit_only(video_id: str, video_abs_path: str, video_mime: Optional[str] = None) -> Tuple[str, str]:
+    """
+    Returns (job_id, job_server_addr).
+    """
     data = _read_file_bytes(video_abs_path)
     mime = (video_mime or YTSPRITES_DEFAULT_MIME).strip() or YTSPRITES_DEFAULT_MIME
     req = pb.SubmitRequest(
@@ -97,19 +149,28 @@ def submit_only(video_id: str, video_abs_path: str, video_mime: Optional[str] = 
         video_mime=mime,
         options=_build_options(),
     )
-    stub = _open_stub()
+
+    addr = pick_ytsprites_addr()
+    stub = _open_stub(addr)
     rep: pb.SubmitReply = stub.Submit(req, timeout=YTSPRITES_SUBMIT_TIMEOUT, metadata=_auth_metadata())
     if not rep.accepted:
         raise RuntimeError(f"Submit rejected for video_id={video_id}")
-    return rep.job_id
+    return rep.job_id, addr
 
 
-def watch_status(job_id: str, on_update: Optional[Callable[[Dict], None]] = None) -> Optional[pb.StatusUpdate]:
-    stub = _open_stub()
+def watch_status(job_id: str, job_server: str, on_update: Optional[Callable[[Dict], None]] = None) -> Optional[pb.StatusUpdate]:
+    """
+    IMPORTANT: affinity — status is watched on the SAME server where job was created.
+    """
+    stub = _open_stub(job_server)
     last = None
     start_ts = time.time()
     try:
-        for upd in stub.WatchStatus(pb.StatusRequest(job_id=job_id), timeout=YTSPRITES_STATUS_TIMEOUT, metadata=_auth_metadata()):
+        for upd in stub.WatchStatus(
+            pb.StatusRequest(job_id=job_id),
+            timeout=YTSPRITES_STATUS_TIMEOUT,
+            metadata=_auth_metadata(),
+        ):
             last = upd
             item = {
                 "job_id": upd.job_id,
@@ -132,9 +193,16 @@ def watch_status(job_id: str, on_update: Optional[Callable[[Dict], None]] = None
 
 
 # Get results by job_id
-def get_result(job_id: str) -> Tuple[str, List[Tuple[str, bytes]], str]:
-    stub = _open_stub()
-    rep: pb.ResultReply = stub.GetResult(pb.GetResultRequest(job_id=job_id), timeout=YTSPRITES_RESULT_TIMEOUT, metadata=_auth_metadata())
+def get_result(job_id: str, job_server: str) -> Tuple[str, List[Tuple[str, bytes]], str]:
+    """
+    IMPORTANT: affinity — result is fetched from the SAME server where job was created.
+    """
+    stub = _open_stub(job_server)
+    rep: pb.ResultReply = stub.GetResult(
+        pb.GetResultRequest(job_id=job_id),
+        timeout=YTSPRITES_RESULT_TIMEOUT,
+        metadata=_auth_metadata(),
+    )
     video_id = rep.video_id
     sprites: List[Tuple[str, bytes]] = []
     for sb in rep.sprites:
@@ -144,11 +212,20 @@ def get_result(job_id: str) -> Tuple[str, List[Tuple[str, bytes]], str]:
 
 
 # Send a video file, wait for completion (via status stream) and collect the result
-def submit_and_wait(video_id: str, video_abs_path: str, video_mime: Optional[str] = None,
-                    on_status: Optional[Callable[[Dict], None]] = None) -> Tuple[str, List[Tuple[str, bytes]], str]:
-    job_id = submit_only(video_id, video_abs_path, video_mime=video_mime)
-    watch_status(job_id, on_update=on_status)
-    return get_result(job_id)
+def submit_and_wait(
+    video_id: str,
+    video_abs_path: str,
+    video_mime: Optional[str] = None,
+    on_status: Optional[Callable[[Dict], None]] = None,
+) -> Tuple[str, List[Tuple[str, bytes]], str]:
+    """
+    Full flow with affinity:
+      - submit chooses job_server
+      - watch_status + get_result use the SAME job_server
+    """
+    job_id, job_server = submit_only(video_id, video_abs_path, video_mime=video_mime)
+    watch_status(job_id, job_server, on_update=on_status)
+    return get_result(job_id, job_server)
 
 
 # Local processing via ytsprites
@@ -160,7 +237,7 @@ async def create_thumbnails_job(
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Thumbs generator. 
+    Thumbs generator.
     Calls gRPC ytsprites
     Sync processing, saves files to out_base_path.
 
