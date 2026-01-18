@@ -43,8 +43,12 @@ def _set_job_state(video_id: str, status: str, percent: int = -1, job_id: Option
         "percent": int(percent if isinstance(percent, (int, float)) else -1),
         "job_id": job_id if job_id is not None else prev.get("job_id"),
         "ts": now,
-        "last_active_percent": int(percent) if isinstance(percent, (int, float)) and 0 < int(percent) < 100 else (prev.get("last_active_percent", -1)),
-        "last_active_percent_ts": now if isinstance(percent, (int, float)) and 0 < int(percent) < 100 else (prev.get("last_active_percent_ts", 0.0)),
+        "last_active_percent": int(percent)
+        if isinstance(percent, (int, float)) and 0 < int(percent) < 100
+        else (prev.get("last_active_percent", -1)),
+        "last_active_percent_ts": now
+        if isinstance(percent, (int, float)) and 0 < int(percent) < 100
+        else (prev.get("last_active_percent_ts", 0.0)),
         "last_process_status": status if status in ("start", "wait", "process") else (prev.get("last_process_status", None)),
         "last_process_status_ts": now if status in ("start", "wait", "process") else (prev.get("last_process_status_ts", 0.0)),
     }
@@ -231,6 +235,7 @@ async def captions_status(video_id: str = Query(...)):
     ready = False
     meta = None
     job_id = None
+    job_server = None
 
     if row:
         rel_vtt = row.get("captions_vtt")
@@ -246,6 +251,7 @@ async def captions_status(video_id: str = Query(...)):
                 meta = None
         if isinstance(meta, dict):
             job_id = meta.get("job_id") or job_id
+            job_server = meta.get("job_server") or job_server
 
     js = _get_job_state(video_id)
     now = time.time()
@@ -260,6 +266,7 @@ async def captions_status(video_id: str = Query(...)):
             "rel_vtt": rel_vtt,
             "lang": lang,
             "job_id": job_id or (js.get("job_id") if js else None),
+            "job_server": job_server,
         }
 
     if js:
@@ -274,6 +281,7 @@ async def captions_status(video_id: str = Query(...)):
             "rel_vtt": None,
             "lang": lang,
             "job_id": job_id or js.get("job_id"),
+            "job_server": job_server,
         }
 
     prev = _JOB_STATE.get(video_id) or {}
@@ -289,6 +297,7 @@ async def captions_status(video_id: str = Query(...)):
             "rel_vtt": None,
             "lang": lang,
             "job_id": job_id or prev.get("job_id"),
+            "job_server": job_server,
         }
 
     last_st = prev.get("last_process_status")
@@ -303,6 +312,7 @@ async def captions_status(video_id: str = Query(...)):
             "rel_vtt": None,
             "lang": lang,
             "job_id": job_id or prev.get("job_id"),
+            "job_server": job_server,
         }
 
     return {
@@ -314,6 +324,7 @@ async def captions_status(video_id: str = Query(...)):
         "rel_vtt": None,
         "lang": lang,
         "job_id": job_id or prev.get("job_id"),
+        "job_server": job_server,
     }
 
 

@@ -4,24 +4,43 @@ import uuid
 import grpc
 import sys
 import pathlib
-from typing import Iterator, Optional, Tuple, Callable
+from typing import Iterator, Optional, Tuple, Callable, Any, Dict, List
+
+from grpc_health.v1 import health_pb2, health_pb2_grpc  # type: ignore
 
 from config.ytcms_cfg import (
-    ytcms_address, 
-    YTCMS_TOKEN, 
-    YTCMS_DEFAULT_LANG, 
+    load_ytcms_config,
+    YTCMS_TOKEN,
+    YTCMS_DEFAULT_LANG,
     YTCMS_DEFAULT_TASK,
     YTCMS_POLL_INTERVAL,
     YTCMS_SUBMIT_TIMEOUT,
     YTCMS_STATUS_TIMEOUT,
     YTCMS_RESULT_TIMEOUT,
-    )
+)
 
 # Make generated stubs importable as top-level modules (captions_pb2_grpc imports captions_pb2).
 sys.path.append(str(pathlib.Path(__file__).resolve().parent / "ytcms_proto"))
 
 import captions_pb2
 import captions_pb2_grpc
+
+
+# Failover tuning
+_YTCMS_HEALTH_TIMEOUT_SEC = float((os.getenv("YTCMS_HEALTH_TIMEOUT", "") or "0.7").strip() or "0.7")
+_YTCMS_SERVER_TTL_SEC = float((os.getenv("YTCMS_SERVER_TTL", "") or "10").strip() or "10")
+_last_good: Dict[str, Any] = {"addr": None, "ts": 0.0}
+
+
+def _auth_md() -> List[Tuple[str, str]]:
+    """
+    Send Authorization header if YTCMS_TOKEN is set.
+    Do not special-case CHANGE_ME here because some deployments use it as a real token.
+    """
+    tok = (YTCMS_TOKEN or "").strip()
+    if not tok:
+        return []
+    return [("authorization", f"Bearer {tok}")]
 
 
 def _upload_stream(video_path: str, video_id: str, lang: str, task: str) -> Iterator[captions_pb2.UploadChunk]:
@@ -80,6 +99,80 @@ def _extract_percent(status_reply: captions_pb2.JobStatusReply) -> Tuple[int, fl
     return p_int, p_norm
 
 
+def _healthcheck_addr(addr: str) -> bool:
+    """
+    Standard gRPC healthcheck: grpc.health.v1.Health/Check.
+    Tries service-specific check first, then global service="".
+    """
+    channel = grpc.insecure_channel(addr)
+    try:
+        stub = health_pb2_grpc.HealthStub(channel)
+        md = _auth_md()
+
+        # 1) service-specific
+        try:
+            resp = stub.Check(
+                health_pb2.HealthCheckRequest(service="ytcms.v1.CaptionsService"),
+                metadata=md,
+                timeout=_YTCMS_HEALTH_TIMEOUT_SEC,
+            )
+            if resp.status == health_pb2.HealthCheckResponse.SERVING:
+                return True
+        except Exception:
+            pass
+
+        # 2) global
+        try:
+            resp2 = stub.Check(
+                health_pb2.HealthCheckRequest(service=""),
+                metadata=md,
+                timeout=_YTCMS_HEALTH_TIMEOUT_SEC,
+            )
+            return resp2.status == health_pb2.HealthCheckResponse.SERVING
+        except Exception:
+            return False
+    finally:
+        try:
+            channel.close()
+        except Exception:
+            pass
+
+
+def pick_ytcms_server_addr() -> str:
+    """
+    Pick first healthy ytcms server from YTCMS_SERVERS (preferred order).
+    TTL-cached.
+    """
+    cfg = load_ytcms_config()
+    servers = list(cfg.servers or [])
+    if not servers:
+        return f"{cfg.host}:{cfg.port}"
+
+    now = time.time()
+    cached = _last_good.get("addr")
+    ts = float(_last_good.get("ts") or 0.0)
+
+    if cached and (now - ts) < _YTCMS_SERVER_TTL_SEC:
+        return str(cached)
+
+    # Probe in order
+    for s in servers:
+        addr = f"{s.host}:{s.port}"
+        try:
+            if _healthcheck_addr(addr):
+                _last_good["addr"] = addr
+                _last_good["ts"] = now
+                return addr
+        except Exception:
+            continue
+
+    # none healthy -> fallback to first
+    addr0 = f"{servers[0].host}:{servers[0].port}"
+    _last_good["addr"] = addr0
+    _last_good["ts"] = now
+    return addr0
+
+
 def submit_and_wait(
     video_path: str,
     video_id: str,
@@ -98,113 +191,129 @@ def submit_and_wait(
 
     on_status(video_id, job_id, status, percent, progress):
     - callback is called on every status/progress change.
+
+    Failover:
+    - server is chosen before submit via grpc.health.v1.Health/Check
+    - all subsequent calls (status/result) use the SAME server (job affinity)
     """
-    addr = ytcms_address()
+    addr = pick_ytcms_server_addr()
     lang = (lang or YTCMS_DEFAULT_LANG).strip() or "auto"
     task = (task or YTCMS_DEFAULT_TASK).strip() or "transcribe"
 
-    print(f"[YTCMS] submit start video_id={video_id} path={video_path} lang={lang} task={task}")
+    print(f"[YTCMS] submit start video_id={video_id} addr={addr} path={video_path} lang={lang} task={task}")
 
     channel = grpc.insecure_channel(addr)
     stub = captions_pb2_grpc.CaptionsServiceStub(channel)
-    md = [("authorization", f"Bearer {YTCMS_TOKEN}")]
+    md = _auth_md()
 
-    # Submit
-    submit_reply = stub.Submit(
-        _upload_stream(video_path, video_id, lang, task),
-        metadata=md,
-        timeout=submit_timeout,
-    )
-
-    submit_status = (submit_reply.status or "").strip().lower()
-    job_id = submit_reply.job_id or ""
-    print(f"[YTCMS] submit reply video_id={video_id} job_id={job_id} status={submit_status} err={(submit_reply.error or '')}")
-
-    if submit_status not in ("queued", "processing"):
-        raise RuntimeError(f"Submit failed: {getattr(submit_reply, 'error', '')}")
-
-    # callback init
     try:
-        if on_status:
-            on_status(video_id, job_id, submit_status, -1, -1.0)
-    except Exception:
-        pass
-
-    # Call status
-    last_status = None
-    final_status = None
-    final_error = ""
-    last_percent = -1
-    last_progress = -1.0
-
-    while True:
-        st = stub.GetStatus(
-            captions_pb2.JobStatusRequest(job_id=job_id),
+        # Submit
+        submit_reply = stub.Submit(
+            _upload_stream(video_path, video_id, lang, task),
             metadata=md,
-            timeout=status_timeout,
+            timeout=submit_timeout,
         )
-        st_status = (st.status or "").strip().lower()
-        # get %%
-        p_int, p_norm = _extract_percent(st)
 
-        # callback on every tick
+        submit_status = (submit_reply.status or "").strip().lower()
+        job_id = submit_reply.job_id or ""
+        print(
+            f"[YTCMS] submit reply video_id={video_id} addr={addr} job_id={job_id} status={submit_status} err={(submit_reply.error or '')}"
+        )
+
+        if submit_status not in ("queued", "processing"):
+            raise RuntimeError(f"Submit failed: {getattr(submit_reply, 'error', '')}")
+
+        # callback init
         try:
             if on_status:
-                on_status(video_id, job_id, st_status, p_int, p_norm)
+                on_status(video_id, job_id, submit_status, -1, -1.0)
         except Exception:
             pass
 
-        if st_status != last_status:
+        # Call status
+        last_status = None
+        final_status = None
+        final_error = ""
+        last_percent = -1
+        last_progress = -1.0
+
+        while True:
+            st = stub.GetStatus(
+                captions_pb2.JobStatusRequest(job_id=job_id),
+                metadata=md,
+                timeout=status_timeout,
+            )
+            st_status = (st.status or "").strip().lower()
+            p_int, p_norm = _extract_percent(st)
+
+            try:
+                if on_status:
+                    on_status(video_id, job_id, st_status, p_int, p_norm)
+            except Exception:
+                pass
+
+            if st_status != last_status:
+                if p_int >= 0:
+                    print(
+                        f"[YTCMS] status video_id={video_id} addr={addr} job_id={job_id} status={st_status} percent={p_int} err={(st.error or '')}"
+                    )
+                elif p_norm >= 0.0:
+                    print(
+                        f"[YTCMS] status video_id={video_id} addr={addr} job_id={job_id} status={st_status} progress={p_norm:.3f} err={(st.error or '')}"
+                    )
+                else:
+                    print(
+                        f"[YTCMS] status video_id={video_id} addr={addr} job_id={job_id} status={st_status} err={(st.error or '')}"
+                    )
+                last_status = st_status
+
             if p_int >= 0:
-                print(f"[YTCMS] status video_id={video_id} job_id={job_id} status={st_status} percent={p_int} err={(st.error or '')}")
-            elif p_norm >= 0.0:
-                print(f"[YTCMS] status video_id={video_id} job_id={job_id} status={st_status} progress={p_norm:.3f} err={(st.error or '')}")
-            else:
-                print(f"[YTCMS] status video_id={video_id} job_id={job_id} status={st_status} err={(st.error or '')}")
-            last_status = st_status
+                last_percent = p_int
+            if p_norm >= 0.0:
+                last_progress = p_norm
 
-        # update last %%-s
-        if p_int >= 0:
-            last_percent = p_int
-        if p_norm >= 0.0:
-            last_progress = p_norm
+            if st_status in ("done", "error", "not_found"):
+                final_status = st_status
+                final_error = getattr(st, "error", "") or ""
+                break
 
-        if st_status in ("done", "error", "not_found"):
-            final_status = st_status
-            final_error = getattr(st, "error", "") or ""
-            break
+            time.sleep(poll_interval)
 
-        time.sleep(poll_interval)
+        if final_status == "error":
+            print(f"[YTCMS] job failed video_id={video_id} addr={addr} job_id={job_id} err={final_error}")
+            raise RuntimeError(f"Job failed: {final_error}")
+        if final_status == "not_found":
+            print(f"[YTCMS] job not found video_id={video_id} addr={addr} job_id={job_id}")
+            raise RuntimeError("Job not found")
 
-    if final_status == "error":
-        print(f"[YTCMS] job failed video_id={video_id} job_id={job_id} err={final_error}")
-        raise RuntimeError(f"Job failed: {final_error}")
-    if final_status == "not_found":
-        print(f"[YTCMS] job not found video_id={video_id} job_id={job_id}")
-        raise RuntimeError("Job not found")
+        print(f"[YTCMS] job done video_id={video_id} addr={addr} job_id={job_id} -> fetching result")
 
-    print(f"[YTCMS] job done video_id={video_id} job_id={job_id} -> fetching result")
+        res = stub.GetResult(
+            captions_pb2.ResultRequest(job_id=job_id),
+            metadata=md,
+            timeout=result_timeout,
+        )
 
-    # Get result from YTCMS
-    res = stub.GetResult(
-        captions_pb2.ResultRequest(job_id=job_id),
-        metadata=md,
-        timeout=result_timeout,
-    )
+        try:
+            if not hasattr(res, "percent"):
+                setattr(res, "percent", last_percent)
+            if not hasattr(res, "progress"):
+                setattr(res, "progress", last_progress)
+            if not hasattr(res, "job_id"):
+                setattr(res, "job_id", job_id)
+            setattr(res, "job_server", addr)
+        except Exception:
+            pass
 
-    # Add percent/progress to metadata
-    try:
-        if not hasattr(res, "percent"):
-            setattr(res, "percent", last_percent)
-        if not hasattr(res, "progress"):
-            setattr(res, "progress", last_progress)
-        if not hasattr(res, "job_id"):
-            setattr(res, "job_id", job_id)
-    except Exception:
-        pass
+        vtt_len = len(getattr(res, "vtt", "") or getattr(res, "content", "") or "")
+        meta_lang = getattr(res, "detected_lang", None)
+        print(
+            f"[YTCMS] result received video_id={video_id} addr={addr} job_id={job_id} vtt_len={vtt_len} detected_lang={meta_lang} percent={last_percent} progress={last_progress:.3f}"
+        )
 
-    vtt_len = len(getattr(res, "vtt", "") or getattr(res, "content", "") or "")
-    meta_lang = getattr(res, "detected_lang", None)
-    print(f"[YTCMS] result received video_id={video_id} job_id={job_id} vtt_len={vtt_len} detected_lang={meta_lang} percent={last_percent} progress={last_progress:.3f}")
-
-    return res
+        return res
+    finally:
+        try:
+            channel.close()
+        except Exception:
+            pass

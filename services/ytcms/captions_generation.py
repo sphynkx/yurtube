@@ -17,6 +17,7 @@ from config.ytcms_cfg import (
     YTCMS_AUDIO_BITRATE,
 )
 
+
 async def generate_captions(
     video_id: str,
     storage_rel: str,
@@ -85,7 +86,7 @@ async def generate_captions(
                 lang=lang,
                 task="transcribe",
                 on_status=on_status,
-            )
+            ),
         )
 
         captions_rel_dir = storage_client.join(storage_rel, "captions")
@@ -120,6 +121,7 @@ async def generate_captions(
         percent = getattr(result, "percent", -1)
         progress = getattr(result, "progress", -1.0)
         job_id = getattr(result, "job_id", None)
+        job_server = getattr(result, "job_server", None)
 
         meta: Dict = {
             "video_id": video_id,
@@ -130,6 +132,7 @@ async def generate_captions(
             "duration_sec": getattr(result, "duration_sec", None),
             "task": getattr(result, "task", "transcribe"),
             "job_id": job_id,
+            "job_server": job_server,
             "source": "ytcms",
             "percent": int(percent) if isinstance(percent, (int, float)) else -1,
             "progress": float(progress) if isinstance(progress, (int, float)) else -1.0,
