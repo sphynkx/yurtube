@@ -126,6 +126,7 @@ async def _read_translations_meta(storage_client: StorageClient, storage_rel: st
             "updated_at": "",
             "format_version": 1,
             "job_id": "",
+            "job_server": "",
             "job_state": "",
             "job_message": "",
             "job_result_fetched": False,
@@ -143,6 +144,7 @@ async def _read_translations_meta(storage_client: StorageClient, storage_rel: st
         meta.setdefault("updated_at", "")
         meta.setdefault("format_version", 1)
         meta.setdefault("job_id", "")
+        meta.setdefault("job_server", "")
         meta.setdefault("job_state", "")
         meta.setdefault("job_message", "")
         meta.setdefault("job_result_fetched", False)
@@ -157,6 +159,7 @@ async def _read_translations_meta(storage_client: StorageClient, storage_rel: st
             "updated_at": "",
             "format_version": 1,
             "job_id": "",
+            "job_server": "",
             "job_state": "",
             "job_message": "",
             "job_result_fetched": False,
@@ -285,7 +288,7 @@ async def translations_generate(
         src_vtt = "WEBVTT\n\n"
 
     try:
-        job_id = await submit_translate(
+        job_id, job_server = await submit_translate(
             video_id=video_id,
             src_vtt=src_vtt,
             src_lang="auto",
@@ -301,6 +304,7 @@ async def translations_generate(
         trans_meta = await _read_translations_meta(storage_client, storage_rel)
         trans_meta["video_id"] = video_id
         trans_meta["job_id"] = job_id
+        trans_meta["job_server"] = job_server
         trans_meta["job_state"] = "running"
         trans_meta["job_message"] = ""
         trans_meta["job_result_fetched"] = False
@@ -311,18 +315,27 @@ async def translations_generate(
         print(f"[YTTRANS] meta job_id write failed video_id={video_id}: {e}")
 
     async def _bg_worker() -> None:
-        print(f"[YTTRANS] job queued video_id={video_id} job_id={job_id} langs={target_langs}")
+        print(
+            f"[YTTRANS] job queued video_id={video_id} job_id={job_id} server={job_server} langs={target_langs}"
+        )
         try:
-            pr: Dict[str, Any] = {"state": "running", "percent": -1, "message": "", "ready_langs": [], "total_langs": 0}
+            pr: Dict[str, Any] = {
+                "state": "running",
+                "percent": -1,
+                "message": "",
+                "ready_langs": [],
+                "total_langs": 0,
+            }
 
             # Poll partial until DONE/FAILED
             for _ in range(900):  # ~15 min
-                pr = await get_partial_result(job_id)
+                pr = await get_partial_result(job_id, server=job_server)
 
                 # Persist last known status (optional, used by UI)
                 try:
                     trans_meta2 = await _read_translations_meta(storage_client, storage_rel)
                     trans_meta2["job_id"] = job_id
+                    trans_meta2["job_server"] = job_server
                     trans_meta2["job_state"] = pr.get("state") or trans_meta2.get("job_state") or ""
                     trans_meta2["job_message"] = pr.get("message") or trans_meta2.get("job_message") or ""
                     import time
@@ -338,7 +351,9 @@ async def translations_generate(
                 await asyncio.sleep(1.0)
 
             if (pr.get("state") or "").lower() != "done":
-                print(f"[YTTRANS] job failed video_id={video_id} job_id={job_id} msg={pr.get('message')}")
+                print(
+                    f"[YTTRANS] job failed video_id={video_id} job_id={job_id} server={job_server} msg={pr.get('message')}"
+                )
                 return
 
             # DONE: fetch VTT exactly once (one-shot contract)
@@ -347,7 +362,7 @@ async def translations_generate(
                 print(f"[YTTRANS] result already fetched (skip) video_id={video_id} job_id={job_id}")
                 return
 
-            vid, default_lang, entries, meta = await get_result(job_id)
+            vid, default_lang, entries, meta = await get_result(job_id, server=job_server)
 
             captions_dir = os.path.join(storage_rel, "captions")
             await _touch_dir(storage_client, captions_dir)
@@ -375,6 +390,7 @@ async def translations_generate(
             trans_meta["video_id"] = video_id
             trans_meta["engine"] = meta.get("engine") or trans_meta.get("engine") or ""
             trans_meta["job_id"] = job_id
+            trans_meta["job_server"] = job_server
             trans_meta["job_state"] = "done"
             trans_meta["job_message"] = ""
             trans_meta["job_result_fetched"] = True
@@ -538,6 +554,7 @@ async def translations_reset_all(
             trans_meta["langs"] = []
             trans_meta["default_lang"] = "auto"
             trans_meta["job_id"] = ""
+            trans_meta["job_server"] = ""
             trans_meta["job_state"] = ""
             trans_meta["job_message"] = ""
             trans_meta["job_result_fetched"] = False
@@ -573,14 +590,16 @@ async def translations_status(request: Request, video_id: str = Query(...)) -> A
     job_id = meta.get("job_id") or ""
     job_state = meta.get("job_state") or ""
     job_message = meta.get("job_message") or ""
-    return JSONResponse({
-        "ok": True,
-        "langs": langs,
-        "default_lang": default_lang,
-        "job_id": job_id,
-        "job_state": job_state,
-        "job_message": job_message,
-    })
+    return JSONResponse(
+        {
+            "ok": True,
+            "langs": langs,
+            "default_lang": default_lang,
+            "job_id": job_id,
+            "job_state": job_state,
+            "job_message": job_message,
+        }
+    )
 
 
 @router.get("/internal/yttrans/translations/progress")
@@ -609,34 +628,39 @@ async def translations_progress(request: Request, video_id: str = Query(...)) ->
 
     saved_langs = list(meta.get("langs") or [])
     job_id = (meta.get("job_id") or "").strip()
+    job_server = (meta.get("job_server") or "").strip()
     default_lang = meta.get("default_lang") or ""
 
     if not job_id:
-        return JSONResponse({
-            "ok": True,
-            "job_id": "",
-            "state": meta.get("job_state") or "",
-            "percent": -1,
-            "message": meta.get("job_message") or "",
-            "ready_langs": [],
-            "total_langs": 0,
-            "langs_written": saved_langs,
-            "default_lang": default_lang,
-        })
+        return JSONResponse(
+            {
+                "ok": True,
+                "job_id": "",
+                "state": meta.get("job_state") or "",
+                "percent": -1,
+                "message": meta.get("job_message") or "",
+                "ready_langs": [],
+                "total_langs": 0,
+                "langs_written": saved_langs,
+                "default_lang": default_lang,
+            }
+        )
 
     try:
-        pr = await get_partial_result(job_id)
+        pr = await get_partial_result(job_id, server=job_server or None)
     except Exception as e:
         return JSONResponse({"ok": False, "error": f"partial_failed:{e}"}, status_code=502)
 
-    return JSONResponse({
-        "ok": True,
-        "job_id": job_id,
-        "state": pr.get("state") or "",
-        "percent": int(pr.get("percent", -1)),
-        "message": pr.get("message") or "",
-        "ready_langs": list(pr.get("ready_langs") or []),
-        "total_langs": int(pr.get("total_langs", 0) or 0),
-        "langs_written": saved_langs,
-        "default_lang": default_lang,
-    })
+    return JSONResponse(
+        {
+            "ok": True,
+            "job_id": job_id,
+            "state": pr.get("state") or "",
+            "percent": int(pr.get("percent", -1)),
+            "message": pr.get("message") or "",
+            "ready_langs": list(pr.get("ready_langs") or []),
+            "total_langs": int(pr.get("total_langs", 0) or 0),
+            "langs_written": saved_langs,
+            "default_lang": default_lang,
+        }
+    )
