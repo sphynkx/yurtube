@@ -2,7 +2,7 @@
 import os
 
 def ytsprites_address() -> str:
-    return os.getenv("YTSPRITES_GRPC_ADDR", "127.0.0.1:60051")
+    return os.getenv("YTSPRITES_GRPC_ADDR", "127.0.0.1:9094")
 
 YTSPRITES_TOKEN: str = os.getenv("YTSPRITES_TOKEN", "")
 
