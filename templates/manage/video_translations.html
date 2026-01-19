@@ -35,7 +35,7 @@
 		    Provider: <code>{{ yttrans_meta["engine"] }}</code><br>
 		    Model: <code>{{ yttrans_meta["model"] or "unknown" }}</code><br>
 		    Device: <code>{{ yttrans_meta["device"] or "unknown" }}</code><br>
-		    Server: <code>{{ trans_meta["job_server"] or "unknown" }}</code><br>
+		    Server: <code>{{ yttrans_meta["host"] or "unknown" }}:{{ yttrans_meta["port"] or "0" }}</code><br>
 		    Langs amount: <code>{{ target_langs|length or 0 }}</code><br>
             Default source lang: <code>{{ default_source_lang }}</code>
           </div>
