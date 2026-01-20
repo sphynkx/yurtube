@@ -30,7 +30,7 @@ from db.ytsprites.ytsprites_db import (
 )
 from db.videos_db import get_owned_video
 from db.captions_db import get_video_captions_status
-from services.ytsprites.ytsprites_client_srv import submit_and_wait, create_thumbnails_job
+from services.ytsprites.ytsprites_client_srv import submit_and_wait, create_thumbnails_job, pick_ytsprites_addr
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from utils.ytsprites.ytsprites_ut import prefix_sprite_paths, normalize_vtt
@@ -142,6 +142,7 @@ async def video_media_page(request: Request, video_id: str) -> Any:
     finally:
         await release_conn(conn)
 
+    active_sprites_server = pick_ytsprites_addr()
     active_cms_server = get_active_cms_server()
     csrf_token = _get_csrf_cookie(request) or _gen_csrf_token()
     resp = templates.TemplateResponse(
@@ -157,6 +158,7 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             "favicon_url": settings.FAVICON_URL,
             "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+            "active_sprites_server": active_sprites_server,
             "active_cms_server": active_cms_server,
         },
     )
