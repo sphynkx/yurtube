@@ -42,7 +42,7 @@ def _try_parse_resp_host(resp_hostport: str) -> Optional[tuple[str, int]]:
         return None
 
 
-def get_active_server(timeout_sec: float = 1.0) -> Dict[str, Any]:
+def get_active_cms_server(timeout_sec: float = 1.0) -> Dict[str, Any]:
     """
     Returns basic identity of the currently active YTCMS server.
 
