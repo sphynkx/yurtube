@@ -8,62 +8,106 @@
 
   function setText(id, text) {
     const e = el(id);
-    if (e) e.textContent = text;
+    if (e) e.textContent = text || "";
   }
 
-  function renderVariants(list) {
-    const box = el("ytconvert-suggestions");
-    if (!box) return;
+  function clearNode(node) {
+    while (node && node.firstChild) node.removeChild(node.firstChild);
+  }
 
-    box.innerHTML = "";
+  function renderOptionsCheckboxes(list) {
+    const body = el("ytconvert-options-body");
+    if (!body) return;
+
+    clearNode(body);
+
     if (!list || !list.length) {
-      box.textContent = "No suggestions (could not determine).";
+      const d = document.createElement("div");
+      d.style.fontSize = "12px";
+      d.style.color = "#777";
+      d.textContent = "No conversion options were detected.";
+      body.appendChild(d);
       return;
     }
 
-    const ul = document.createElement("ul");
-    ul.style.margin = "6px 0 0 18px";
-    ul.style.padding = "0";
+    const hint = document.createElement("div");
+    hint.style.fontSize = "12px";
+    hint.style.color = "#777";
+    hint.style.marginBottom = "6px";
+    hint.textContent = "These are just UI options for now (not applied yet).";
+    body.appendChild(hint);
 
-    list.forEach((v) => {
+    const ul = document.createElement("ul");
+    ul.style.margin = "0";
+    ul.style.paddingLeft = "18px";
+
+    list.forEach((v, idx) => {
       const li = document.createElement("li");
+      li.style.margin = "4px 0";
+
+      const label = document.createElement("label");
+      label.style.cursor = "pointer";
+
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = false;
+
+      // For later: send selected variants with the upload form (backend will ignore for now)
+      const valParts = [];
+      if (v.kind) valParts.push(v.kind);
+      if (v.height) valParts.push(String(v.height));
+      if (v.container) valParts.push(v.container);
+      const value = valParts.join(":") || String(idx);
+
+      cb.name = "ytconvert_variants";
+      cb.value = value;
+
+      const text = document.createElement("span");
+      text.style.marginLeft = "6px";
+
       const parts = [];
-      parts.push(`${v.kind}: ${v.label}`);
-      if (v.container) parts.push(`container=${v.container}`);
-      if (v.vcodec) parts.push(`v=${v.vcodec}`);
-      if (v.acodec) parts.push(`a=${v.acodec}`);
-      if (v.height) parts.push(`h=${v.height}`);
-      if (v.audio_bitrate_kbps) parts.push(`abr=${v.audio_bitrate_kbps}k`);
-      li.textContent = parts.join(", ");
+      parts.push(v.label || "Variant");
+      if (v.container) parts.push(v.container);
+      if (v.vcodec) parts.push(`v:${v.vcodec}`);
+      if (v.acodec) parts.push(`a:${v.acodec}`);
+      if (v.audio_bitrate_kbps) parts.push(`${v.audio_bitrate_kbps}k`);
+      text.textContent = parts.join(" / ");
+
+      label.appendChild(cb);
+      label.appendChild(text);
+
+      li.appendChild(label);
       ul.appendChild(li);
     });
 
-    box.appendChild(ul);
+    body.appendChild(ul);
   }
 
   async function probeFile(file) {
     if (!file) return;
 
     setText("ytconvert-probe-status", "Probing...");
-    const slice = file.slice(0, Math.min(file.size, SLICE_BYTES));
+    setText("ytconvert-probe-source", "");
 
+    const slice = file.slice(0, Math.min(file.size, SLICE_BYTES));
     const fd = new FormData();
-    // keep original filename so ffprobe has a hint sometimes (optional)
     fd.append("file", slice, file.name || "slice.bin");
 
     try {
-      const resp = await fetch(ENDPOINT, {
-        method: "POST",
-        body: fd,
-      });
-
+      const resp = await fetch(ENDPOINT, { method: "POST", body: fd });
       const ct = resp.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await resp.json() : null;
 
       if (!resp.ok) {
         const err = (data && data.error) ? data.error : `HTTP ${resp.status}`;
         setText("ytconvert-probe-status", `Probe failed: ${err}`);
-        renderVariants([]);
+        renderOptionsCheckboxes([]);
+        return;
+      }
+
+      if (data && data.ok === false) {
+        setText("ytconvert-probe-status", `Probe failed: ${data.error || "unknown"}`);
+        renderOptionsCheckboxes([]);
         return;
       }
 
@@ -77,10 +121,10 @@
       const codecTxt = `${src.vcodec || ""}${src.acodec ? "+" + src.acodec : ""}`;
       setText("ytconvert-probe-source", `Source: ${w}x${h}${durTxt}${codecTxt ? ", codecs=" + codecTxt : ""}`);
 
-      renderVariants((data && data.suggested_variants) || []);
+      renderOptionsCheckboxes((data && data.suggested_variants) || []);
     } catch (e) {
       setText("ytconvert-probe-status", "Probe failed: network error");
-      renderVariants([]);
+      renderOptionsCheckboxes([]);
     }
   }
 
@@ -93,7 +137,7 @@
       if (!f) {
         setText("ytconvert-probe-status", "");
         setText("ytconvert-probe-source", "");
-        renderVariants([]);
+        renderOptionsCheckboxes([]);
         return;
       }
       probeFile(f);

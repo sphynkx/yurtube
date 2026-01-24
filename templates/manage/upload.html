@@ -24,19 +24,18 @@
         <input type="file" name="file" required>
       </div>
 
-      <!-- ytconvert probe (stage 0) -->
+      <!-- ytconvert probe status (stage 0) -->
       <div style="margin-top:10px; padding:8px; border:1px solid #ddd; border-radius:6px;">
         <div style="font-weight:600; margin-bottom:4px;">ytconvert suggestions (stage 0)</div>
         <div style="font-size:12px; color:#555;">
           <div>Status: <span id="ytconvert-probe-status"></span></div>
           <div id="ytconvert-probe-source" style="margin-top:2px;"></div>
-          <div id="ytconvert-suggestions" style="margin-top:4px;"></div>
           <div style="margin-top:6px; opacity:.75;">
             Probe uses first 16MB of the selected file.
           </div>
         </div>
       </div>
-      <!-- /ytconvert probe -->
+      <!-- /ytconvert probe status -->
 
       <div>
         <label>Title</label>
@@ -73,6 +72,7 @@
       <div>
         <label><input type="checkbox" name="is_made_for_kids" {{ 'checked' if form and form.is_made_for_kids else '' }}> Made for kids</label>
       </div>
+
 <!-- captions -->
 <div>
   <label><input type="checkbox" name="generate_captions" value="1"> Generate captions</label>
@@ -89,11 +89,23 @@
   </label>
 </div>
 <!-- /captions -->
-      <button id="upload-submit" type="submit">Upload</button>
+
+      <!-- ytconvert options (checkbox UI only for now) -->
+      <div id="ytconvert-options" style="margin-top:10px; padding:8px; border:1px dashed #ddd; border-radius:6px;">
+        <div style="font-weight:600; margin-bottom:6px;">Additional formats (optional)</div>
+        <div id="ytconvert-options-body" style="font-size:13px; color:#333;">
+          <div style="font-size:12px; color:#777;">
+            Select a file to see available conversion options.
+          </div>
+        </div>
+      </div>
+      <!-- /ytconvert options -->
+
+      <button id="upload-submit" type="submit" style="margin-top:10px;">Upload</button>
       <span id="upload-status" style="margin-left:8px;"></span>
     </form>
 
-    <script src="/static/js/probe.js"></script>
+    <script src="/static/js/probe.js?v=1"></script>
     <script type="text/python" src="/static/brython/upload.bry"></script>
   </main>
 </div>
