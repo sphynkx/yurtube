@@ -1,4 +1,5 @@
 import os
+import time
 import logging
 
 from fastapi import FastAPI
@@ -18,6 +19,7 @@ from services.ytstorage.build_client_srv import build_storage_client
 
 from middlewares.csrf_mw import NewCSRFMiddleware
 
+
 # Toggle built-in API docs
 docs_url    = "/docs" if settings.API_DOCS_ENABLED else None
 redoc_url   = "/redoc" if settings.API_DOCS_ENABLED else None
@@ -30,8 +32,10 @@ app = FastAPI(
     redoc_url=redoc_url,
     openapi_url=openapi_url,
 )
-
 APP_GRPC_ENABLED = os.getenv("APP_GRPC_ENABLED", "1").lower() in ("1","true","yes","on")
+## Generate autoversioning number for js-scripts (updates on every app restart)
+app.state.static_version = str(int(time.time()))
+
 
 @app.on_event("startup")
 async def on_startup():
@@ -39,6 +43,7 @@ async def on_startup():
     uptime.set_started()
     if APP_GRPC_ENABLED:
         await app_grpc_server.start()
+
 
 @app.on_event("shutdown")
 async def on_shutdown():

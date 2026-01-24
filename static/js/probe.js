@@ -6,13 +6,26 @@
     return document.getElementById(id);
   }
 
-  function setText(id, text) {
-    const e = el(id);
-    if (e) e.textContent = text || "";
-  }
-
   function clearNode(node) {
     while (node && node.firstChild) node.removeChild(node.firstChild);
+  }
+
+  function setUploadEnabled(enabled) {
+    const btn = el("upload-submit");
+    if (!btn) return;
+    btn.disabled = !enabled;
+  }
+
+  function setUploadStatus(text) {
+    const s = el("upload-status");
+    if (!s) return;
+    s.textContent = text || "";
+  }
+
+  function showOptions(show) {
+    const box = el("ytconvert-options");
+    if (!box) return;
+    box.style.display = show ? "block" : "none";
   }
 
   function renderOptionsCheckboxes(list) {
@@ -22,19 +35,18 @@
     clearNode(body);
 
     if (!list || !list.length) {
-      const d = document.createElement("div");
-      d.style.fontSize = "12px";
-      d.style.color = "#777";
-      d.textContent = "No conversion options were detected.";
-      body.appendChild(d);
+      // Nothing to show => keep box hidden
+      showOptions(false);
       return;
     }
+
+    showOptions(true);
 
     const hint = document.createElement("div");
     hint.style.fontSize = "12px";
     hint.style.color = "#777";
     hint.style.marginBottom = "6px";
-    hint.textContent = "These are just UI options for now (not applied yet).";
+    hint.textContent = "Select formats to generate after upload (UI only for now).";
     body.appendChild(hint);
 
     const ul = document.createElement("ul");
@@ -86,8 +98,10 @@
   async function probeFile(file) {
     if (!file) return;
 
-    setText("ytconvert-probe-status", "Probing...");
-    setText("ytconvert-probe-source", "");
+    // user must wait for probe => disable upload until probe finishes
+    setUploadEnabled(false);
+    showOptions(false);
+    setUploadStatus("Probing...");
 
     const slice = file.slice(0, Math.min(file.size, SLICE_BYTES));
     const fd = new FormData();
@@ -98,32 +112,20 @@
       const ct = resp.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await resp.json() : null;
 
-      if (!resp.ok) {
-        const err = (data && data.error) ? data.error : `HTTP ${resp.status}`;
-        setText("ytconvert-probe-status", `Probe failed: ${err}`);
+      // Regardless of probe result, allow upload after probe finishes
+      setUploadEnabled(true);
+      setUploadStatus("");
+
+      if (!resp.ok || (data && data.ok === false)) {
         renderOptionsCheckboxes([]);
         return;
       }
-
-      if (data && data.ok === false) {
-        setText("ytconvert-probe-status", `Probe failed: ${data.error || "unknown"}`);
-        renderOptionsCheckboxes([]);
-        return;
-      }
-
-      setText("ytconvert-probe-status", "OK");
-
-      const src = (data && data.source) || {};
-      const w = src.width || 0;
-      const h = src.height || 0;
-      const dur = src.duration_sec;
-      const durTxt = (typeof dur === "number" && isFinite(dur)) ? `, dur=${dur.toFixed(1)}s` : "";
-      const codecTxt = `${src.vcodec || ""}${src.acodec ? "+" + src.acodec : ""}`;
-      setText("ytconvert-probe-source", `Source: ${w}x${h}${durTxt}${codecTxt ? ", codecs=" + codecTxt : ""}`);
 
       renderOptionsCheckboxes((data && data.suggested_variants) || []);
     } catch (e) {
-      setText("ytconvert-probe-status", "Probe failed: network error");
+      // Network error: allow upload, just no options
+      setUploadEnabled(true);
+      setUploadStatus("");
       renderOptionsCheckboxes([]);
     }
   }
@@ -132,11 +134,17 @@
     const fileInput = document.querySelector('input[type="file"][name="file"]');
     if (!fileInput) return;
 
+    // initial state: no file => upload disabled
+    setUploadEnabled(false);
+    showOptions(false);
+    setUploadStatus("");
+
     fileInput.addEventListener("change", () => {
       const f = fileInput.files && fileInput.files[0];
       if (!f) {
-        setText("ytconvert-probe-status", "");
-        setText("ytconvert-probe-source", "");
+        setUploadEnabled(false);
+        showOptions(false);
+        setUploadStatus("");
         renderOptionsCheckboxes([]);
         return;
       }
