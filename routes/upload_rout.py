@@ -26,7 +26,7 @@ from db.videos_db import (
 )
 
 from services.ytsprites.ytsprites_client_srv import create_thumbnails_job
-from db.ytsprites.ytsprites_db  import fetch_video_storage_path
+from db.ytsprites.ytsprites_db import fetch_video_storage_path
 
 from services.ffmpeg_srv import (
     async_generate_thumbnails,
@@ -46,6 +46,9 @@ from db.captions_db import set_video_captions
 # --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
 from utils.ytstorage.path_ut import build_video_storage_rel
+
+# --- ytconvert (stage 0) ---
+from utils.ytconvert.variants_ut import compute_suggested_variants
 
 
 router = APIRouter()
@@ -142,6 +145,69 @@ def _bg_cleanup_after_delete_sync(storage_client: StorageClient, storage_rel: st
         pass
     _bg_delete_index(video_id)
     _bg_delete_comments(video_id, timeout_sec=5.0)
+
+
+async def _probe_basic_video_info_ffprobe(abs_path: str) -> Dict[str, Any]:
+    """
+    Stage-0 helper: get width/height/codec/bitrate via ffprobe.
+    Keeps upload route self-contained (no DB changes yet).
+
+    Returns:
+      {"width": int, "height": int, "vcodec": str, "acodec": str, "bitrate": int}
+    """
+    loop = asyncio.get_running_loop()
+
+    def _run() -> Dict[str, Any]:
+        import json as _json
+
+        cmd = [
+            "ffprobe",
+            "-v", "error",
+            "-print_format", "json",
+            "-show_streams",
+            "-show_format",
+            abs_path,
+        ]
+        try:
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT)
+            data = _json.loads(out.decode("utf-8", "replace") or "{}")
+        except Exception:
+            return {"width": 0, "height": 0, "vcodec": "", "acodec": "", "bitrate": 0}
+
+        width = 0
+        height = 0
+        vcodec = ""
+        acodec = ""
+
+        streams = data.get("streams") or []
+        if isinstance(streams, list):
+            # pick first video stream
+            for s in streams:
+                if not isinstance(s, dict):
+                    continue
+                if (s.get("codec_type") or "") == "video":
+                    width = int(s.get("width") or 0)
+                    height = int(s.get("height") or 0)
+                    vcodec = str(s.get("codec_name") or "")
+                    break
+            # pick first audio stream
+            for s in streams:
+                if not isinstance(s, dict):
+                    continue
+                if (s.get("codec_type") or "") == "audio":
+                    acodec = str(s.get("codec_name") or "")
+                    break
+
+        fmt = data.get("format") or {}
+        bitrate = 0
+        try:
+            bitrate = int(fmt.get("bit_rate") or 0)
+        except Exception:
+            bitrate = 0
+
+        return {"width": width, "height": height, "vcodec": vcodec, "acodec": acodec, "bitrate": bitrate}
+
+    return await loop.run_in_executor(None, _run)
 
 # ---------- Manage ----------
 
@@ -251,6 +317,8 @@ async def upload_page(request: Request) -> Any:
             "categories": cats,
             "csrf_token": csrf_token,
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+            # stage-0 placeholder (empty)
+            "suggested_variants": [],
         },
         headers={"Cache-Control": "no-store"},
     )
@@ -313,6 +381,7 @@ async def upload_video(
                     "form": form_data,
                     "csrf_token": _csrf_cookie(request),
                     "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+                    "suggested_variants": [],
                 },
                 status_code=400,
                 headers={"Cache-Control": "no-store"},
@@ -433,6 +502,16 @@ async def upload_video(
 
         # Next ffmpeg operations are performed according to original_abs_path (local)
         duration = await async_probe_duration_seconds(original_abs_path)
+
+        # --- ytconvert stage 0: propose variants (no actual conversion yet!!) ---
+        src_info = await _probe_basic_video_info_ffprobe(original_abs_path)
+        src_info["duration_sec"] = duration
+        suggested_variants = compute_suggested_variants(
+            src_info,
+            prefer_container="mp4",
+            include_audio=True,
+        )
+
         offsets = pick_thumbnail_offsets(duration)
 
         # Local dir for preview generation (use tmp for remote, storage_abs_dir for local)
@@ -653,6 +732,9 @@ async def upload_video(
             "video_id": video_id,
             "candidates": candidates,
             "csrf_token": context_token,
+            # stage-0 output:
+            "suggested_variants": suggested_variants,
+            "source_info": src_info,
             # mark tonen for debug (2DEL):
             "_csrf_debug": f"<!-- CSRF cookie={cookie_tok} form={context_token} -->",
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
@@ -748,7 +830,10 @@ async def select_thumbnail(request: Request) -> Any:
             raise HTTPException(status_code=400, detail="Invalid thumbnail path")
 
         storage_client: StorageClient = request.app.state.storage
-        if not storage_client.exists(sel):
+        ex = storage_client.exists(sel)
+        if inspect.isawaitable(ex):
+            ex = await ex
+        if not ex:
             raise HTTPException(status_code=400, detail="Thumbnail not found on disk")
 
         await upsert_video_asset(conn, form_video_id, "thumbnail_default", sel)

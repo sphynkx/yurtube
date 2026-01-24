@@ -57,7 +57,7 @@ case "${cmd}" in
 ##    pip install -r install/requirements.txt
     : "${APP_HOST:=0.0.0.0}"
     : "${APP_PORT:=8077}"
-    exec uvicorn main:app --host "${APP_HOST}" --port "${APP_PORT}" --workers 4 --http httptools --loop uvloop --proxy-headers --forwarded-allow-ips="192.168.7.1"
+    exec uvicorn main:app --host "${APP_HOST}" --port "${APP_PORT}" --workers 2 --http httptools --loop uvloop --proxy-headers --forwarded-allow-ips="192.168.7.1"
     ;;
 
   -h|--help|help)
