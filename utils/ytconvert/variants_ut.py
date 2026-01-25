@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 
 # YouTube-like baseline ladder (heights in pixels)
@@ -38,6 +38,28 @@ def _choose_suggested_video_heights(src_height: int, ladder: Optional[List[int]]
     return below[:3]
 
 
+def _variant_id(v: VariantPlan) -> str:
+    """
+    Stable ID used by UI and gRPC contract.
+
+    Examples:
+      - v:1440p:h264+aac:mp4
+      - a:128k:aac:m4a
+    """
+    if v.kind == "video":
+        h = int(v.height or 0)
+        vc = (v.vcodec or "auto").lower()
+        ac = (v.acodec or "auto").lower()
+        cont = (v.container or "auto").lower()
+        return f"v:{h}p:{vc}+{ac}:{cont}"
+
+    # audio
+    abr = int(v.audio_bitrate_kbps or 0)
+    ac = (v.acodec or "auto").lower()
+    cont = (v.container or "auto").lower()
+    return f"a:{abr}k:{ac}:{cont}"
+
+
 def compute_suggested_variants(
     source_info: Dict[str, Any],
     *,
@@ -52,8 +74,8 @@ def compute_suggested_variants(
 
     Output is a list of dicts ready for templating/logging, e.g.:
       [
-        {"kind":"video","label":"720p","height":720,"container":"mp4","vcodec":"h264","acodec":"aac"},
-        {"kind":"audio","label":"Audio only (128k)","container":"m4a","acodec":"aac","audio_bitrate_kbps":128},
+        {"variant_id":"v:720p:h264+aac:mp4","kind":"video","label":"720p","height":720,"container":"mp4","vcodec":"h264","acodec":"aac"},
+        {"variant_id":"a:128k:aac:m4a","kind":"audio","label":"Audio only (128k)","container":"m4a","acodec":"aac","audio_bitrate_kbps":128},
       ]
     """
     h = int(source_info.get("height") or 0)
@@ -82,6 +104,7 @@ def compute_suggested_variants(
     for v in suggested:
         out.append(
             {
+                "variant_id": _variant_id(v),
                 "kind": v.kind,
                 "label": v.label,
                 "container": v.container,

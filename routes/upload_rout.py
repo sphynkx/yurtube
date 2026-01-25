@@ -24,6 +24,7 @@ from db.videos_db import (
     set_video_ready,
     delete_video_by_owner,
 )
+from db.ytconvert_jobs_db import create_ytconvert_job
 
 from services.ytsprites.ytsprites_client_srv import create_thumbnails_job
 from db.ytsprites.ytsprites_db import fetch_video_storage_path
@@ -336,6 +337,7 @@ async def upload_video(
     is_made_for_kids: bool = Form(False),
     generate_captions_flag: Optional[int] = Form(0, alias="generate_captions"),  # rename to avoid shadowing the function generate_captions(...)
     captions_lang: str = Form("auto"),
+    ytconvert_variants: Optional[List[str]] = Form(None),
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
     import inspect
@@ -388,6 +390,17 @@ async def upload_video(
             )
 
         video_id = gen_id(12)
+
+        # --- ytconvert job request (stage 0 only; no grpc yet) ---
+        requested_variants: List[str] = []
+        if ytconvert_variants:
+            try:
+                requested_variants = [str(x).strip() for x in ytconvert_variants if str(x).strip()]
+            except Exception:
+                requested_variants = []
+        if requested_variants:
+            print(f"[UPLOAD] ytconvert requested_variants={requested_variants} video_id={video_id}")
+        # --- /ytconvert job request ---
 
         # STORAGE: build relative dir and write via StorageClient
         storage_client: StorageClient = request.app.state.storage  # mark: uses StorageClient
@@ -463,6 +476,20 @@ async def upload_video(
             is_age_restricted=is_age_restricted,
             is_made_for_kids=is_made_for_kids,
         )
+
+        # --- ytconvert job request: persist in DB (REQUESTED) ---
+        if requested_variants:
+            try:
+                await create_ytconvert_job(
+                    conn,
+                    video_id=video_id,
+                    author_uid=user["user_uid"],
+                    requested_variants=requested_variants,
+                )
+            except Exception as e:
+                # Don't fail the whole upload if schema is missing/mismatch
+                print(f"[UPLOAD] ytconvert_jobs insert failed video_id={video_id}: {e}")
+        # --- /ytconvert job request ---
 
         # Sure all ffmpeg operations are performed on the local path:
         # - for local: to_abs(...) points to the local root
@@ -742,7 +769,6 @@ async def upload_video(
         headers={"Cache-Control": "no-store"},
     )
     return resp
-
 
 @router.post("/upload/select-thumbnail")
 @router.post("/upload/select-thumbnail/")

@@ -311,4 +311,25 @@ CREATE TABLE IF NOT EXISTS video_captions (
 );
 CREATE INDEX IF NOT EXISTS video_captions_video_idx ON video_captions(video_id);
 
+--------------------------------------------------------------------
+-- ytconvert jobs (requests + tracking)
+-- --------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ytconvert_jobs (
+  job_id              TEXT PRIMARY KEY,
+  video_id            TEXT NOT NULL REFERENCES videos(video_id) ON DELETE CASCADE,
+  author_uid          TEXT NOT NULL REFERENCES users(user_uid) ON DELETE CASCADE,
+  state               TEXT NOT NULL DEFAULT 'REQUESTED',
+  requested_variants  JSONB NOT NULL DEFAULT '[]'::jsonb,
+  grpc_job_id         TEXT,
+  progress_percent    INT NOT NULL DEFAULT 0,
+  message             TEXT NOT NULL DEFAULT '',
+  meta                JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ytconvert_jobs_video_id ON ytconvert_jobs(video_id);
+CREATE INDEX IF NOT EXISTS idx_ytconvert_jobs_state ON ytconvert_jobs(state);
+CREATE INDEX IF NOT EXISTS idx_ytconvert_jobs_grpc_job_id ON ytconvert_jobs(grpc_job_id);
+
 COMMIT;
