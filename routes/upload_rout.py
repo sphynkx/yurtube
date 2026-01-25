@@ -24,7 +24,7 @@ from db.videos_db import (
     set_video_ready,
     delete_video_by_owner,
 )
-from db.ytconvert_jobs_db import create_ytconvert_job
+from db.ytconvert.ytconvert_jobs_db import create_ytconvert_job
 
 from services.ytsprites.ytsprites_client_srv import create_thumbnails_job
 from db.ytsprites.ytsprites_db import fetch_video_storage_path
@@ -49,6 +49,8 @@ from services.ytstorage.base_srv import StorageClient
 from utils.ytstorage.path_ut import build_video_storage_rel
 
 # --- ytconvert (stage 0) ---
+from db.ytconvert.ytconvert_jobs_db import create_ytconvert_job
+from services.ytconvert.ytconvert_runner_srv import schedule_ytconvert_job
 from utils.ytconvert.variants_ut import compute_suggested_variants
 
 
@@ -477,21 +479,33 @@ async def upload_video(
             is_made_for_kids=is_made_for_kids,
         )
 
-        # --- ytconvert job request: persist in DB (REQUESTED) ---
+        local_job_id = None
         if requested_variants:
             try:
-                await create_ytconvert_job(
-                    conn,
+                local_job_id = await create_ytconvert_job(
+                    conn=conn,
                     video_id=video_id,
                     author_uid=user["user_uid"],
                     requested_variants=requested_variants,
                 )
             except Exception as e:
-                # Don't fail the whole upload if schema is missing/mismatch
-                print(f"[UPLOAD] ytconvert_jobs insert failed video_id={video_id}: {e}")
-        # --- /ytconvert job request ---
+                print(f"[YTCONVERT] integration error local_job_id={local_job_id} exc={e!r}")
 
-        # Sure all ffmpeg operations are performed on the local path:
+        if local_job_id and requested_variants:
+            try:
+                print(f"[UPLOAD] scheduling ytconvert local_job_id={local_job_id} original_rel_path={original_rel_path} servers={getattr(settings,'YTCONVERT_SERVERS',None)}")
+                schedule_ytconvert_job(
+                    request=request,
+                    local_job_id=local_job_id,
+                    video_id=video_id,
+                    storage_rel=storage_rel,
+                    original_rel_path=original_rel_path,
+                    requested_variant_ids=requested_variants,
+                )
+            except Exception as e:
+                print(f"[UPLOAD] ytconvert scheduling failed video_id={video_id}: {e}")
+
+        # All ffmpeg operations are performed on the local path:
         # - for local: to_abs(...) points to the local root
         # - for remote: download the original to tmp, generate thumbnails locally, then load them back into storage
         storage_abs_root = storage_client.to_abs("")
