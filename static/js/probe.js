@@ -72,7 +72,8 @@
       const value = valParts.join(":") || String(idx);
 
       cb.name = "ytconvert_variants";
-      cb.value = value;
+	  const vid = (v && v.variant_id) ? String(v.variant_id) : "";
+	  cb.value = vid || value;
 
       const text = document.createElement("span");
       text.style.marginLeft = "6px";
