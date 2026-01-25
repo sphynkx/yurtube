@@ -493,7 +493,6 @@ async def upload_video(
 
         if local_job_id and requested_variants:
             try:
-                print(f"[UPLOAD] scheduling ytconvert local_job_id={local_job_id} original_rel_path={original_rel_path} servers={getattr(settings,'YTCONVERT_SERVERS',None)}")
                 schedule_ytconvert_job(
                     request=request,
                     local_job_id=local_job_id,
