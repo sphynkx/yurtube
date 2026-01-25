@@ -94,7 +94,6 @@ CREATE INDEX IF NOT EXISTS videos_created_idx ON videos (created_at DESC);
 CREATE INDEX IF NOT EXISTS videos_category_idx ON videos (category_id);
 CREATE INDEX IF NOT EXISTS idx_videos_comments_enabled ON videos(comments_enabled);
 UPDATE videos SET comments_enabled = true WHERE comments_enabled IS NULL;
-CREATE INDEX IF NOT EXISTS video_captions_video_idx ON video_captions(video_id);
 
 -- Reactions
 CREATE TABLE IF NOT EXISTS reactions (
