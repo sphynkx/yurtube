@@ -112,12 +112,3 @@ class YtconvertClient:
         async for ch in stream:
             yield ch
 
-
-##Deprecated
-async def pick_server_2DEL() -> YtconvertServer:
-    raw = getattr(settings, "YTCONVERT_SERVERS", "")
-    servers = parse_servers(raw)
-    if not servers:
-        raise RuntimeError("YTCONVERT_SERVERS is empty")
-    # MVP: first server. Later: round-robin + health checks.
-    return servers[0]

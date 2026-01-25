@@ -491,22 +491,6 @@ async def upload_video(
             except Exception as e:
                 print(f"[YTCONVERT] integration error local_job_id={local_job_id} exc={e!r}")
 
-        """
-        moved to afta set_video_ready()
-        if local_job_id and requested_variants:
-            try:
-                schedule_ytconvert_job(
-                    request=request,
-                    local_job_id=local_job_id,
-                    video_id=video_id,
-                    storage_rel=storage_rel,
-                    original_rel_path=original_rel_path,
-                    requested_variant_ids=requested_variants,
-                )
-            except Exception as e:
-                print(f"[UPLOAD] ytconvert scheduling failed video_id={video_id}: {e}")
-        """
-
         # All ffmpeg operations are performed on the local path:
         # - for local: to_abs(...) points to the local root
         # - for remote: download the original to tmp, generate thumbnails locally, then load them back into storage
@@ -664,7 +648,7 @@ async def upload_video(
                 await upsert_video_asset(conn, video_id, "thumbnail_anim", anim_rel_remote)
 
         await set_video_ready(conn, video_id, duration)
-        ####################
+
         if local_job_id and requested_variants:
             try:
                 schedule_ytconvert_job(
@@ -677,7 +661,7 @@ async def upload_video(
                 )
             except Exception as e:
                 print(f"[UPLOAD] ytconvert scheduling failed video_id={video_id}: {e}")
-        ####################
+
         # --- Optional captions generation ---
         want_caps = bool(generate_captions_flag)
         lang_req = (captions_lang or "auto").strip().lower()
