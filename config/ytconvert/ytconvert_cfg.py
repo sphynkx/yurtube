@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List
 
 from utils.ytconvert.sizeparse_ut import parse_size_bytes
 from utils.ytconvert.ytconvert_servers_ut import YtconvertServer, parse_servers
@@ -17,13 +17,13 @@ class YtconvertClientConfig:
 
 
 def load_ytconvert_config() -> YtconvertClientConfig:
-    raw_servers = os.environ.get("YTCONVERT_SERVERS", "").strip()
+    raw_servers = (os.environ.get("YTCONVERT_SERVERS") or "").strip()
     servers = parse_servers(raw_servers)
 
     chunk_bytes = parse_size_bytes(os.environ.get("YTCONVERT_CHUNK_BYTES", ""), default=4 * 1024 * 1024)
 
     try:
-        upload_timeout_sec = float(os.environ.get("YTCONVERT_UPLOAD_TIMEOUT_SEC", "600").strip() or "600")
+        upload_timeout_sec = float((os.environ.get("YTCONVERT_UPLOAD_TIMEOUT_SEC") or "600").strip() or "600")
     except Exception:
         upload_timeout_sec = 600.0
 
