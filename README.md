@@ -21,6 +21,7 @@ Application is WIP now. Available base functional:
   * generation of animated previews
   * Sprites generation (by [separate microservice](https://github.com/sphynkx/ytsprites))
   * Captions generation (by [separate microservice](https://github.com/sphynkx/ytcms))
+  * Converting to other video/audio formats (by [separate microservice](https://github.com/sphynkx/ytconvert))
 * Translate captions on much of languages (by [separate microservice](https://github.com/sphynkx/yttrans))
 * Two Search engines ([Manticore](https://manticoresearch.com/) and Postgres FTS)
 * Comments by [separate microservice](https://github.com/sphynkx/ytcomments)
@@ -37,6 +38,7 @@ Design notes
 For a minimal version with limited functionality, installing this app is sufficient. However, for full functionality, there are separate services with separate repositories:
 
 * [ytcms](https://github.com/sphynkx/ytcms) - service for captions generation
+* [ytcms](https://github.com/sphynkx/ytconvert) - service for video conversions
 * [yttrans](https://github.com/sphynkx/yttrans) - service for captions translations
 * [ytcomments](https://github.com/sphynkx/ytcomments) - service for comments
 * [ytsprites](https://github.com/sphynkx/ytsprites) - service for WebVTT sprites generation
@@ -289,6 +291,10 @@ source ../../.venv/bin/activate
 python3 reindex_all.py
 deactivate
 ```
+
+
+### Video converting service (external)
+This is separate service based on gRPC+protobuf and ffmpeg, allow to convert uploading video into different video/audio formats. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/ytconvert) for details about it's install and configuration.
 
 
 ### Caption generation service (external)
