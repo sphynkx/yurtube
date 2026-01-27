@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Protocol
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -112,13 +112,23 @@ def _bg_rm_rf(path: str) -> None:
     except Exception:
         pass
 
-def _bg_delete_index(video_id: str) -> None:
+
+def _bg_delete_index_ISX(video_id: str) -> None:
     try:
         asyncio.run(delete_from_index(video_id))
     except Exception:
         pass
 
-def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
+
+async def _bg_delete_index(video_id: str) -> None:
+    try:
+        await delete_from_index(video_id)
+    except Exception as e:
+        print(f"[ERROR] Failed to delete from index: {e}")
+
+
+
+def _bg_delete_comments_ISX(video_id: str, timeout_sec: float = 5.0) -> None:
     try:
         async def _runner():
             await asyncio.wait_for(delete_all_comments_for_video(video_id), timeout=timeout_sec)
@@ -126,6 +136,17 @@ def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
     except Exception:
         pass
 
+
+async def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
+    try:
+        await asyncio.wait_for(delete_all_comments_for_video(video_id), timeout=timeout_sec)
+    except asyncio.TimeoutError:
+        print(f"[ERROR] Timeout occurred while deleting comments for video_id {video_id}")
+    except Exception as e:
+        print(f"[ERROR] Failed to delete comments: {e}")
+
+
+## depr
 def _bg_cleanup_after_delete_sync(storage_client: StorageClient, storage_rel: str, video_id: str) -> None:
     """
     remove dir via StorageClient.
@@ -148,6 +169,27 @@ def _bg_cleanup_after_delete_sync(storage_client: StorageClient, storage_rel: st
         pass
     _bg_delete_index(video_id)
     _bg_delete_comments(video_id, timeout_sec=5.0)
+
+
+async def _bg_cleanup_after_delete(storage_client: StorageClient, storage_rel: str, video_id: str) -> None:
+    try:
+        print(f"[DEBUG] Starting cleanup for video folder: {storage_rel}")
+        print(f"[DEBUG] Calling remove on storage client with: rel_path={storage_rel}, recursive=True")
+        await storage_client.remove(storage_rel, recursive=True)
+        print(f"[DEBUG] Cleanup successfully completed for video folder: {storage_rel}")
+
+        print(f"[DEBUG] Deleting index for video_id={video_id}")
+        await _bg_delete_index(video_id)
+        print(f"[DEBUG] Index deletion completed for video_id={video_id}")
+
+        print(f"[DEBUG] Deleting comments for video_id={video_id}")
+        await _bg_delete_comments(video_id, timeout_sec=5.0)
+        print(f"[DEBUG] Comment deletion completed for video_id={video_id}")
+
+    except Exception as e:
+        print(f"[ERROR] Cleanup failed for video_id={video_id}: {e}")
+
+
 
 
 async def _probe_basic_video_info_ffprobe(abs_path: str) -> Dict[str, Any]:
@@ -274,7 +316,6 @@ async def manage_delete(
             raise HTTPException(status_code=404, detail="Video not found")
 
         rel_storage = owned["storage_path"]
-
         res = await delete_video_by_owner(conn, video_id, user["user_uid"])
         ok = res.endswith("1")
         if not ok:
@@ -283,14 +324,25 @@ async def manage_delete(
         await release_conn(conn)
 
     storage_client: StorageClient = request.app.state.storage
-    background_tasks.add_task(
-        _bg_cleanup_after_delete_sync,
-        storage_client,
-        rel_storage,
-        video_id,
+    asyncio.create_task(
+        _bg_cleanup_after_delete(
+            storage_client,
+            rel_storage,
+            video_id,
+        )
     )
-
     return RedirectResponse("/manage", status_code=302)
+
+class StorageClient(Protocol):
+    async def remove(self, rel_path: str, recursive: bool = False) -> None: ...
+
+class RemoteStorageClient(StorageClient):
+    async def remove(self, rel_path: str, recursive: bool = False) -> None:
+        resp = await self._stub.Remove(pb.RemoveRequest(path=pb.Path(rel_path=_norm(rel_path)), recursive=bool(recursive)), metadata=_auth_md())
+        if not resp.ok:
+            raise RuntimeError("remote remove failed")
+
+
 
 # ---------- Upload ----------
 
