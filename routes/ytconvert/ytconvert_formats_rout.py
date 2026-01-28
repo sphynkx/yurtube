@@ -1,7 +1,6 @@
 from fastapi import APIRouter, UploadFile, File
 from typing import Any, Dict
 import tempfile
-import os
 import asyncio
 from utils.ffmpeg import probe_ffprobe_json
 from utils.ytconvert.variants_ut import compute_suggested_variants
@@ -31,12 +30,9 @@ async def ytconvert_probe(file: UploadFile = File(...)) -> Dict[str, Any]:
             print(f"[DEBUG]: Running ffprobe on temp file: {temp_path}")
 
             loop = asyncio.get_running_loop()
-            probe_result = await loop.run_in_executor(
-                None, lambda: probe_ffprobe_json(temp_path)
-            )
+            probe_result = await loop.run_in_executor(None, lambda: probe_ffprobe_json(temp_path))
 
-            print("[DEBUG]: FFprobe raw result:", probe_result)
-
+            print("[DEBUG] FFprobe raw result:", probe_result)
             suggested_variants = compute_suggested_variants(probe_result)
             print("[DEBUG]: Suggested variants:", suggested_variants)
 
@@ -44,6 +40,7 @@ async def ytconvert_probe(file: UploadFile = File(...)) -> Dict[str, Any]:
         finally:
             if temp_path:
                 os.remove(temp_path)
+
     except Exception as e:
         print("[ERROR]: Exception during probe:", e)
         return {"ok": False, "error": str(e)}

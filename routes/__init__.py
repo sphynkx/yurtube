@@ -40,6 +40,7 @@ from routes.ytstorage.ytstorage_proxy_rout import router as storage_proxy_router
 from routes.yttrans.yttrans_rout import router as yttrans_router
 
 from routes.ytconvert.ytconvert_probe_rout import router as ytconvert_router
+from routes.ytconvert.ytconvert_formats_rout import router as ytconvert_formats_router
 
 
 def register_routes(app: FastAPI) -> None:
@@ -85,3 +86,4 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(yttrans_router)
 
     app.include_router(ytconvert_router)
+    app.include_router(ytconvert_formats_router)

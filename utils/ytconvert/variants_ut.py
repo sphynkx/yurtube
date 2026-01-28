@@ -61,57 +61,52 @@ def _variant_id(v: VariantPlan) -> str:
 
 
 def compute_suggested_variants(
-    source_info: Dict[str, Any],
+    probe_data: Dict[str, Any],
     *,
     prefer_container: str = "mp4",
     include_audio: bool = True,
 ) -> List[Dict[str, Any]]:
     """
-    Compute suggested conversion variants lower than the source.
+    Compute suggested conversion variants based on ffprobe data.
 
-    Input source_info expects at least:
-      - {"height": int, "width": int, "duration_sec": float|int, ...}
-
-    Output is a list of dicts ready for templating/logging, e.g.:
-      [
-        {"variant_id":"v:720p:h264+aac:mp4","kind":"video","label":"720p","height":720,"container":"mp4","vcodec":"h264","acodec":"aac"},
-        {"variant_id":"a:128k:aac:m4a","kind":"audio","label":"Audio only (128k)","container":"m4a","acodec":"aac","audio_bitrate_kbps":128},
-      ]
+    :param probe_data: JSON-like result from ffprobe (streams, format, etc.)
+    :param prefer_container: Preferred container format, default is "mp4"
+    :param include_audio: Whether to include audio-only variants
+    :return: List of suggested conversion variants
     """
-    h = int(source_info.get("height") or 0)
-    suggested: List[VariantPlan] = []
+    streams = probe_data.get("streams", [])
+    video_stream = next((s for s in streams if s.get("codec_type") == "video"), {})
+    audio_stream = next((s for s in streams if s.get("codec_type") == "audio"), {})
 
-    # Video ladder
-    for vh in _choose_suggested_video_heights(h):
-        # For stage-0 we only "suggest"; codecs can be revised later
-        if prefer_container.lower() == "webm":
+    height = int(video_stream.get("height", 0))
+    suggested: List[Dict[str, Any]] = []
+
+    # Suggest video formats lower than source height
+    for video_height in [144, 360, 720, 1080]:
+        if height >= video_height:
             suggested.append(
-                VariantPlan(kind="video", label=f"{vh}p", container="webm", vcodec="vp9", acodec="opus", height=vh)
-            )
-        else:
-            suggested.append(
-                VariantPlan(kind="video", label=f"{vh}p", container="mp4", vcodec="h264", acodec="aac", height=vh)
+                {
+                    "kind": "video",
+                    "variant_id": f"v:{video_height}p:{prefer_container}",
+                    "label": f"{video_height}p",
+                    "height": video_height,
+                    "vcodec": "h264" if prefer_container == "mp4" else "vp9",
+                    "acodec": "aac" if prefer_container == "mp4" else "opus",
+                    "container": prefer_container,
+                }
             )
 
-    # Audio-only
-    if include_audio:
+    # Add audio-only format
+    if include_audio and audio_stream:
         suggested.append(
-            VariantPlan(kind="audio", label="Audio only (128k)", container="m4a", acodec="aac", audio_bitrate_kbps=128)
-        )
-
-    # Convert to dicts (stable fields)
-    out: List[Dict[str, Any]] = []
-    for v in suggested:
-        out.append(
             {
-                "variant_id": _variant_id(v),
-                "kind": v.kind,
-                "label": v.label,
-                "container": v.container,
-                "vcodec": v.vcodec,
-                "acodec": v.acodec,
-                "height": v.height,
-                "audio_bitrate_kbps": v.audio_bitrate_kbps,
+                "kind": "audio",
+                "variant_id": "a:128k:mp3",
+                "label": "Audio only (128k)",
+                "acodec": "mp3",
+                "container": "mp3",
+                "audio_bitrate_kbps": 128,
             }
         )
-    return out
+
+    return suggested

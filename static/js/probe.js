@@ -12,34 +12,49 @@
 
   function setUploadEnabled(enabled) {
     const btn = el("upload-submit");
-    if (!btn) return;
+    if (!btn) {
+      console.error("[ERROR]: Upload button not found!");
+      return;
+    }
     btn.disabled = !enabled;
   }
 
   function setUploadStatus(text) {
-    const s = el("upload-status");
-    if (!s) return;
-    s.textContent = text || "";
+    const statusEl = el("upload-status");
+    if (!statusEl) {
+      console.warn("[WARN]: Upload status element not found!");
+      return;
+    }
+    statusEl.textContent = text || "";
   }
 
   function showOptions(show) {
-    const box = el("ytconvert-options");
-    if (!box) return;
-    box.style.display = show ? "block" : "none";
+    const optionsBox = el("ytconvert-options");
+    if (!optionsBox) {
+      console.error("[ERROR]: Options block not found!");
+      return;
+    }
+    optionsBox.style.display = show ? "block" : "none";
   }
 
   function renderOptionsCheckboxes(list) {
-    const body = el("ytconvert-options-body");
-    if (!body) return;
+    console.log("[DEBUG]: Rendering options checkboxes, list provided:", list);
 
-    clearNode(body);
+    const optionsBody = el("ytconvert-options-body");
+    if (!optionsBody) {
+      console.error("[ERROR]: Options body element not found!");
+      return;
+    }
+
+    clearNode(optionsBody);
 
     if (!list || !list.length) {
-      // Nothing to show => keep box hidden
+      console.log("[DEBUG]: No formats received, hiding options block.");
       showOptions(false);
       return;
     }
 
+    console.log("[DEBUG]: Showing options block with formats.");
     showOptions(true);
 
     const hint = document.createElement("div");
@@ -47,7 +62,7 @@
     hint.style.color = "#777";
     hint.style.marginBottom = "6px";
     hint.textContent = "Select formats to generate after upload (UI only for now).";
-    body.appendChild(hint);
+    optionsBody.appendChild(hint);
 
     const ul = document.createElement("ul");
     ul.style.margin = "0";
@@ -64,16 +79,9 @@
       cb.type = "checkbox";
       cb.checked = false;
 
-      // For later: send selected variants with the upload form (backend will ignore for now)
-      const valParts = [];
-      if (v.kind) valParts.push(v.kind);
-      if (v.height) valParts.push(String(v.height));
-      if (v.container) valParts.push(v.container);
-      const value = valParts.join(":") || String(idx);
-
+      const vid = (v && v.variant_id) ? String(v.variant_id) : "";
       cb.name = "ytconvert_variants";
-	  const vid = (v && v.variant_id) ? String(v.variant_id) : "";
-	  cb.value = vid || value;
+      cb.value = vid || `variant-${idx}`;
 
       const text = document.createElement("span");
       text.style.marginLeft = "6px";
@@ -93,16 +101,17 @@
       ul.appendChild(li);
     });
 
-    body.appendChild(ul);
+    optionsBody.appendChild(ul);
   }
 
   async function probeFile(file) {
     if (!file) return;
 
-    // user must wait for probe => disable upload until probe finishes
+    console.log("[DEBUG]: Starting file probe for:", file.name);
+
     setUploadEnabled(false);
-    showOptions(false);
     setUploadStatus("Probing...");
+    showOptions(false);
 
     const slice = file.slice(0, Math.min(file.size, SLICE_BYTES));
     const fd = new FormData();
@@ -113,21 +122,24 @@
       const ct = resp.headers.get("content-type") || "";
       const data = ct.includes("application/json") ? await resp.json() : null;
 
-      // Regardless of probe result, allow upload after probe finishes
+      console.log("[DEBUG]: Probe Response: ", data);
+
       setUploadEnabled(true);
       setUploadStatus("");
 
       if (!resp.ok || (data && data.ok === false)) {
+        console.error("[ERROR]: Probe failed: ", data.error);
         renderOptionsCheckboxes([]);
         return;
       }
 
-      renderOptionsCheckboxes((data && data.suggested_variants) || []);
+      renderOptionsCheckboxes(data.suggested_variants || []);
     } catch (e) {
-      // Network error: allow upload, just no options
+      console.error("[ERROR]: Network error during probe:", e);
+
       setUploadEnabled(true);
       setUploadStatus("");
-      renderOptionsCheckboxes([]);
+      showOptions(false);
     }
   }
 
@@ -135,7 +147,6 @@
     const fileInput = document.querySelector('input[type="file"][name="file"]');
     if (!fileInput) return;
 
-    // initial state: no file => upload disabled
     setUploadEnabled(false);
     showOptions(false);
     setUploadStatus("");

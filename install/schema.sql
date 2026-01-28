@@ -331,4 +331,11 @@ CREATE INDEX IF NOT EXISTS idx_ytconvert_jobs_video_id ON ytconvert_jobs(video_i
 CREATE INDEX IF NOT EXISTS idx_ytconvert_jobs_state ON ytconvert_jobs(state);
 CREATE INDEX IF NOT EXISTS idx_ytconvert_jobs_grpc_job_id ON ytconvert_jobs(grpc_job_id);
 
+CREATE TABLE IF NOT EXISTS video_formats (
+    video_id TEXT NOT NULL,
+    format_type TEXT NOT NULL CHECK (format_type IN ('video', 'audio')),
+    format_name TEXT NOT NULL,
+    PRIMARY KEY (video_id, format_name)
+);
+
 COMMIT;
