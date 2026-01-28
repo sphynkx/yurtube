@@ -50,6 +50,7 @@ class YtconvertClient:
         options: Optional[Dict[str, object]] = None,
         timeout_sec: float = 10.0,
     ) -> ytconvert_pb2.JobAck:
+        print(f"[DEBUG] Submitting conversion job: video_id={video_id}, variants={variants}")
         vlist = []
         for v in variants:
             vlist.append(
@@ -64,13 +65,13 @@ class YtconvertClient:
                     audio_bitrate_kbps=int(v.get("audio_bitrate_kbps") or 0),
                 )
             )
-
         req = ytconvert_pb2.SubmitConvertRequest(
             video_id=video_id,
             idempotency_key=idempotency_key,
             variants=vlist,
         )
 
+        print(f"[DEBUG] Sending SubmitConvertRequest: {req}")
         return await self.stub.SubmitConvert(req, metadata=self.metadata, timeout=timeout_sec)
 
     async def upload_source(

@@ -182,6 +182,8 @@ async def _run_job(
         srv = await pick_server_with_healthcheck()
         md = _auth_md(srv.token)
 
+        # Submit job to ytconvert service
+        print(f"[DEBUG] Submitting job to ytconvert service: video_id={video_id}, variants={requested_variant_ids}")
         await update_ytconvert_job_state(
             conn,
             local_job_id,
@@ -194,7 +196,7 @@ async def _run_job(
         async with grpc.aio.insecure_channel(srv.hostport) as channel:
             stub = ytconvert_pb2_grpc.ConverterStub(channel)
 
-            # 1) SubmitConvert
+            # Step 1: Create conversion job
             submit_req = ytconvert_pb2.SubmitConvertRequest(
                 video_id=video_id,
                 idempotency_key=f"yurtube:{video_id}:{local_job_id}",
@@ -203,9 +205,11 @@ async def _run_job(
             ack = await stub.SubmitConvert(submit_req, metadata=md, timeout=10.0)
             if not ack.accepted:
                 await set_ytconvert_job_failed(conn, local_job_id, message=f"Rejected: {ack.message}", meta={"ack_meta": _struct_to_dict(ack.meta)})
+                print(f"[ERROR] Submission failed for video_id={video_id}: {ack.message}")
                 return
 
             grpc_job_id = ack.job_id
+            print(f"[DEBUG] Job submitted successfully: grpc_job_id={grpc_job_id}")
             await set_ytconvert_job_grpc_id(
                 conn,
                 local_job_id,
@@ -215,9 +219,8 @@ async def _run_job(
                 meta={"ack_meta": _struct_to_dict(ack.meta)},
             )
 
-            # 2) UploadSource
+            # Step 2: Upload source file
             filename = os.path.basename(original_rel_path) or "original.webm"
-
             async def gen_upload():
                 offset = 0
                 first = True
@@ -234,15 +237,18 @@ async def _run_job(
             up = await stub.UploadSource(gen_upload(), metadata=md, timeout=cfg.upload_timeout_sec)
             if not up.accepted:
                 await set_ytconvert_job_failed(conn, local_job_id, message=f"Upload rejected: {up.message}", meta={"upload_meta": _struct_to_dict(up.meta)})
+                print(f"[ERROR] Upload failed for video_id={video_id}, job_id={grpc_job_id}: {up.message}")
                 return
 
             await update_ytconvert_job_state(conn, local_job_id, state="RUNNING", progress_percent=0, message="Converting", meta={"upload_meta": _struct_to_dict(up.meta)})
+            print(f"[DEBUG] Source upload completed, starting conversion: grpc_job_id={grpc_job_id}")
 
-            # 3) WatchJob until terminal status
+            # Step 3: Monitoring job progress
             watch_req = ytconvert_pb2.WatchJobRequest(job_id=grpc_job_id, send_initial=True)
             async for ev in stub.WatchJob(watch_req, metadata=md):
                 if ev.status.job_id:
                     st = ev.status
+                    print(f"[DEBUG] Job status update: state={st.state}, percent={st.percent}, message={st.message}")
                     await update_ytconvert_job_state(
                         conn,
                         local_job_id,
@@ -253,39 +259,16 @@ async def _run_job(
                     )
                     if st.state in (ytconvert_pb2.Status.DONE, ytconvert_pb2.Status.FAILED, ytconvert_pb2.Status.CANCELED):
                         break
-                elif ev.partial.job_id:
-                    pr = ev.partial
-                    await update_ytconvert_job_state(
-                        conn,
-                        local_job_id,
-                        state=ytconvert_pb2.Status.State.Name(pr.state),
-                        progress_percent=int(pr.percent or 0),
-                        message=pr.message,
-                        meta={"partial_meta": _struct_to_dict(pr.meta)} if pr.meta else None,
-                    )
-                    if pr.state in (ytconvert_pb2.Status.DONE, ytconvert_pb2.Status.FAILED, ytconvert_pb2.Status.CANCELED):
-                        break
 
-            # 4) GetResult
+            # Step 4: Process job result
             res = await stub.GetResult(ytconvert_pb2.GetResultRequest(job_id=grpc_job_id), metadata=md, timeout=60.0)
             if res.state != ytconvert_pb2.Status.DONE:
                 err_msg = res.message or (res.error.message if res.error else "") or f"ytconvert failed (state={res.state})"
-                await set_ytconvert_job_failed(
-                    conn,
-                    local_job_id,
-                    message=err_msg,
-                    meta={
-                        "result_meta": _struct_to_dict(res.meta),
-                        "error": {
-                            "code": (res.error.code if res.error else ""),
-                            "message": (res.error.message if res.error else ""),
-                            "meta": _struct_to_dict(res.error.meta) if (res.error and res.error.meta) else None,
-                        } if res.error else None,
-                    },
-                )
+                await set_ytconvert_job_failed(conn, local_job_id, message=err_msg, meta={"result_meta": _struct_to_dict(res.meta)})
+                print(f"[ERROR] Conversion failed for video_id={video_id}, grpc_job_id={grpc_job_id}")
                 return
 
-            # 5) Download artifacts into the same folder as original.webm (no extra subfolders)
+            # Step 5: Download artifacts into the same folder as original.webm
             mk = storage_client.mkdirs(storage_rel, exist_ok=True)
             if inspect.isawaitable(mk):
                 await mk
@@ -303,8 +286,8 @@ async def _run_job(
                     out_rel = storage_client.join(storage_rel, fname)
 
                     print(
-                        f"[YTCONVERT] download start video_id={video_id} job_id={grpc_job_id} "
-                        f"variant_id={variant_id} artifact_id={art.artifact_id} filename={fname} size={art.size_bytes}"
+                        f"[DEBUG] Starting download video_id={video_id} job_id={grpc_job_id} "
+                        f"variant_id={variant_id} artifact_id={art.artifact_id} filename={fname} size_bytes={art.size_bytes}"
                     )
 
                     dl_meta = await _write_download_to_storage(
@@ -319,31 +302,24 @@ async def _run_job(
                     )
 
                     print(
-                        f"[YTCONVERT] download done video_id={video_id} job_id={grpc_job_id} "
+                        f"[DEBUG] Download complete video_id={video_id} job_id={grpc_job_id} "
                         f"variant_id={variant_id} artifact_id={art.artifact_id} rel={out_rel} bytes={dl_meta.get('bytes_written')}"
                     )
 
                     # Persist to DB (video -> video_renditions, audio-only -> video_assets)
                     if parsed.get("type") == "v":
-                        preset = str(parsed.get("preset") or "unknown")
-                        codec = str(parsed.get("vcodec") or "unknown")
                         await upsert_video_rendition(
                             conn,
                             video_id=video_id,
-                            preset=preset,
-                            codec=codec,
+                            preset=str(parsed.get("preset") or "unknown"),
+                            codec=str(parsed.get("vcodec") or "unknown"),
                             status="ready",
                             storage_path=out_rel,
                             error_message=None,
                         )
                     elif parsed.get("type") == "a":
-                        ab = str(parsed.get("audio_bitrate") or "")
-                        ac = str(parsed.get("acodec") or "")
-                        cont = str(parsed.get("container") or "")
-                        asset_type = "ytconvert_audio_main"
-                        if ab or ac or cont:
-                            asset_type = f"ytconvert_audio_main_{ab}_{ac}_{cont}".strip("_")
-                            asset_type = re.sub(r"[^a-zA-Z0-9._-]+", "_", asset_type)[:64]
+                        asset_type = f"ytconvert_audio_main_{parsed.get('audio_bitrate') or ''}_{parsed.get('acodec') or ''}_{parsed.get('container') or ''}".strip("_")
+                        asset_type = re.sub(r"[^a-zA-Z0-9._-]+", "_", asset_type)[:64]
                         await upsert_video_asset_path(conn, video_id=video_id, asset_type=asset_type, path=out_rel)
 
                     downloaded.append(
@@ -358,19 +334,11 @@ async def _run_job(
                             "download": dl_meta,
                         }
                     )
-
-            await set_ytconvert_job_done(
-                conn,
-                local_job_id,
-                message=res.message or "DONE",
-                meta={
-                    "result_summary": {"variants": list(res.results_by_variant_id.keys())},
-                    "result_meta": _struct_to_dict(res.meta),
-                    "downloaded": downloaded,
-                },
-            )
+            print(f"[DEBUG] Downloaded artifacts: {downloaded}")
+            print(f"[DEBUG] Job completed successfully: grpc_job_id={grpc_job_id}")
 
     except Exception as e:
+        print(f"[ERROR] Exception during conversion job: {e}")
         await set_ytconvert_job_failed(conn, local_job_id, message=f"ytconvert integration error: {e}", meta={"exc": repr(e)})
     finally:
         await release_conn(conn)
