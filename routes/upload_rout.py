@@ -49,9 +49,8 @@ from services.ytstorage.base_srv import StorageClient
 from utils.ytstorage.path_ut import build_video_storage_rel
 
 # --- ytconvert (stage 0) ---
-from db.ytconvert.ytconvert_jobs_db import create_ytconvert_job
 from services.ytconvert.ytconvert_runner_srv import schedule_ytconvert_job
-from utils.ytconvert.variants_ut import compute_suggested_variants
+from utils.ytconvert.variants_ut import compute_suggested_variants, expand_requested_variant_ids  # YTCONVERT FIX
 
 
 router = APIRouter()
@@ -112,21 +111,17 @@ def _bg_rm_rf(path: str) -> None:
     except Exception:
         pass
 
-
 def _bg_delete_index_ISX(video_id: str) -> None:
     try:
         asyncio.run(delete_from_index(video_id))
     except Exception:
         pass
 
-
 async def _bg_delete_index(video_id: str) -> None:
     try:
         await delete_from_index(video_id)
     except Exception as e:
         print(f"[ERROR] Failed to delete from index: {e}")
-
-
 
 def _bg_delete_comments_ISX(video_id: str, timeout_sec: float = 5.0) -> None:
     try:
@@ -136,7 +131,6 @@ def _bg_delete_comments_ISX(video_id: str, timeout_sec: float = 5.0) -> None:
     except Exception:
         pass
 
-
 async def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
     try:
         await asyncio.wait_for(delete_all_comments_for_video(video_id), timeout=timeout_sec)
@@ -144,7 +138,6 @@ async def _bg_delete_comments(video_id: str, timeout_sec: float = 5.0) -> None:
         print(f"[ERROR] Timeout occurred while deleting comments for video_id {video_id}")
     except Exception as e:
         print(f"[ERROR] Failed to delete comments: {e}")
-
 
 ## depr
 def _bg_cleanup_after_delete_sync(storage_client: StorageClient, storage_rel: str, video_id: str) -> None:
@@ -170,7 +163,6 @@ def _bg_cleanup_after_delete_sync(storage_client: StorageClient, storage_rel: st
     _bg_delete_index(video_id)
     _bg_delete_comments(video_id, timeout_sec=5.0)
 
-
 async def _bg_cleanup_after_delete(storage_client: StorageClient, storage_rel: str, video_id: str) -> None:
     try:
         print(f"[DEBUG] Starting cleanup for video folder: {storage_rel}")
@@ -188,9 +180,6 @@ async def _bg_cleanup_after_delete(storage_client: StorageClient, storage_rel: s
 
     except Exception as e:
         print(f"[ERROR] Cleanup failed for video_id={video_id}: {e}")
-
-
-
 
 async def _probe_basic_video_info_ffprobe(abs_path: str) -> Dict[str, Any]:
     """
@@ -342,8 +331,6 @@ class RemoteStorageClient(StorageClient):
         if not resp.ok:
             raise RuntimeError("remote remove failed")
 
-
-
 # ---------- Upload ----------
 
 @router.get("/upload", response_class=HTMLResponse)
@@ -378,7 +365,6 @@ async def upload_page(request: Request) -> Any:
         headers={"Cache-Control": "no-store"},
     )
 
-
 @router.post("/upload", response_class=HTMLResponse)
 async def upload_video(
     request: Request,
@@ -394,7 +380,6 @@ async def upload_video(
     ytconvert_variants: Optional[List[str]] = Form(None),
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
-    import inspect
     import tempfile
     import shutil
 
@@ -445,13 +430,18 @@ async def upload_video(
 
         video_id = gen_id(12)
 
-        # --- ytconvert job request (stage 0 only; no grpc yet) ---
+        # --- ytconvert job request ---
         requested_variants: List[str] = []
         if ytconvert_variants:
             try:
                 requested_variants = [str(x).strip() for x in ytconvert_variants if str(x).strip()]
             except Exception:
                 requested_variants = []
+
+        # YTCONVERT FIX: auto-add webm counterparts for any selected mp4 video variants
+        if requested_variants:
+            requested_variants = expand_requested_variant_ids(requested_variants)
+
         if requested_variants:
             print(f"[UPLOAD] ytconvert requested_variants={requested_variants} video_id={video_id}")
         # --- /ytconvert job request ---
@@ -544,12 +534,10 @@ async def upload_video(
                 print(f"[YTCONVERT] integration error local_job_id={local_job_id} exc={e!r}")
 
         # All ffmpeg operations are performed on the local path:
-        # - for local: to_abs(...) points to the local root
-        # - for remote: download the original to tmp, generate thumbnails locally, then load them back into storage
         storage_abs_root = storage_client.to_abs("")
         original_abs_path_storage = storage_client.to_abs(original_rel_path)
 
-        # Determine the mode (by the presence of a local file by storage_abs_root)
+        # Determine the mode
         is_local_mode = os.path.exists(original_abs_path_storage)
 
         # Prepare a local absolute path to the source for ffmpeg
@@ -582,7 +570,7 @@ async def upload_video(
         # Next ffmpeg operations are performed according to original_abs_path (local)
         duration = await async_probe_duration_seconds(original_abs_path)
 
-        # --- ytconvert stage 0: propose variants (no actual conversion yet!!) ---
+        # --- ytconvert stage 0: propose variants ---
         src_info = await _probe_basic_video_info_ffprobe(original_abs_path)
         src_info["duration_sec"] = duration
         suggested_variants = compute_suggested_variants(
@@ -615,7 +603,6 @@ async def upload_video(
         selected_rel: Optional[str] = None
 
         if is_local_mode:
-            # local: previes are in storage_abs_dir already
             selected_abs: Optional[str] = candidates_abs[0] if candidates_abs else None
             selected_rel = (os.path.relpath(selected_abs, storage_abs_root) if selected_abs else None)
             if selected_rel:
@@ -624,8 +611,6 @@ async def upload_video(
                 rel = os.path.relpath(p_abs, storage_abs_root)
                 candidates.append({"rel": rel, "url": build_storage_url(rel), "sel": "1" if selected_rel == rel else "0"})
         else:
-            # remote: upload the preview back to storage and collect the rel/URL
-            # Sure tha dir exists
             mkdirs_res2 = storage_client.mkdirs(thumbs_rel_dir, exist_ok=True)
             if inspect.isawaitable(mkdirs_res2):
                 await mkdirs_res2
@@ -857,7 +842,6 @@ async def select_thumbnail(request: Request) -> Any:
         raw = b""
 
     if "application/x-www-form-urlencoded" in ctype:
-        # w/o starlette
         try:
             from urllib.parse import parse_qs
             parsed = parse_qs(raw.decode("utf-8", "ignore"), keep_blank_values=True)
@@ -877,7 +861,6 @@ async def select_thumbnail(request: Request) -> Any:
         except Exception:
             pass
 
-    # Fallback from query (temp)
     qp = request.query_params
     if not form_video_id:
         qv = qp.get("video_id")
@@ -892,7 +875,6 @@ async def select_thumbnail(request: Request) -> Any:
         if qct:
             form_csrf = qct.strip()
 
-    # DEBUG
     print(f"[THUMB POST] ctype={ctype} raw_len={raw_len} cookie={_csrf_cookie(request)!r} form_csrf={form_csrf!r} video_id={form_video_id!r} selected_rel={form_selected_rel!r}")
 
     if not _validate_csrf_multipart(request, form_csrf):

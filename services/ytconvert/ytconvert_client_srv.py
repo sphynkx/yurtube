@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 from typing import AsyncIterator, Dict, List, Optional, Tuple
 
 import grpc
 
-from config.config import settings
-from utils.ytconvert.ytconvert_servers_ut import YtconvertServer, parse_servers
-
+from utils.ytconvert.ytconvert_servers_ut import YtconvertServer
 from services.ytconvert.ytconvert_proto import ytconvert_pb2, ytconvert_pb2_grpc
 
 
@@ -50,8 +47,12 @@ class YtconvertClient:
         options: Optional[Dict[str, object]] = None,
         timeout_sec: float = 10.0,
     ) -> ytconvert_pb2.JobAck:
+        """
+        variants: list of dicts with either full spec fields OR just variant_id.
+        This client will send full VariantSpec if provided.
+        """
         print(f"[DEBUG] Submitting conversion job: video_id={video_id}, variants={variants}")
-        vlist = []
+        vlist: List[ytconvert_pb2.VariantSpec] = []
         for v in variants:
             vlist.append(
                 ytconvert_pb2.VariantSpec(
@@ -65,6 +66,7 @@ class YtconvertClient:
                     audio_bitrate_kbps=int(v.get("audio_bitrate_kbps") or 0),
                 )
             )
+
         req = ytconvert_pb2.SubmitConvertRequest(
             video_id=video_id,
             idempotency_key=idempotency_key,
@@ -112,4 +114,3 @@ class YtconvertClient:
         stream = self.stub.DownloadResult(req, metadata=self.metadata)
         async for ch in stream:
             yield ch
-
