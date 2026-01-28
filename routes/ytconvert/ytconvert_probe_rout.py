@@ -37,10 +37,17 @@ async def ytconvert_probe(file: UploadFile = File(...)) -> Dict[str, Any]:
 
             print("[DEBUG]: FFprobe raw result:", probe_result)
 
-            suggested_variants = compute_suggested_variants(probe_result)
-            print("[DEBUG]: Suggested variants:", suggested_variants)
+            # Compute suggested variants
+            all_variants = compute_suggested_variants(probe_result)
+            print("[DEBUG]: All computed variants:", all_variants)
 
-            return {"ok": True, "suggested_variants": suggested_variants}
+            # Filter out WebM for display purposes
+            ui_variants = [
+                v for v in all_variants if v["container"] != "webm"
+            ]
+            print("[DEBUG]: UI variants for display:", ui_variants)
+
+            return {"ok": True, "suggested_variants": ui_variants}
         finally:
             if temp_path:
                 os.remove(temp_path)

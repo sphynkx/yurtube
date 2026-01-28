@@ -4,7 +4,6 @@
 
 <div class="manage-comments-layout">
   {% include "account/left.html" %}
-
   <main class="mc-main">
     <div class="mc-top-bar">
       <h1 class="mc-page-title">Upload video</h1>
@@ -79,8 +78,10 @@
 
       <!-- ytconvert options (checkbox UI only for now) -->
       <div id="ytconvert-options" style="display:none; margin-top:10px; padding:8px; border:1px dashed #ddd; border-radius:6px;">
-        <div style="font-weight:600; margin-bottom:6px;">Additional formats (optional)</div>
-        <div id="ytconvert-options-body" style="font-size:13px; color:#333;"></div>
+        <div style="font-weight:600; margin-bottom:6px;">Select additional formats (optional)</div>
+        <div id="ytconvert-options-body" style="font-size:13px; color:#333;">
+            <!-- Removed WEBM as per request -->
+        </div>
       </div>
       <!-- /ytconvert options -->
 

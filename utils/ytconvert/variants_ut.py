@@ -60,6 +60,10 @@ def _variant_id(v: VariantPlan) -> str:
     return f"a:{abr}k:{ac}:{cont}"
 
 
+# YouTube-like baseline ladder (heights in pixels)
+_DEFAULT_HEIGHTS = [2160, 1440, 1080, 720, 480, 360, 240]
+
+
 def compute_suggested_variants(
     probe_data: Dict[str, Any],
     *,
@@ -81,22 +85,34 @@ def compute_suggested_variants(
     height = int(video_stream.get("height", 0))
     suggested: List[Dict[str, Any]] = []
 
-    # Suggest video formats lower than source height
+    # Suggest video formats (MP4 visible, WebM hidden but added for backend tasks)
     for video_height in [144, 360, 720, 1080]:
         if height >= video_height:
-            suggested.append(
-                {
-                    "kind": "video",
-                    "variant_id": f"v:{video_height}p:{prefer_container}",
-                    "label": f"{video_height}p",
-                    "height": video_height,
-                    "vcodec": "h264" if prefer_container == "mp4" else "vp9",
-                    "acodec": "aac" if prefer_container == "mp4" else "opus",
-                    "container": prefer_container,
-                }
-            )
+            # Add MP4 variant
+            mp4_variant = {
+                "kind": "video",
+                "variant_id": f"v:{video_height}p:{prefer_container}",
+                "label": f"{video_height}p",
+                "height": video_height,
+                "vcodec": "h264",
+                "acodec": "aac",
+                "container": prefer_container,
+            }
+            suggested.append(mp4_variant)
 
-    # Add audio-only format
+            # Add WebM variant (hidden from UI, but required for processing)
+            webm_variant = {
+                "kind": "video",
+                "variant_id": f"v:{video_height}p:webm",
+                "label": f"{video_height}p",
+                "height": video_height,
+                "vcodec": "vp9",
+                "acodec": "opus",
+                "container": "webm",
+            }
+            suggested.append(webm_variant)
+
+    # Add audio-only formats (MP3 + OGG)
     if include_audio and audio_stream:
         suggested.append(
             {
@@ -105,6 +121,16 @@ def compute_suggested_variants(
                 "label": "Audio only (128k)",
                 "acodec": "mp3",
                 "container": "mp3",
+                "audio_bitrate_kbps": 128,
+            }
+        )
+        suggested.append(
+            {
+                "kind": "audio",
+                "variant_id": "a:128k:ogg",
+                "label": "Audio only (128k)",
+                "acodec": "opus",
+                "container": "ogg",
                 "audio_bitrate_kbps": 128,
             }
         )
