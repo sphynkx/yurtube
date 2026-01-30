@@ -13,14 +13,17 @@ async def create_video(
     category_id: Optional[str],
     is_age_restricted: bool,
     is_made_for_kids: bool,
+    permit_download: bool = False,
 ) -> None:
     await conn.execute(
         """
         INSERT INTO videos (
           video_id, author_uid, title, description, duration_sec, status,
-          processing_status, storage_path, category_id, is_age_restricted, is_made_for_kids
+          processing_status, storage_path, category_id,
+          permit_download,
+          is_age_restricted, is_made_for_kids
         )
-        VALUES ($1,$2,$3,$4,0,$5,'uploaded',$6,$7,$8,$9)
+        VALUES ($1,$2,$3,$4,0,$5,'uploaded',$6,$7,$8,$9,$10)
         """,
         video_id,
         author_uid,
@@ -29,6 +32,7 @@ async def create_video(
         status,
         storage_path,
         category_id,
+        bool(permit_download),
         is_age_restricted,
         is_made_for_kids,
     )
@@ -393,6 +397,7 @@ async def delete_video_by_owner(conn: Any, video_id: str, author_uid: str) -> st
         video_id,
         author_uid,
     )
+
 
 async def count_history_distinct_latest(conn: asyncpg.Connection, user_uid: str) -> int:
     """

@@ -66,6 +66,7 @@
           <label><input type="checkbox" name="is_age_restricted" {{ 'checked' if v.get('is_age_restricted') else '' }}> Age restricted</label>
           <label style="margin-left:12px;"><input type="checkbox" name="is_made_for_kids" {{ 'checked' if v.get('is_made_for_kids') else '' }}> Made for kids</label>
           <label style="margin-left:12px;"><input type="checkbox" name="allow_comments" {{ 'checked' if v.get('allow_comments', True) else '' }}> Allow comments</label>
+          <label style="margin-left:12px;"><input type="checkbox" name="permit_download" {{ 'checked' if v.get('permit_download', False) else '' }}> Permit to download</label>
         </div>
         <div style="margin-top:6px;">
           <label>License

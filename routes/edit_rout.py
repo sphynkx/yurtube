@@ -142,6 +142,7 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
             ("status", "private"),
             ("license", "standard"),
             ("category_id", None),
+            ("permit_download", False),
             ("is_age_restricted", False),
             ("is_made_for_kids", False),
             ("allow_comments", True),
@@ -164,7 +165,6 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
     finally:
         await release_conn(conn)
 
-    # create csrf token for edit page/forms
     csrf_token = _gen_csrf_token()
     resp = templates.TemplateResponse(
         "manage/edit_video.html",
@@ -180,7 +180,6 @@ async def edit_page(request: Request, v: str = Query(..., min_length=12, max_len
             "presets": presets,
             "renditions": renditions,
             "csrf_token": csrf_token,
-            # For templates/macros fallbacks (player, comments, etc.)
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
         headers={"Cache-Control": "no-store"},
@@ -198,6 +197,7 @@ async def edit_meta(
     description: str = Form(""),
     status: str = Form(...),
     category_id: Optional[str] = Form(None),
+    permit_download: Optional[str] = Form(None),
     is_age_restricted: Optional[str] = Form(None),
     is_made_for_kids: Optional[str] = Form(None),
     allow_comments: Optional[str] = Form(None),
@@ -208,7 +208,6 @@ async def edit_meta(
     if not user:
         return RedirectResponse("/auth/login", status_code=302)
 
-    # CSRF protection
     if not _validate_csrf(request, csrf_token):
         raise HTTPException(status_code=403, detail="csrf_required")
 
@@ -225,6 +224,7 @@ async def edit_meta(
         new_title = title.strip() if title is not None and title.strip() != "" else old.get("title", "")
         new_desc = description if description is not None and description != "" else old.get("description", "")
 
+        b_download = _bool_from_form(permit_download)
         b_age = _bool_from_form(is_age_restricted)
         b_kids = _bool_from_form(is_made_for_kids)
         b_comments = _bool_from_form(allow_comments)
@@ -236,6 +236,7 @@ async def edit_meta(
             description=new_desc,
             status=status,
             category_id=category_id,
+            permit_download=b_download,
             is_age_restricted=b_age,
             is_made_for_kids=b_kids,
             allow_comments=b_comments,
@@ -245,7 +246,6 @@ async def edit_meta(
         await release_conn(conn)
 
     background_tasks.add_task(reindex_video, video_id)
-
     return RedirectResponse(f"/manage/edit?v={video_id}", status_code=302)
 
 

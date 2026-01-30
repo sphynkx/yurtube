@@ -31,6 +31,7 @@ async def update_video_meta(
     description: str,
     status: str,
     category_id: Optional[str],
+    permit_download: bool,
     is_age_restricted: bool,
     is_made_for_kids: bool,
     allow_comments: bool,
@@ -43,10 +44,11 @@ async def update_video_meta(
             description = $3,
             status = $4,
             category_id = $5,
-            is_age_restricted = $6,
-            is_made_for_kids = $7,
-            allow_comments = $8,
-            license = $9
+            permit_download = $6,
+            is_age_restricted = $7,
+            is_made_for_kids = $8,
+            allow_comments = $9,
+            license = $10
         WHERE video_id = $1
         """,
         video_id,
@@ -54,6 +56,7 @@ async def update_video_meta(
         description,
         status,
         (category_id or None),
+        bool(permit_download),
         is_age_restricted,
         is_made_for_kids,
         allow_comments,
@@ -97,8 +100,8 @@ async def fetch_watch_video_full(conn, video_id: str) -> Optional[Dict[str, Any]
           v.allow_embed,
           v.allow_comments,
           v.embed_params,
-       v.captions_vtt, 
-       v.captions_lang,
+          v.captions_vtt, 
+          v.captions_lang,
           u.username,
           u.channel_id,
           vcat.name AS category,
@@ -166,6 +169,7 @@ async def fetch_embed_video_info(conn, video_id: str) -> Optional[Dict[str, Any]
         video_id,
     )
     return dict(row) if row else None
+
 
 async def set_video_allow_comments(conn, video_id: str, allow: bool) -> None:
     await conn.execute(

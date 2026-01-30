@@ -84,6 +84,7 @@ CREATE TABLE IF NOT EXISTS videos (
     captions_meta        JSONB NULL,
     captions_ready       BOOLEAN NOT NULL DEFAULT FALSE,
     captions_alt         JSONB NULL,-- Future translations container
+	permit_download 	 BOOLEAN NOT NULL DEFAULT FALSE,
 
     CONSTRAINT videos_video_id_len CHECK (char_length(video_id) = 12)
 );
@@ -93,7 +94,8 @@ CREATE INDEX IF NOT EXISTS videos_status_created_idx ON videos (status, created_
 CREATE INDEX IF NOT EXISTS videos_created_idx ON videos (created_at DESC);
 CREATE INDEX IF NOT EXISTS videos_category_idx ON videos (category_id);
 CREATE INDEX IF NOT EXISTS idx_videos_comments_enabled ON videos(comments_enabled);
-UPDATE videos SET comments_enabled = true WHERE comments_enabled IS NULL;
+CREATE INDEX IF NOT EXISTS videos_permit_download_idx ON videos (permit_download);
+-- UPDATE videos SET comments_enabled = true WHERE comments_enabled IS NULL;
 
 -- Reactions
 CREATE TABLE IF NOT EXISTS reactions (

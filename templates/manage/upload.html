@@ -52,11 +52,16 @@
           {% endfor %}
         </select>
       </div>
+
       <div>
         <label><input type="checkbox" name="is_age_restricted" {{ 'checked' if form and form.is_age_restricted else '' }}> Age restricted</label>
       </div>
       <div>
         <label><input type="checkbox" name="is_made_for_kids" {{ 'checked' if form and form.is_made_for_kids else '' }}> Made for kids</label>
+      </div>
+
+      <div>
+        <label><input type="checkbox" name="permit_download" {{ 'checked' if form and form.permit_download else '' }}> Permit to download</label>
       </div>
 
 <!-- captions -->
