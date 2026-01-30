@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile, BackgroundTasks
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -295,17 +295,6 @@ async def manage_delete(
         )
     )
     return RedirectResponse("/manage", status_code=302)
-
-
-class StorageClient(Protocol):
-    async def remove(self, rel_path: str, recursive: bool = False) -> None: ...
-
-
-class RemoteStorageClient(StorageClient):
-    async def remove(self, rel_path: str, recursive: bool = False) -> None:
-        resp = await self._stub.Remove(pb.RemoveRequest(path=pb.Path(rel_path=_norm(rel_path)), recursive=bool(recursive)), metadata=_auth_md())
-        if not resp.ok:
-            raise RuntimeError("remote remove failed")
 
 
 # ---------- Upload ----------
