@@ -14,28 +14,33 @@
     </button>
   </div>
 
-  {% if allow_embed %}
   <div class="embed-inline" id="embed-inline">
-    <button type="button" class="embed-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="embed-flyout">
-      Embed
-    </button>
+    {% include "partials/download_menu.html" %}
 
-    {% if current_user %}
-      {% include "partials/add_to_menu.html" %}
-    {% endif %}
+    {% if allow_embed %}
+      <button type="button" class="embed-trigger" aria-haspopup="dialog" aria-expanded="false" aria-controls="embed-flyout">
+        Embed
+      </button>
 
-    <div class="embed-flyout" id="embed-flyout" role="dialog" aria-modal="true" aria-label="Embed code" hidden>
-      <div class="embed-body">
-        <label for="embed-code" class="embed-label">Iframe:</label>
-        <textarea id="embed-code" class="embed-code" readonly rows="3">&lt;iframe width="560" height="315" src="{{ embed_url }}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen&gt;&lt;/iframe&gt;</textarea>
-        <div class="embed-actions">
-          <button type="button" class="btn-copy-embed">Copy</button>
-          <button type="button" class="btn-close-embed" aria-label="Close">Close</button>
+      {% if current_user %}
+        {% include "partials/add_to_menu.html" %}
+      {% endif %}
+
+      <div class="embed-flyout" id="embed-flyout" role="dialog" aria-modal="true" aria-label="Embed code" hidden>
+        <div class="embed-body">
+          <label for="embed-code" class="embed-label">Iframe:</label>
+          <textarea id="embed-code" class="embed-code" readonly rows="3">&lt;iframe width="560" height="315" src="{{ embed_url }}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen&gt;&lt;/iframe&gt;</textarea>
+          <div class="embed-actions">
+            <button type="button" class="btn-copy-embed">Copy</button>
+            <button type="button" class="btn-close-embed" aria-label="Close">Close</button>
+          </div>
         </div>
+        <div class="embed-caret"></div>
       </div>
-      <div class="embed-caret"></div>
-    </div>
+    {% endif %}
   </div>
-  <div id="embed-backdrop" hidden></div>
+
+  {% if allow_embed %}
+    <div id="embed-backdrop" hidden></div>
   {% endif %}
 </div>

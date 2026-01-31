@@ -68,19 +68,30 @@
 .video-actions-row{
   display:flex;
   align-items:center;
-  gap:200px;
-  flex-wrap:wrap;
+  gap:170px;
+  flex-wrap:nowrap;
   margin-top:12px;
   margin-bottom:4px;
   max-width:650px;
+  width:100%;
+  min-width:0;
+  overflow:hidden;
 }
 
 /* Embed inline */
 .embed-inline{
-  position:relative;
-  display:flex;
+  gap:8px;
+}
+.download-box{ margin-right:0 !important; }
+.addto-inline{ margin-left:0 !important; }
+.embed-inline > *{
   flex:0 0 auto;
-  align-items:center;
+}
+
+.embed-inline button,
+.embed-inline summary{
+  white-space:nowrap;
+  line-height:1;
 }
 
 .embed-trigger{

@@ -1,0 +1,163 @@
+{# 
+  Expected context:
+    - download_items: list of {url, label, filename}
+    - show_download_menu: bool
+#}
+
+{% if show_download_menu and download_items and download_items|length > 0 %}
+  <details class="download-box" id="download-box">
+    <summary class="download-trigger"
+	<summary class="download-trigger"
+			 id="download-trigger"
+			 aria-haspopup="menu"
+			 style="display:inline-flex; align-items:center; white-space:nowrap; line-height:1;
+					list-style:none; cursor:pointer; user-select:none;
+					appearance:none; border:1px solid #bbb; background:#fff;
+					padding:6px 12px; border-radius:6px; font-weight:600; font-size:13px;">
+	  Download
+	</summary>
+
+    <div class="download-flyout" id="download-flyout" role="menu" aria-label="Download files">
+      <div class="download-caret" id="download-caret" aria-hidden="true"></div>
+      <ul class="download-list" style="margin:0; padding-left:18px;">
+        {% for it in download_items %}
+          <li style="margin:6px 0;">
+            <a href="{{ it.url }}" download="{{ it.filename|e }}" style="text-decoration:none;">
+              {{ it.label }}
+            </a>
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </details>
+
+  <style>
+    .download-box{ position:relative; display:inline-block; margin-right:8px; }
+    .download-trigger::-webkit-details-marker{ display:none; }
+
+    /* hidden by default; shown when [open] */
+    .download-box > .download-flyout{ display:none; }
+    .download-box[open] > .download-flyout{ display:block; }
+
+    /* fixed popover: never clipped by parent and can be clamped to viewport */
+    .download-flyout{
+      position:fixed;
+      top:0;
+      left:0;
+      width:200px;                  /* ~2x narrower than before */
+      max-width:200px;
+      background:#fff;
+      border:1px solid #ddd;
+      border-radius:8px;
+      box-shadow:0 10px 30px rgba(0,0,0,.15);
+      z-index:5000;
+      padding:10px 10px;
+    }
+
+    .download-caret{
+      position:fixed;
+      width:12px;
+      height:12px;
+      background:#fff;
+      border-left:1px solid #ddd;
+      border-top:1px solid #ddd;
+      transform:rotate(45deg);
+      z-index:5001;
+    }
+
+    .download-list a{ font-size:13px; }
+  </style>
+
+  <script>
+  (function(){
+    var box = document.getElementById('download-box');
+    var trigger = document.getElementById('download-trigger');
+    var flyout = document.getElementById('download-flyout');
+    var caret = document.getElementById('download-caret');
+    if(!box || !trigger || !flyout || !caret) return;
+
+    var PAD = 8;         // viewport padding
+    var GAP = 8;         // distance from button to menu
+    var CARET = 12;      // caret size
+
+    function close(){
+      try { box.open = false; } catch(e){}
+    }
+
+	function layout(){
+	  if(!box.open) return;
+
+	  var tr = trigger.getBoundingClientRect();
+
+	  // measure
+	  flyout.style.visibility = 'hidden';
+	  flyout.style.left = '0px';
+	  flyout.style.top = '0px';
+	  flyout.style.display = 'block';
+
+	  var fr = flyout.getBoundingClientRect();
+	  var w = fr.width || 200;
+
+	  // ALWAYS anchored below the button
+	  var x = tr.left + (tr.width / 2) - (w / 2);
+	  var y = tr.bottom + GAP;
+
+	  // clamp X only
+	  var minX = PAD;
+	  var maxX = Math.max(PAD, window.innerWidth - PAD - w);
+	  if (x < minX) x = minX;
+	  if (x > maxX) x = maxX;
+
+	  flyout.style.left = Math.round(x) + 'px';
+	  flyout.style.top  = Math.round(y) + 'px';
+	  flyout.style.visibility = 'visible';
+
+	  // caret anchored to button
+	  var caretX = tr.left + (tr.width / 2) - (CARET / 2);
+	  var caretY = y - (CARET / 2);
+
+	  var caretMinX = x + 10;
+	  var caretMaxX = x + w - 10 - CARET;
+	  if (caretX < caretMinX) caretX = caretMinX;
+	  if (caretX > caretMaxX) caretX = caretMaxX;
+
+	  caret.style.left = Math.round(caretX) + 'px';
+	  caret.style.top  = Math.round(caretY) + 'px';
+	  caret.style.display = 'block';
+	}
+
+    // Re-layout on open/resize/scroll
+    var ro = null;
+    function onOpenChange(){
+      if (box.open){
+        layout();
+      } else {
+        caret.style.display = 'none';
+      }
+    }
+    box.addEventListener('toggle', onOpenChange);
+    window.addEventListener('resize', layout);
+    window.addEventListener('scroll', layout, true);
+
+    // Close on outside click
+    document.addEventListener('click', function(e){
+      if(!box.open) return;
+      if(box.contains(e.target)) return;
+      close();
+    }, true);
+
+    // Close on Esc
+    document.addEventListener('keydown', function(e){
+      if(!box.open) return;
+      if((e.key||'').toLowerCase() === 'escape') close();
+    });
+
+    // Close when clicking an item
+    box.addEventListener('click', function(e){
+      var a = e.target && e.target.closest ? e.target.closest('a') : null;
+      if(a) close();
+    });
+
+  })();
+  </script>
+{% endif %}

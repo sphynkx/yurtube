@@ -2,6 +2,7 @@ from typing import Any, Dict, List, Optional
 import os
 import json
 import inspect
+import re
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -10,16 +11,15 @@ from fastapi.templating import Jinja2Templates
 
 from config.config import settings
 from db import get_conn, release_conn
-from db.assets_db import get_thumbnail_asset_path, get_thumbs_vtt_asset
+from db.assets_db import get_thumbnail_asset_path, get_thumbs_vtt_asset, list_video_audio_assets_for_download
 from db.views_db import add_view, increment_video_views_counter
 from db.videos_db import get_video
 from db.videos_query_db import fetch_watch_video_full, fetch_embed_video_info
+from db.video_renditions_db import list_video_renditions as db_list_video_renditions
 from services.feed.recommend_srv import fetch_rightbar_for_video  # right-bar recommendations
 from utils.format_ut import fmt_dt
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
-
-from db.assets_db import get_thumbs_vtt_asset
 
 from db.playlists_db import get_playlist_brief
 from services.ytstorage.base_srv import StorageClient
@@ -32,6 +32,7 @@ templates.env.globals["favicon_url"] = settings.FAVICON_URL
 templates.env.globals["apple_touch_icon_url"] = settings.APPLE_TOUCH_ICON_URL
 templates.env.globals["sitename"] = settings.SITENAME
 templates.env.globals["support_email"] = settings.SUPPORT_EMAIL
+
 
 def _avatar_small_url(avatar_path: Optional[str]) -> str:
     if not avatar_path:
@@ -135,6 +136,97 @@ async def _load_translations_langs(storage_client: StorageClient, storage_rel: s
         return []
 
 
+_slug_re = re.compile(r"[^a-zA-Z0-9 _.-]+")
+
+
+def _safe_download_basename(title: str) -> str:
+    """
+    Create a reasonably safe base filename from video title.
+    """
+    t = (title or "").strip()
+    if not t:
+        return "video"
+    t = _slug_re.sub("", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    t = t.strip(". ").strip()
+    if not t:
+        return "video"
+    return t[:140]
+
+
+def _ext_from_path(rel_path: str) -> str:
+    ext = os.path.splitext(rel_path or "")[1].lower()
+    if ext.startswith("."):
+        ext = ext[1:]
+    return ext or "bin"
+
+
+def _build_download_items(video: Dict[str, Any], renditions: List[Dict[str, Any]], audio_assets: List[Dict[str, str]]) -> List[Dict[str, str]]:
+    """
+    Returns list items for download menu:
+      { url, label, filename }
+    """
+    storage_rel = (video.get("storage_path") or "").strip("/").rstrip("/")
+    title = _safe_download_basename(video.get("title") or "video")
+
+    items: List[Dict[str, str]] = []
+
+    # Original
+    orig_rel = f"{storage_rel}/original.webm"
+    orig_ext = _ext_from_path(orig_rel)
+    items.append(
+        {
+            "url": build_storage_url(orig_rel),
+            "label": f"Original ({orig_ext.upper()})",
+            "filename": f"{title} - original.{orig_ext}",
+        }
+    )
+
+    # Renditions (video)
+    for r in (renditions or []):
+        rel = (r.get("storage_path") or "").strip().lstrip("/")
+        if not rel:
+            continue
+        preset = (r.get("preset") or "").strip()  # e.g. "240p"
+        ext = _ext_from_path(rel)
+        label = f"Video {preset} ({ext.upper()})" if preset else f"Video ({ext.upper()})"
+        suffix = preset if preset else "video"
+        items.append(
+            {
+                "url": build_storage_url(rel),
+                "label": label,
+                "filename": f"{title} - {suffix}.{ext}",
+            }
+        )
+
+    # Audio assets (mp3/ogg/etc)
+    for a in (audio_assets or []):
+        rel = (a.get("path") or "").strip().lstrip("/")
+        if not rel:
+            continue
+        ext = _ext_from_path(rel)
+        # for label use ext (mp3/ogg) as primary hint
+        label = f"Audio ({ext.upper()})"
+        items.append(
+            {
+                "url": build_storage_url(rel),
+                "label": label,
+                "filename": f"{title} - audio.{ext}",
+            }
+        )
+
+    # De-dup by (url)
+    seen = set()
+    uniq: List[Dict[str, str]] = []
+    for it in items:
+        u = it.get("url")
+        if not u or u in seen:
+            continue
+        seen.add(u)
+        uniq.append(it)
+    return uniq
+
+
 @router.get("/watch", response_class=HTMLResponse)
 async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -> Any:
     user = get_current_user(request)
@@ -177,6 +269,9 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
                 "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
                 "allow_comments": False,
                 "upnext_title": "Up next",
+                # download menu
+                "show_download_menu": False,
+                "download_items": [],
             }
             headers = {"Cache-Control": "no-store"}
             return templates.TemplateResponse("watch.html", context, headers=headers)
@@ -218,7 +313,6 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
         sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
         sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
 
-        # translations -> subtitles
         storage_client: StorageClient = request.app.state.storage
         langs = await _load_translations_langs(storage_client, video["storage_path"])
         if langs:
@@ -256,6 +350,20 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
 
         allow_comments = video.get("allow_comments", True)
 
+        # Download menu data
+        show_download_menu = bool(video.get("permit_download"))
+        download_items: List[Dict[str, str]] = []
+        if show_download_menu:
+            try:
+                renditions = await db_list_video_renditions(conn, video["video_id"])
+            except Exception:
+                renditions = []
+            try:
+                audio_assets = await list_video_audio_assets_for_download(conn, video["video_id"])
+            except Exception:
+                audio_assets = []
+            download_items = _build_download_items(video, renditions, audio_assets)
+
         context = {
             "brand_logo_url": settings.BRAND_LOGO_URL,
             "brand_tagline": settings.BRAND_TAGLINE,
@@ -281,6 +389,9 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
             "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
             "allow_comments": allow_comments,
             "upnext_title": upnext_title,
+            # download menu
+            "show_download_menu": show_download_menu,
+            "download_items": download_items,
         }
 
         link_entries: List[str] = []
@@ -372,7 +483,6 @@ async def embed_page(
         sprites_vtt_rel = await get_thumbs_vtt_asset(conn, video["video_id"])
         sprites_vtt_url = build_storage_url(sprites_vtt_rel) if sprites_vtt_rel else None
 
-        # translations -> subtitles
         storage_client: StorageClient = request.app.state.storage
         langs = await _load_translations_langs(storage_client, video["storage_path"])
         if langs:

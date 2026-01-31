@@ -1,5 +1,5 @@
 import re
-from typing import List, Optional
+from typing import List, Optional, Dict
 import asyncpg
 
 
@@ -71,3 +71,24 @@ async def get_thumbs_vtt_asset(conn: asyncpg.Connection, video_id: str) -> Optio
         video_id,
     )
     return row["path"] if row else None
+
+
+async def list_video_audio_assets_for_download(conn: asyncpg.Connection, video_id: str) -> List[Dict[str, str]]:
+    """
+    Returns list of audio assets suitable for download menu.
+    Currently targets ytconvert-produced audio assets.
+    """
+    rows = await conn.fetch(
+        """
+        SELECT asset_type, path
+        FROM video_assets
+        WHERE video_id = $1
+          AND (
+            asset_type LIKE 'ytconvert_audio_%'
+            OR asset_type LIKE 'audio_%'
+          )
+        ORDER BY asset_type ASC
+        """,
+        video_id,
+    )
+    return [{"asset_type": r["asset_type"], "path": r["path"]} for r in rows if r and r.get("path")]
