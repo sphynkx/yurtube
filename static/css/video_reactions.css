@@ -75,13 +75,21 @@
   max-width:650px;
   width:100%;
   min-width:0;
-  overflow:hidden;
+  overflow-x:auto;
+  overflow-y:hidden;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width: thin;
 }
 
 /* Embed inline */
 .embed-inline{
+  position:relative;
+  display:flex;
+  align-items:center;
   gap:8px;
+  flex-wrap:nowrap;
 }
+
 .download-box{ margin-right:0 !important; }
 .addto-inline{ margin-left:0 !important; }
 .embed-inline > *{
