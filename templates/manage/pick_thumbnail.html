@@ -18,21 +18,29 @@
     <form action="/upload/select-thumbnail" method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="video_id" value="{{ video['video_id'] }}">
-      <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:12px;">
-        {% for c in candidates %}
-        <label style="display:block; border:1px solid #ddd; padding:8px; cursor:pointer;">
-          <div style="aspect-ratio:16/9; background:#000; overflow:hidden;">
-            <img src="{{ c['url'] }}" alt="thumb" style="width:100%; height:100%; object-fit:cover;">
-          </div>
-          <div style="margin-top:6px;">
-            <input type="radio" name="selected_rel" value="{{ c['rel'] }}">
-            Use this
-          </div>
-        </label>
-        {% endfor %}
-      </div>
+
+      {% if not candidates or candidates|length == 0 %}
+        <div style="padding:12px; border:1px solid #ddd; background:#fafafa;">
+          No thumbnails found in <code>thumbs/</code>. Try “Re-generate” on the edit page first.
+        </div>
+      {% else %}
+        <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap:12px;">
+          {% for c in candidates %}
+          <label style="display:block; border:1px solid #ddd; padding:8px; cursor:pointer;">
+            <div style="aspect-ratio:16/9; background:#000; overflow:hidden;">
+              <img src="{{ c['url'] }}" alt="thumb" style="width:100%; height:100%; object-fit:cover;">
+            </div>
+            <div style="margin-top:6px;">
+              <input type="radio" name="selected_rel" value="{{ c['rel'] }}">
+              Use this
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      {% endif %}
+
       <div style="margin-top:12px;">
-        <button type="submit">Save</button>
+        <button type="submit" {% if not candidates or candidates|length == 0 %}disabled{% endif %}>Save</button>
         <a href="/manage/edit?v={{ video['video_id'] }}" style="margin-left:8px;">Cancel</a>
       </div>
     </form>

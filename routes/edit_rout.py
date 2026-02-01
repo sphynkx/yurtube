@@ -490,22 +490,56 @@ async def pick_thumb_page(request: Request, v: str = Query(..., min_length=12, m
             raise HTTPException(status_code=404, detail="Video not found")
 
         rel_storage = owned["storage_path"]
-        thumbs_rel_dir = f"{rel_storage.strip('/')}/thumbs"
+        thumbs_rel_dir = f"{rel_storage.strip('/')}/thumbs".replace("\\", "/").strip("/")
         storage_client: StorageClient = request.app.state.storage
 
         items: List[Dict[str, str]] = []
-        # list via StorageClient; build relative URLs for template
+
+        # list via StorageClient (works for both local and remote)
         try:
             exists_res = storage_client.exists(thumbs_rel_dir)  # type: ignore
             if hasattr(exists_res, "__await__"):
                 exists_res = await exists_res  # type: ignore
+
             if bool(exists_res):
-                abs_dir = storage_client.to_abs(thumbs_rel_dir)
-                if abs_dir and os.path.isdir(abs_dir):
-                    for name in sorted(os.listdir(abs_dir)):
-                        if re.match(r"^thumb_.*\.jpg$", name):
-                            rel = f"{rel_storage.strip('/')}/thumbs/{name}".replace("\\", "/")
-                            items.append({"rel": rel, "url": build_storage_url(rel)})
+                names: List[str] = []
+
+                # Try remote-style listdir (async, dict with entries)
+                try:
+                    res = storage_client.listdir(thumbs_rel_dir)  # type: ignore
+                    if hasattr(res, "__await__"):
+                        res = await res  # type: ignore
+
+                    if isinstance(res, dict) and "entries" in res:
+                        for e in (res.get("entries") or []):
+                            if not isinstance(e, dict):
+                                continue
+                            nm = (e.get("name") or "").strip()
+                            if nm:
+                                names.append(nm)
+                            else:
+                                # fallback: derive name from rel_path
+                                rp = (e.get("rel_path") or "").replace("\\", "/").strip("/")
+                                if rp:
+                                    names.append(rp.rsplit("/", 1)[-1])
+                    else:
+                        # Local-style listdir (iterable of names)
+                        try:
+                            for nm in res:  # type: ignore
+                                if nm:
+                                    names.append(str(nm))
+                        except TypeError:
+                            names = []
+                except Exception:
+                    names = []
+
+                names = sorted(set(n.strip() for n in names if n and str(n).strip()))
+
+                for name in names:
+                    # show thumb_*.jpg and also thumb_custom.jpg if present
+                    if re.match(r"^thumb_.*\.jpg$", name) or name == "thumb_custom.jpg":
+                        rel = f"{thumbs_rel_dir}/{name}".replace("\\", "/").lstrip("/")
+                        items.append({"rel": rel, "url": build_storage_url(rel)})
         except Exception:
             pass
 
@@ -513,7 +547,6 @@ async def pick_thumb_page(request: Request, v: str = Query(..., min_length=12, m
     finally:
         await release_conn(conn)
 
-    # include csrf token in pick page
     csrf_token = _gen_csrf_token()
     resp = templates.TemplateResponse(
         "manage/pick_thumbnail.html",
@@ -529,8 +562,20 @@ async def pick_thumb_page(request: Request, v: str = Query(..., min_length=12, m
             "csrf_token": csrf_token,
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
         },
+        headers={"Cache-Control": "no-store"},
     )
-    resp.set_cookie(getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"), csrf_token, httponly=False, samesite="none", secure=True, path="/")
+
+    # IMPORTANT: Secure cookie only works on HTTPS.
+    # If you use HTTP in dev/LAN, cookie won't be saved, CSRF breaks.
+    is_https = (request.url.scheme or "").lower() == "https"
+    resp.set_cookie(
+        getattr(settings, "CSRF_COOKIE_NAME", "yt_csrf"),
+        csrf_token,
+        httponly=False,
+        samesite="none" if is_https else "lax",
+        secure=True if is_https else False,
+        path="/",
+    )
     return resp
 
 

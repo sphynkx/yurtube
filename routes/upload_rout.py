@@ -857,4 +857,5 @@ async def select_thumbnail(request: Request) -> Any:
     finally:
         await release_conn(conn)
 
-    return RedirectResponse("/manage", status_code=302)
+##    return RedirectResponse("/manage", status_code=302)
+    return RedirectResponse(f"/manage/edit?v={form_video_id}", status_code=302)
