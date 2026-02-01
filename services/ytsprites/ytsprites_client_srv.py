@@ -54,16 +54,6 @@ def _build_options() -> pb.SpriteOptions:
     )
 
 
-def _read_file_bytes(abs_path: str) -> bytes:
-    if not os.path.isfile(abs_path):
-        raise FileNotFoundError(f"File not found: {abs_path}")
-    size = os.path.getsize(abs_path)
-    if size > YTSPRITES_MAX_UPLOAD_BYTES:
-        raise ValueError(f"File size {size} exceeds YTSPRITES_MAX_UPLOAD_BYTES={YTSPRITES_MAX_UPLOAD_BYTES}")
-    with open(abs_path, "rb") as f:
-        return f.read()
-
-
 def _channel_for_addr(addr: str) -> grpc.Channel:
     max_send = int(YTSPRITES_GRPC_MAX_SEND_MB) * 1024 * 1024
     max_recv = int(YTSPRITES_GRPC_MAX_RECV_MB) * 1024 * 1024
@@ -91,7 +81,6 @@ def health_check(addr: Optional[str] = None) -> bool:
     Service-native healthcheck (Sprites/Health).
     """
     if not addr:
-        # best effort pick: try cached, then first configured
         cached = _last_good.get("addr")
         if cached:
             addr = str(cached)
@@ -129,33 +118,84 @@ def pick_ytsprites_addr() -> str:
             _last_good["ts"] = now
             return addr
 
-    # none healthy -> fallback to first
     addr0 = servers[0].target
     _last_good["addr"] = addr0
     _last_good["ts"] = now
     return addr0
 
 
-# Send only (get job_id), without waiting for the result
+def create_job_only(
+    video_id: str,
+    *,
+    filename: str = "original.webm",
+    video_mime: Optional[str] = None,
+) -> Tuple[str, str]:
+    """
+    Returns (job_id, job_server_addr).
+    """
+    mime = (video_mime or YTSPRITES_DEFAULT_MIME).strip() or YTSPRITES_DEFAULT_MIME
+    addr = pick_ytsprites_addr()
+    stub = _open_stub(addr)
+
+    req = pb.CreateJobRequest(
+        video_id=video_id,
+        filename=(filename or ""),
+        video_mime=mime,
+        options=_build_options(),
+    )
+    rep: pb.CreateJobReply = stub.CreateJob(req, timeout=YTSPRITES_SUBMIT_TIMEOUT, metadata=_auth_metadata())
+    if not rep.accepted or not rep.job_id:
+        raise RuntimeError(f"CreateJob rejected for video_id={video_id}: {(rep.message or '')}")
+    return rep.job_id, addr
+
+
+def upload_source(
+    job_id: str,
+    job_server: str,
+    video_abs_path: str,
+    *,
+    chunk_bytes: int = 4 * 1024 * 1024,
+) -> pb.UploadReply:
+    """
+    Client-streaming upload to the SAME server (affinity).
+    """
+    if not os.path.isfile(video_abs_path):
+        raise FileNotFoundError(f"File not found: {video_abs_path}")
+
+    size = os.path.getsize(video_abs_path)
+    if size > int(YTSPRITES_MAX_UPLOAD_BYTES):
+        raise ValueError(f"File size {size} exceeds YTSPRITES_MAX_UPLOAD_BYTES={YTSPRITES_MAX_UPLOAD_BYTES}")
+
+    stub = _open_stub(job_server)
+
+    def gen():
+        offset = 0
+        with open(video_abs_path, "rb") as f:
+            while True:
+                data = f.read(chunk_bytes)
+                if not data:
+                    break
+                yield pb.UploadChunk(job_id=job_id, offset=offset, data=data, last=False)
+                offset += len(data)
+        yield pb.UploadChunk(job_id=job_id, offset=offset, data=b"", last=True)
+
+    rep: pb.UploadReply = stub.UploadSource(gen(), timeout=YTSPRITES_SUBMIT_TIMEOUT, metadata=_auth_metadata())
+    if not rep.accepted:
+        raise RuntimeError(f"UploadSource rejected job_id={job_id}: {(rep.message or '')}")
+    return rep
+
+
 def submit_only(video_id: str, video_abs_path: str, video_mime: Optional[str] = None) -> Tuple[str, str]:
     """
     Returns (job_id, job_server_addr).
     """
-    data = _read_file_bytes(video_abs_path)
-    mime = (video_mime or YTSPRITES_DEFAULT_MIME).strip() or YTSPRITES_DEFAULT_MIME
-    req = pb.SubmitRequest(
-        video_id=video_id,
-        video_bytes=data,
-        video_mime=mime,
-        options=_build_options(),
+    job_id, addr = create_job_only(
+        video_id,
+        filename=os.path.basename(video_abs_path) or "original.webm",
+        video_mime=video_mime,
     )
-
-    addr = pick_ytsprites_addr()
-    stub = _open_stub(addr)
-    rep: pb.SubmitReply = stub.Submit(req, timeout=YTSPRITES_SUBMIT_TIMEOUT, metadata=_auth_metadata())
-    if not rep.accepted:
-        raise RuntimeError(f"Submit rejected for video_id={video_id}")
-    return rep.job_id, addr
+    upload_source(job_id, addr, video_abs_path)
+    return job_id, addr
 
 
 def watch_status(job_id: str, job_server: str, on_update: Optional[Callable[[Dict], None]] = None) -> Optional[pb.StatusUpdate]:
@@ -192,7 +232,6 @@ def watch_status(job_id: str, job_server: str, on_update: Optional[Callable[[Dic
     return last
 
 
-# Get results by job_id
 def get_result(job_id: str, job_server: str) -> Tuple[str, List[Tuple[str, bytes]], str]:
     """
     IMPORTANT: affinity — result is fetched from the SAME server where job was created.
@@ -211,7 +250,6 @@ def get_result(job_id: str, job_server: str) -> Tuple[str, List[Tuple[str, bytes
     return video_id, sprites, vtt
 
 
-# Send a video file, wait for completion (via status stream) and collect the result
 def submit_and_wait(
     video_id: str,
     video_abs_path: str,
@@ -220,15 +258,15 @@ def submit_and_wait(
 ) -> Tuple[str, List[Tuple[str, bytes]], str]:
     """
     Full flow with affinity:
-      - submit chooses job_server
-      - watch_status + get_result use the SAME job_server
+      - CreateJob chooses job_server
+      - UploadSource sends chunks to the SAME job_server
+      - WatchStatus + GetResult use the SAME job_server
     """
     job_id, job_server = submit_only(video_id, video_abs_path, video_mime=video_mime)
     watch_status(job_id, job_server, on_update=on_status)
     return get_result(job_id, job_server)
 
 
-# Local processing via ytsprites
 async def create_thumbnails_job(
     video_id: str,
     src_path: Optional[str],
@@ -238,29 +276,27 @@ async def create_thumbnails_job(
 ) -> Dict[str, Any]:
     """
     Thumbs generator.
-    Calls gRPC ytsprites
+    Calls gRPC ytsprites.
     Sync processing, saves files to out_base_path.
 
     Returns:
     {
       "ok": True,
-      "job_id": "ytsprites-local",
+      "job_id": "...",
       "vtt_rel": "sprites.vtt",
       "sprites": ["sprites/sprite_0001.jpg", ..]
     }
     """
     if not src_path and not src_url:
         raise ValueError("src_path or src_url required")
-    # Currently only src_path (local file)
     if not src_path or not os.path.isfile(src_path):
         raise FileNotFoundError(f"Video src_path not found: {src_path}")
 
     mime = (YTSPRITES_DEFAULT_MIME or "video/webm").strip() or "video/webm"
 
-    # Send and wait in sep thread
+    # Run gRPC sync client in a separate thread (keeps event loop responsive).
     video_id2, sprites, vtt_text = await asyncio.to_thread(submit_and_wait, video_id, src_path, mime)
 
-    # Save result close to out_base_path
     os.makedirs(out_base_path, exist_ok=True)
 
     # VTT
