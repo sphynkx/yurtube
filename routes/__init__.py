@@ -42,7 +42,7 @@ from routes.yttrans.yttrans_rout import router as yttrans_router
 from routes.ytconvert.ytconvert_probe_rout import router as ytconvert_router
 from routes.ytconvert.ytconvert_probe_video_rout import router as ytconvert_video_router
 from routes.ytconvert.ytconvert_manage_rout import router as ytconvert_manage_router
-
+from routes.ytconvert.ytconvert_renditions_rout import router as ytconvert_rendition_router
 
 def register_routes(app: FastAPI) -> None:
     # Core
@@ -89,4 +89,5 @@ def register_routes(app: FastAPI) -> None:
     app.include_router(ytconvert_router)
     app.include_router(ytconvert_video_router)
     app.include_router(ytconvert_manage_router)
+    app.include_router(ytconvert_rendition_router)
 

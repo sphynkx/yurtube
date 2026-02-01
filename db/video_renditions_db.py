@@ -1,4 +1,21 @@
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
+
+
+async def delete_video_rendition(conn, *, video_id: str, preset: str, codec: str) -> Optional[str]:
+    """
+    Delete a rendition row and return its storage_path (if any).
+    """
+    row = await conn.fetchrow(
+        """
+        DELETE FROM video_renditions
+        WHERE video_id = $1 AND preset = $2 AND codec = $3
+        RETURNING storage_path
+        """,
+        video_id,
+        preset,
+        codec,
+    )
+    return (row["storage_path"] if row and "storage_path" in row else None)
 
 
 async def list_video_renditions(conn, video_id: str) -> List[Dict[str, Any]]:

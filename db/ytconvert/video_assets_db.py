@@ -1,6 +1,25 @@
 from __future__ import annotations
-
+from typing import Optional, Any, Dict
 import re
+
+
+async def delete_video_asset_by_type(conn, *, video_id: str, asset_type: str) -> Optional[str]:
+    """
+    Delete video asset row by (video_id, asset_type) and return its path.
+    """
+    asset_type = (asset_type or "").strip()
+    asset_type = re.sub(r"[^a-zA-Z0-9._-]+", "_", asset_type)[:64]
+
+    row = await conn.fetchrow(
+        """
+        DELETE FROM video_assets
+        WHERE video_id = $1 AND asset_type = $2
+        RETURNING path
+        """,
+        video_id,
+        asset_type,
+    )
+    return (row["path"] if row and "path" in row else None)
 
 
 async def upsert_video_asset_path(conn, *, video_id: str, asset_type: str, path: str) -> None:

@@ -17,10 +17,130 @@
   const jobLine = qs("ytc-job-line");
   const jobBar = qs("ytc-job-bar");
 
-  function setStatus(t) { if (statusEl) statusEl.textContent = t || ""; }
+  const rendWrap = qs("ytc-renditions");
+  const delBtn = qs("ytc-del-btn");
 
+  function setStatus(t) { if (statusEl) statusEl.textContent = t || ""; }
   function clearNode(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
 
+  // ---------- Renditions list (dynamic) ----------
+  async function fetchRenditions() {
+    try {
+      const url = "/internal/ytconvert/renditions?video_id=" + encodeURIComponent(videoId);
+      const r = await fetch(url, { credentials: "same-origin" });
+      const d = await r.json().catch(() => null);
+      if (!r.ok || !d || !d.ok) return null;
+      return d.renditions || [];
+    } catch {
+      return null;
+    }
+  }
+
+  function anyReadyChecked() {
+    if (!rendWrap) return false;
+    return rendWrap.querySelectorAll('input.ytc-del-item:checked').length > 0;
+  }
+
+  function updateDeleteBtnState() {
+    if (!delBtn) return;
+    delBtn.disabled = !anyReadyChecked();
+  }
+
+  function renderRenditions(list) {
+    if (!rendWrap) return;
+    clearNode(rendWrap);
+
+    const renditions = Array.isArray(list) ? list : [];
+    if (!renditions.length) {
+      const sp = document.createElement("span");
+      sp.id = "ytc-renditions-empty";
+      sp.textContent = "none";
+      rendWrap.appendChild(sp);
+      updateDeleteBtnState();
+      return;
+    }
+
+    const ul = document.createElement("ul");
+    ul.id = "ytc-renditions-list";
+
+    renditions.forEach((r) => {
+      const preset = String(r.preset || "");
+      const codec = String(r.codec || "");
+      const status = String(r.status || "");
+      const err = r.error_message ? String(r.error_message) : "";
+
+      const li = document.createElement("li");
+
+      // checkbox only for ready (as requested)
+      if (status === "ready") {
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "ytc-del-item";
+        cb.value = "v|" + preset + "|" + codec;
+        cb.style.marginRight = "8px";
+        cb.addEventListener("change", updateDeleteBtnState);
+        li.appendChild(cb);
+      } else {
+        // align text roughly
+        const pad = document.createElement("span");
+        pad.style.display = "inline-block";
+        pad.style.width = "22px";
+        li.appendChild(pad);
+      }
+
+      const txt = document.createElement("span");
+      txt.textContent = preset + " " + codec + " — " + status + (err ? (" (" + err + ")") : "");
+      li.appendChild(txt);
+
+      ul.appendChild(li);
+    });
+
+    rendWrap.appendChild(ul);
+    updateDeleteBtnState();
+  }
+
+  async function refreshRenditionsNow() {
+    const list = await fetchRenditions();
+    if (list !== null) renderRenditions(list);
+  }
+
+  async function deleteSelected() {
+    if (!rendWrap) return;
+    const checked = Array.from(rendWrap.querySelectorAll("input.ytc-del-item:checked"))
+      .map((x) => x.value)
+      .filter(Boolean);
+
+    if (!checked.length) return;
+    if (!confirm("Delete selected renditions?")) return;
+
+    delBtn.disabled = true;
+
+    // do normal POST navigation OR fetch; fetch is okay because endpoint redirects.
+    // We'll use fetch and then refresh list to avoid full page reload.
+    const fd = new FormData();
+    fd.append("csrf_token", csrf);
+    fd.append("video_id", videoId);
+    checked.forEach((v) => fd.append("del_items", v));
+
+    try {
+      const r = await fetch("/manage/edit/ytconvert/delete", {
+        method: "POST",
+        credentials: "same-origin",
+        body: fd,
+      });
+      // even if redirect happens, fetch follows; we just refresh the list
+      await refreshRenditionsNow();
+      setStatus("Deleted");
+    } catch (e) {
+      console.warn(e);
+      setStatus("Delete failed");
+      updateDeleteBtnState();
+    }
+  }
+
+  if (delBtn) delBtn.addEventListener("click", deleteSelected);
+
+  // ---------- Probe/Queue UI ----------
   function normalizeUiLabel(v) {
     if (!v) return "";
     const kind = String(v.kind || "").toLowerCase();
@@ -149,14 +269,7 @@
     btnQueue.disabled = true;
     setStatus("Queueing…");
 
-    const fd = new FormData();
-    fd.append("csrf_token", csrf);
-    fd.append("video_id", videoId);
-    checked.forEach((v) => fd.append("ytconvert_variants", v));
-
     try {
-      // This endpoint returns redirect; fetch will follow and return HTML,
-      // so we just trigger a normal navigation instead:
       const form = document.createElement("form");
       form.method = "POST";
       form.action = "/manage/edit/ytconvert/queue";
@@ -220,6 +333,8 @@
       if (st && (st === "DONE" || st === "FAILED" || st === "CANCELED")) {
         clearInterval(pollTimer);
         pollTimer = null;
+        // NEW: refresh list right after completion
+        await refreshRenditionsNow();
       }
     }, 2000);
   }
@@ -227,8 +342,10 @@
   btnProbe && btnProbe.addEventListener("click", probe);
   btnQueue && btnQueue.addEventListener("click", queueSelected);
 
-  // initial status render
+  // initial status render + initial renditions refresh
   (async function init() {
+    await refreshRenditionsNow();
+
     const job = await pollJobOnce();
     renderJob(job);
     if (job) startPolling();

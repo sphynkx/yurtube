@@ -139,18 +139,24 @@
 		</div>
 	  </div>
 
-	  <div style="margin-top:10px;">
-		<strong>Current renditions:</strong>
-		{% if renditions and renditions|length > 0 %}
-		  <ul>
-			{% for r in renditions %}
-			  <li>{{ r['preset'] }} {{ r['codec'] }} &mdash; {{ r['status'] }}{% if r.get('error_message') %} ({{ r['error_message'] }}){% endif %}</li>
-			{% endfor %}
-		  </ul>
-		{% else %}
-		  <span>none</span>
-		{% endif %}
-	  </div>
+		<div style="margin-top:10px;">
+		  <strong>Current renditions:</strong>
+		  <div id="ytc-renditions">
+			{% if renditions and renditions|length > 0 %}
+			  <ul id="ytc-renditions-list">
+				{% for r in renditions %}
+				  <li>{{ r['preset'] }} {{ r['codec'] }} — {{ r['status'] }}{% if r.get('error_message') %} ({{ r['error_message'] }}){% endif %}</li>
+				{% endfor %}
+			  </ul>
+			{% else %}
+			  <span id="ytc-renditions-empty">none</span>
+			{% endif %}
+		  </div>
+
+		  <div style="margin-top:8px;">
+			<button type="button" id="ytc-del-btn" disabled>Delete selected</button>
+		  </div>
+		</div>
 
 	  <script src="/static/js/edit_renditions.js?v={{ request.app.state.static_version }}"></script>
 	</section>
