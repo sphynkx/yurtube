@@ -1,11 +1,18 @@
-from fastapi import APIRouter, UploadFile, File
-from typing import Any, Dict
+from fastapi import APIRouter, UploadFile, File, Request, HTTPException
+from fastapi.responses import JSONResponse
+from typing import Any, Dict, Optional
 import tempfile
 import os
 import asyncio
 
 from utils.ffmpeg import probe_ffprobe_json
 from utils.ytconvert.variants_ut import compute_suggested_variants, variants_for_ui
+
+from db import get_conn, release_conn
+from utils.security_ut import get_current_user
+from db.videos_query_db import get_owned_video_full as db_get_owned_video_full
+from db.ytconvert.ytconvert_jobs_db import get_ytconvert_job_by_video_id
+
 
 router = APIRouter()
 
@@ -60,3 +67,22 @@ async def ytconvert_probe(file: UploadFile = File(...)) -> Dict[str, Any]:
     except Exception as e:
         print("[ERROR]: Exception during probe:", e)
         return {"ok": False, "error": str(e)}
+
+
+@router.get("/internal/ytconvert/job-status")
+async def ytconvert_job_status(request: Request, video_id: str) -> Dict[str, Any]:
+    user = get_current_user(request)
+    if not user:
+        return {"ok": False, "error": "auth_required"}
+
+    conn = await get_conn()
+    try:
+        owned = await db_get_owned_video_full(conn, video_id, user["user_uid"])
+        if not owned:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        job = await get_ytconvert_job_by_video_id(conn, video_id=video_id)
+    finally:
+        await release_conn(conn)
+
+    return {"ok": True, "job": job}

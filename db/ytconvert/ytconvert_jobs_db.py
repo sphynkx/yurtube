@@ -122,3 +122,21 @@ async def set_ytconvert_job_failed(
      WHERE job_id = $1
     """
     await conn.execute(q, job_id, message or "FAILED", _json(meta or {}))
+
+async def get_ytconvert_job_by_video_id(conn, *, video_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Return job row for video_id (MVP: one job per video).
+    """
+    row = await conn.fetchrow(
+        """
+        SELECT job_id, video_id, author_uid, grpc_job_id, state, requested_variants,
+               progress_percent, message, meta, created_at, updated_at
+        FROM ytconvert_jobs
+        WHERE video_id = $1
+        ORDER BY updated_at DESC
+        LIMIT 1
+        """,
+        video_id,
+    )
+    return dict(row) if row else None
+
