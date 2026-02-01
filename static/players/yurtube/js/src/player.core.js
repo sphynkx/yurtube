@@ -86,6 +86,12 @@ function mountOne(host, tpl, BASE) {
   const spritesVtt = host.getAttribute('data-sprites-vtt') || '';
   const captionVtt = host.getAttribute('data-caption-vtt') || '';
   const captionLang = host.getAttribute('data-caption-lang') || '';
+
+  // NEW: sources + download policy/items
+  const sources = parseJSONAttr(host, 'data-sources', []);
+  const permitDownload = String(host.getAttribute('data-permit-download') || '') === '1';
+  const downloadItems = parseJSONAttr(host, 'data-download-items', []);
+
   const DEBUG = /\byrpdebug=1\b/i.test(location.search) || !!(opts && opts.debug);
 
   const d = (...a) => fmtDebug(DEBUG, ...a);
@@ -276,13 +282,74 @@ function mountOne(host, tpl, BASE) {
     }
   } catch {}
 
-  wire(root, startAt, DEBUG, { overlay, textBox, autoAdjust: adjustOverlayAuto }, startAt, BASE);
+  // pass media config
+  wire(
+    root,
+    startAt,
+    DEBUG,
+    { overlay, textBox, autoAdjust: adjustOverlayAuto },
+    startAt,
+    BASE,
+    { sources, permitDownload, downloadItems }
+  );
 }
 
-export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
+function safeArray(x) { return Array.isArray(x) ? x : []; }
+
+function normalizeSources(sources, fallbackSrc) {
+  const arr = safeArray(sources).filter(Boolean);
+  const out = [];
+
+  function pushOne(it) {
+    if (!it) return;
+    const src = String(it.src || '').trim();
+    if (!src) return;
+    out.push({
+      id: String(it.id || src),
+      label: String(it.label || it.preset || 'Source'),
+      preset: String(it.preset || ''),
+      src
+    });
+  }
+
+  for (let i = 0; i < arr.length; i++) pushOne(arr[i]);
+
+  // ensure fallback (original) exists
+  const hasFallback = out.some(x => x.src === fallbackSrc);
+  if (!hasFallback && fallbackSrc) {
+    out.unshift({ id: 'original', label: 'Original', preset: '', src: fallbackSrc });
+  }
+
+  // dedup by src
+  const seen = new Set();
+  const uniq = [];
+  for (const it of out) {
+    if (seen.has(it.src)) continue;
+    seen.add(it.src);
+    uniq.push(it);
+  }
+  return uniq;
+}
+
+function readQualityPref(videoId) {
+  try {
+    if (!videoId) return '';
+    return String(localStorage.getItem('yrp:quality:' + videoId) || '');
+  } catch { return ''; }
+}
+
+function writeQualityPref(videoId, src) {
+  try {
+    if (!videoId) return;
+    localStorage.setItem('yrp:quality:' + videoId, String(src || ''));
+  } catch {}
+}
+
+export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE, media) {
   const d = (...a) => fmtDebug(DEBUG, ...a);
 
   const video = root.querySelector('.yrp-video');
+  const sourceEl = video ? video.querySelector('source') : null;
   const centerPlay = root.querySelector('.yrp-center-play');
   const btnPlay = root.querySelector('.yrp-play');
   const btnPrev = root.querySelector('.yrp-prev');
@@ -308,6 +375,20 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   const btnAutoplay = root.querySelector('.yrp-autoplay');
   const btnSubtitles = root.querySelector('.yrp-subtitles');
 
+  // NEW: media
+  const host = root.closest('.player-host') || root;
+  const videoId = String(root.getAttribute('data-video-id') || '');
+  const sourcesNorm = normalizeSources(media && media.sources, (sourceEl && sourceEl.getAttribute('src')) || '');
+  const permitDownload = !!(media && media.permitDownload);
+  const downloadItems = safeArray(media && media.downloadItems);
+
+  let currentSrc = (sourceEl && sourceEl.getAttribute('src')) || '';
+  let currentSourceLabel = '';
+  (function(){
+    const cur = sourcesNorm.find(s => s.src === currentSrc);
+    if (cur) currentSourceLabel = cur.label || '';
+  })();
+
   let hideTimer = null, seeking = false, duration = 0;
   let userTouchedVolume = false, autoMuteApplied = false;
   let pipInSystem = false, pipWasPlayingOrig = false, pipWasMutedOrig = false, pipUserState = null;
@@ -325,7 +406,133 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   const menuManager = new MenuManager(menu);
   let menuBound = false;
 
+  // ---- Quality switching ----
+  function setVideoSource(newSrc, newLabel) {
+    if (!video || !sourceEl) return;
+    newSrc = String(newSrc || '').trim();
+    if (!newSrc) return;
+    if (newSrc === currentSrc) return;
 
+    const wasPlaying = !video.paused;
+    const wasMuted = !!video.muted;
+    const wasRate = video.playbackRate;
+    const wasVol = video.volume;
+    const t0 = Math.max(0, video.currentTime || 0);
+
+    currentSrc = newSrc;
+    currentSourceLabel = String(newLabel || '');
+
+    try {
+      // change src
+      sourceEl.setAttribute('src', newSrc);
+      // preserve poster etc
+      video.load();
+    } catch (e) {
+      d('setVideoSource load failed', e);
+      return;
+    }
+
+    const onMeta = function () {
+      video.removeEventListener('loadedmetadata', onMeta);
+      try {
+        // restore properties
+        try { video.muted = wasMuted; } catch {}
+        try { video.volume = wasVol; } catch {}
+        try { if (isFinite(wasRate) && wasRate > 0) video.playbackRate = wasRate; } catch {}
+
+        // seek to old time
+        const dur = isFinite(video.duration) ? video.duration : 0;
+        let tSeek = t0;
+        if (dur > 0) tSeek = Math.min(t0, Math.max(0, dur - 0.25));
+        try { video.currentTime = tSeek; } catch {}
+
+        if (wasPlaying) {
+          try { video.play().catch(function(){}); } catch {}
+        }
+      } catch (e) {
+        d('setVideoSource restore failed', e);
+      }
+    };
+    video.addEventListener('loadedmetadata', onMeta);
+
+    writeQualityPref(videoId, newSrc);
+  }
+
+  // apply preferred source at startup if available
+  (function applyPreferredSource(){
+    const pref = readQualityPref(videoId);
+    if (!pref) return;
+    const found = sourcesNorm.find(s => s.src === pref);
+    if (!found) return;
+    // apply only if different from default
+    if (pref && pref !== currentSrc) {
+      setVideoSource(found.src, found.label);
+    }
+  })();
+
+  function buildQualityMenuView() {
+    if (!menu) return;
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'yrp-menu-item';
+    back.setAttribute('data-action', 'back');
+    back.textContent = '← Back';
+    styleBackButton(back);
+    menu.appendChild(back);
+
+    const listWrap = buildScrollableListContainer(back, menu);
+    menu.appendChild(listWrap);
+
+    const curSrc = currentSrc;
+    for (const s of sourcesNorm) {
+      const it = document.createElement('button');
+      it.type = 'button';
+      it.className = 'yrp-menu-item';
+      it.setAttribute('data-action', 'set-quality');
+      it.setAttribute('data-src', s.src);
+      it.textContent = (s.label || s.preset || 'Quality') + (s.src === curSrc ? ' ✓' : '');
+      ensureTransparentMenuButton(it);
+      listWrap.appendChild(it);
+    }
+    menuManager.setView('quality');
+    menuManager.constrainToPlayerHeight(2/3);
+  }
+
+  function buildDownloadMenuView() {
+    if (!menu) return;
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'yrp-menu-item';
+    back.setAttribute('data-action', 'back');
+    back.textContent = '← Back';
+    styleBackButton(back);
+    menu.appendChild(back);
+
+    const listWrap = buildScrollableListContainer(back, menu);
+    menu.appendChild(listWrap);
+
+    for (const it0 of downloadItems) {
+      if (!it0 || !it0.url) continue;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'yrp-menu-item';
+      b.setAttribute('data-action', 'do-download');
+      b.setAttribute('data-url', String(it0.url || ''));
+      b.setAttribute('data-filename', String(it0.filename || ''));
+      b.textContent = String(it0.label || it0.filename || it0.url);
+      ensureTransparentMenuButton(b);
+      listWrap.appendChild(b);
+    }
+
+    menuManager.setView('download');
+    menuManager.constrainToPlayerHeight(2/3);
+  }
+
+  // ---- existing subtitles stuff (unchanged) ----
   function selectSubtitleLang(code) {
     const idx = findTrackIndexByLang(video, code);
     if (idx >= 0) {
@@ -349,7 +556,9 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     menuManager.openMainView({
       injectSpeed: injectSpeedEntryIntoMain,
       injectLanguages: injectLanguagesEntryIntoMain,
-      injectSubtitles: injectSubtitlesEntryIntoMain
+      injectSubtitles: injectSubtitlesEntryIntoMain,
+      injectQuality: injectQualityEntryIntoMain,
+      injectDownload: injectDownloadEntryIntoMain
     });
   }
 
@@ -374,22 +583,56 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     if (btn && !has) btn.title = 'No subtitle tracks';
   }
 
+  function injectQualityEntryIntoMain() {
+    if (!menu) return;
+    if (menu.querySelector('.yrp-menu-item[data-action="open-quality"]')) return;
+
+    // only if we have 2+ sources
+    const can = sourcesNorm && sourcesNorm.length > 1;
+    const label = currentSourceLabel ? `Quality (${currentSourceLabel})` : 'Quality';
+    const btn = insertMainEntry(
+      menu,
+      label,
+      'open-quality',
+      { hasSubmenu: true, disabled: !can },
+      ensureTransparentMenuButton,
+      withSubmenuChevron
+    );
+    if (btn && !can) btn.title = 'No alternative qualities';
+  }
+
+  function injectDownloadEntryIntoMain() {
+    if (!menu) return;
+    if (menu.querySelector('.yrp-menu-item[data-action="open-download"]')) return;
+
+    const can = permitDownload && downloadItems.length > 0;
+    const btn = insertMainEntry(
+      menu,
+      'Download',
+      'open-download',
+      { hasSubmenu: true, disabled: !can },
+      ensureTransparentMenuButton,
+      withSubmenuChevron
+    );
+    if (btn && !can) btn.title = permitDownload ? 'No download items' : 'Downloads disabled';
+  }
+
   function wrappedBuildLangsMenuView() {
     buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
     menuManager.setView('langs');
-    menuManager.constrainToPlayerHeight(2/3); // Limit to 2/3 of player height
+    menuManager.constrainToPlayerHeight(2/3);
   }
 
   function wrappedBuildSpeedMenuView() {
     buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
     menuManager.setView('speed');
-    menuManager.constrainToPlayerHeight(2/3); // Limit to 2/3 of player height
+    menuManager.constrainToPlayerHeight(2/3);
   }
 
   function wrappedBuildSubtitlesMenuView() {
     buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
     menuManager.setView('subs');
-    menuManager.constrainToPlayerHeight(2/3); // Limit to 2/3 of player height
+    menuManager.constrainToPlayerHeight(2/3);
   }
 
   function applyIcon(button, varOn, varOff, isOn, fallbackEmoji) {
@@ -439,6 +682,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     progress.appendChild(spritePop);
     return spritePop;
   }
+
   function parseTimestamp(ts) {
     const m = String(ts || '').match(/^(\d{2}):(\d{2}):(\d{2}\.\d{3})$/);
     if (!m) return 0;
@@ -576,20 +820,20 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     if (tCur) tCur.textContent = fmtTime(video.currentTime || 0);
   }
   function updateProgress() {
-    const d = duration || 0, ct = video.currentTime || 0, f = d > 0 ? clamp(ct / d, 0, 1) : 0;
+    const d0 = duration || 0, ct = video.currentTime || 0, f = d0 > 0 ? clamp(ct / d0, 0, 1) : 0;
     if (played) played.style.width = (f * 100).toFixed(3) + '%';
     if (handle) handle.style.left = (f * 100).toFixed(3) + '%';
     let b = 0;
     if (video.buffered && video.buffered.length > 0) { try { b = video.buffered.end(video.buffered.length - 1); } catch { b = 0; } }
-    const bf = d > 0 ? clamp(b / d, 0, 1) : 0;
+    const bf = d0 > 0 ? clamp(b / d0, 0, 1) : 0;
     if (buf) buf.style.width = (bf * 100).toFixed(3) + '%';
   }
 
   function playToggle() { if (video.paused) video.play().catch(() => {}); else video.pause(); }
   function setMutedToggle() { video.muted = !video.muted; refreshVolIcon(); }
   function refreshVolIcon() {
-    const v = video.muted ? 0 : video.volume;
-    const label = (video.muted || v === 0) ? 'Mute' : 'Vol';
+    const v0 = video.muted ? 0 : video.volume;
+    const label = (video.muted || v0 === 0) ? 'Mute' : 'Vol';
     if (btnVol) {
       btnVol.textContent = label;
       btnVol.classList.toggle('icon-mute', label === 'Mute');
@@ -615,21 +859,21 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   }
 
   (function resumePosition() {
-    const vid = root.getAttribute('data-video-id') || '';
-    if (!vid) return;
+    const vid2 = root.getAttribute('data-video-id') || '';
+    if (!vid2) return;
 
     if (startFromUrl > 0) {
       try {
         const s0 = load('resume', {});
-        if (s0 && s0[vid]) { delete s0[vid]; save('resume', s0); }
+        if (s0 && s0[vid2]) { delete s0[vid2]; save('resume', s0); }
       } catch {}
       return;
     }
 
-    const map = load('resume', {}), rec = map[vid], now = Date.now();
+    const map = load('resume', {}), rec = map[vid2], now = Date.now();
     function applyResume(t) {
-      const d = isFinite(video.duration) ? video.duration : 0;
-      if (d && t > 10 && t < d - 5) { try { video.currentTime = t; } catch {} }
+      const d0 = isFinite(video.duration) ? video.duration : 0;
+      if (d0 && t > 10 && t < d0 - 5) { try { video.currentTime = t; } catch {} }
     }
     if (rec && typeof rec.t === 'number' && (now - (rec.ts || 0)) < 180 * 24 * 3600 * 1000) {
       const setAt = Math.max(0, rec.t | 0);
@@ -638,10 +882,10 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     }
 
     const savePos = throttle(function () {
-      const d = isFinite(video.duration) ? video.duration : 0;
+      const d0 = isFinite(video.duration) ? video.duration : 0;
       const cur = Math.max(0, Math.floor(video.currentTime || 0));
       const m = load('resume', {});
-      m[vid] = { t: cur, ts: Date.now(), d };
+      m[vid2] = { t: cur, ts: Date.now(), d: d0 };
       const keys = Object.keys(m);
       if (keys.length > 200) {
         keys.sort((a, b) => (m[a].ts || 0) - (m[b].ts || 0));
@@ -651,7 +895,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     }, 3000);
 
     video.addEventListener('timeupdate', function () { if (!video.paused && !video.seeking) savePos(); });
-    video.addEventListener('ended', function () { const m = load('resume', {}); delete m[vid]; save('resume', m); });
+    video.addEventListener('ended', function () { const m = load('resume', {}); delete m[vid2]; save('resume', m); });
   })();
 
   (function theaterInit() {
@@ -731,12 +975,10 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       else if (currentView === 'langs') wrappedBuildLangsMenuView();
       else if (currentView === 'speed') wrappedBuildSpeedMenuView();
       else if (currentView === 'subs') wrappedBuildSubtitlesMenuView();
+      else if (currentView === 'quality') buildQualityMenuView();
+      else if (currentView === 'download') buildDownloadMenuView();
     }
   });
-
-  function wrappedLogTracks(prefix) {
-    logTracks(video, d, prefix);
-  }
 
   function adjustWidthByAspect() {
     if (root.classList.contains('yrp-theater')) return;
@@ -763,8 +1005,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   }
 
   (function autoplayInit() {
-    const host = root.closest('.player-host') || root;
-    const opt = parseJSONAttr(host, 'data-options', null);
+    const host2 = root.closest('.player-host') || root;
+    const opt = parseJSONAttr(host2, 'data-options', null);
     function want() { if (opt && opt.autoplay === true) return true; return !!load('autoplay', false); }
     if (!want()) { setTimeout(function () { scheduleAutoHide(1000); }, 0); return; }
 
@@ -827,186 +1069,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
   btnPrev && btnPrev.addEventListener('click', function () { root.dispatchEvent(new CustomEvent('yrp-prev', { bubbles: true })); });
   btnNext && btnNext.addEventListener('click', function () { root.dispatchEvent(new CustomEvent('yrp-next', { bubbles: true })); });
 
-  (function playlistSupport(){
-    var url = new URL(window.location.href);
-    var playlistId = url.searchParams.get("p");
-    var currentVid = url.searchParams.get("v") || (root.getAttribute("data-video-id") || "");
-
-    if (!playlistId) {
-      if (btnPrev) btnPrev.style.display = "none";
-      if (btnNext) btnNext.style.display = "none";
-      var oldSh = root.querySelector(".yrp-shuffle");
-      var oldCy = root.querySelector(".yrp-cycle");
-      if (oldSh) oldSh.style.display = "none";
-      if (oldCy) oldCy.style.display = "none";
-      return;
-    } else {
-      if (btnPrev) btnPrev.style.display = "";
-      if (btnNext) btnNext.style.display = "";
-    }
-
-    function collectOrder(){
-      var items = [];
-      var right = document.querySelector("#upnext-block .rb-list");
-      var under = document.querySelector("#panel-upnext .upnext-list");
-      var anchors = [];
-      if (right) anchors = right.querySelectorAll("a.rb-item[href*='/watch']");
-      else if (under) anchors = under.querySelectorAll("a.rb-item[href*='/watch']");
-      anchors.forEach(function(a){
-        var href = a.getAttribute("href") || "";
-        var m = href.match(/[?&]v=([^&]+)/);
-        if (m && m[1]) items.push(decodeURIComponent(m[1]));
-      });
-      return items;
-    }
-
-    var order = collectOrder();
-    if (!order || order.length === 0) return;
-    var curIndex = order.indexOf(currentVid);
-    if (curIndex < 0) curIndex = 0;
-
-    function plKey(s){ return "pl:" + playlistId + ":" + s; }
-    var orderMode = (function(){ var v = load(plKey("order"), "direct"); return v === "shuffle" ? "shuffle" : "direct"; })();
-    var cycleOn  = (function(){ var v = load(plKey("cycle"), "0"); return v === true || v === "1"; })();
-
-    function saveOrderMode(mode){
-      orderMode = (mode === "shuffle") ? "shuffle" : "direct";
-      save(plKey("order"), orderMode);
-      refreshShuffleBtn();
-    }
-    function saveCycle(flag){
-      cycleOn = !!flag;
-      save(plKey("cycle"), cycleOn ? "1" : "0");
-      refreshCycleBtn();
-    }
-
-    function pickRandomIndex(excludeIdx){
-      if (order.length <= 1) return excludeIdx;
-      var tries = 0, rnd = excludeIdx;
-      while (tries < 6 && rnd === excludeIdx) { rnd = Math.floor(Math.random() * order.length); tries++; }
-      if (rnd === excludeIdx) rnd = (excludeIdx + 1) % order.length;
-      return rnd;
-    }
-    function nextIndex(){
-      if (orderMode === "shuffle") return pickRandomIndex(curIndex);
-      var ni = curIndex + 1;
-      if (ni >= order.length) return cycleOn ? 0 : -1;
-      return ni;
-    }
-    function prevIndex(){
-      if (orderMode === "shuffle") return pickRandomIndex(curIndex);
-      var pi = curIndex - 1;
-      if (pi < 0) return cycleOn ? (order.length - 1) : -1;
-      return pi;
-    }
-    function gotoIndex(idx){
-      idx = Math.max(0, Math.min(order.length - 1, idx));
-      var vidTarget = order[idx];
-      if (!vidTarget) return;
-
-      try {
-        var m = load("resume", {});
-        if (m && m[vidTarget]) { delete m[vidTarget]; save("resume", m); }
-      } catch(_){}
-
-      var nu = new URL(window.location.href);
-      nu.searchParams.set("v", vidTarget);
-      nu.searchParams.set("p", playlistId);
-      window.location.href = nu.toString();
-    }
-
-    root.addEventListener("yrp-prev", function(){ var i = prevIndex(); if (i >= 0) gotoIndex(i); });
-    root.addEventListener("yrp-next", function(){ var i = nextIndex(); if (i >= 0) gotoIndex(i); });
-
-    var btnShuffle = root.querySelector(".yrp-shuffle");
-    var btnCycle   = root.querySelector(".yrp-cycle");
-
-    if (!btnShuffle) {
-      btnShuffle = document.createElement("button");
-      btnShuffle.type = "button";
-      btnShuffle.className = "yrp-btn yrp-shuffle";
-      btnShuffle.title = "Shuffle playlist";
-      btnShuffle.setAttribute("aria-label", "Shuffle playlist");
-      Object.assign(btnShuffle.style, {
-        border: "none",
-        width: "var(--yrp-icon-button-width)",
-        height: "28px",
-        cursor: "pointer",
-        padding: "0",
-        marginLeft: "6px",
-        marginRight: "2px"
-      });
-    }
-    if (!btnCycle) {
-      btnCycle = document.createElement("button");
-      btnCycle.type = "button";
-      btnCycle.className = "yrp-btn yrp-cycle";
-      btnCycle.title = "Cycle playlist";
-      btnCycle.setAttribute("aria-label", "Cycle playlist");
-      Object.assign(btnCycle.style, {
-        border: "none",
-        width: "var(--yrp-icon-button-width)",
-        height: "28px",
-        cursor: "pointer",
-        padding: "0",
-        marginRight: "8px"
-      });
-    }
-
-    btnShuffle.dataset.forceEmoji = "0";
-    btnCycle.dataset.forceEmoji = "0";
-
-    function refreshShuffleBtn(){
-      btnShuffle.setAttribute("aria-pressed", orderMode === "shuffle" ? "true" : "false");
-      applyIcon(btnShuffle, "--icon-shuffle-on", "--icon-shuffle-off", orderMode === "shuffle", "🔀");
-      btnShuffle.style.opacity = (orderMode === "shuffle") ? "1" : "0.55";
-      btnShuffle.style.display = "";
-    }
-    function refreshCycleBtn(){
-      btnCycle.setAttribute("aria-pressed", cycleOn ? "true" : "false");
-      applyIcon(btnCycle, "--icon-cycle-on", "--icon-cycle-off", !!cycleOn, "🔁");
-      btnCycle.style.opacity = "1";
-      btnCycle.style.display = "";
-    }
-
-    refreshShuffleBtn();
-    refreshCycleBtn();
-
-    btnShuffle.addEventListener("click", function(){
-      saveOrderMode(orderMode === "shuffle" ? "direct" : "shuffle");
-    });
-    btnCycle.addEventListener("click", function(){
-      saveCycle(!cycleOn);
-    });
-
-    try {
-      var container = leftGrp || (btnNext && btnNext.parentNode) || root;
-      if (vol && container) {
-        container.insertBefore(btnShuffle, vol);
-        container.insertBefore(btnCycle, vol);
-      } else if (btnNext && container) {
-        container.insertBefore(btnShuffle, btnNext.nextSibling);
-        container.insertBefore(btnCycle, btnShuffle.nextSibling);
-      } else {
-        container.appendChild(btnShuffle);
-        container.appendChild(btnCycle);
-      }
-    } catch(_){}
-
-    video.addEventListener("ended", function(){
-      var i = nextIndex();
-      if (i >= 0) gotoIndex(i);
-    });
-
-    document.addEventListener("keydown", function(e){
-      var t = e.target, tag = t && t.tagName ? t.tagName.toUpperCase() : "";
-      if (t && (t.isContentEditable || tag === "INPUT" || tag === "TEXTAREA")) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      var code = e.code || "";
-      if (code === "PageUp")   { e.preventDefault(); var i = prevIndex(); if (i >= 0) gotoIndex(i); }
-      else if (code === "PageDown") { e.preventDefault(); var j = nextIndex(); if (j >= 0) gotoIndex(j); }
-    });
-  })();
+  // playlist (existing)
+  try { attachPlaylist && attachPlaylist(root, video, DEBUG); } catch {}
 
   if (btnVol) {
     btnVol.addEventListener('click', function (e) {
@@ -1026,8 +1090,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       e.preventDefault();
       userTouchedVolume = true;
       autoMuteApplied = false;
-      const step = 0.05, v = video.muted ? 0 : video.volume;
-      const nv = clamp(v + (e.deltaY < 0 ? step : -step), 0, 1);
+      const step = 0.05, v0 = video.muted ? 0 : video.volume;
+      const nv = clamp(v0 + (e.deltaY < 0 ? step : -step), 0, 1);
       video.volume = nv;
       if (nv > 0) video.muted = false;
       volSlider && (volSlider.value = String(nv));
@@ -1040,11 +1104,11 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     volSlider.addEventListener('input', function () {
       userTouchedVolume = true;
       autoMuteApplied = false;
-      let v = parseFloat(volSlider.value || '1');
-      if (!isFinite(v)) v = 1;
-      v = clamp(v, 0, 1);
-      video.volume = v;
-      if (v > 0) video.muted = false;
+      let v0 = parseFloat(volSlider.value || '1');
+      if (!isFinite(v0)) v0 = 1;
+      v0 = clamp(v0, 0, 1);
+      video.volume = v0;
+      if (v0 > 0) video.muted = false;
       refreshVolIcon();
     });
 
@@ -1052,8 +1116,8 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
       e.preventDefault();
       userTouchedVolume = true;
       autoMuteApplied = false;
-      const step = 0.05, v = video.muted ? 0 : video.volume;
-      const nv = clamp(v + (e.deltaY < 0 ? step : -step), 0, 1);
+      const step = 0.05, v0 = video.muted ? 0 : video.volume;
+      const nv = clamp(v0 + (e.deltaY < 0 ? step : -step), 0, 1);
       video.volume = nv;
       if (nv > 0) video.muted = false;
       volSlider.value = String(nv);
@@ -1143,6 +1207,22 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
             root.classList.add('vol-open'); showControls();
             return;
           }
+          if (act === 'open-quality') {
+            e.preventDefault(); e.stopPropagation();
+            if (!sourcesNorm || sourcesNorm.length <= 1) return;
+            buildQualityMenuView();
+            menuManager.lockHeightFromCurrent();
+            root.classList.add('vol-open'); showControls();
+            return;
+          }
+          if (act === 'open-download') {
+            e.preventDefault(); e.stopPropagation();
+            if (!(permitDownload && downloadItems.length > 0)) return;
+            buildDownloadMenuView();
+            menuManager.lockHeightFromCurrent();
+            root.classList.add('vol-open'); showControls();
+            return;
+          }
           return;
         }
 
@@ -1201,6 +1281,48 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
             return;
           }
         }
+
+        if (currentView === 'quality') {
+          if (act === 'set-quality') {
+            const src = String(item.getAttribute('data-src') || '');
+            const found = sourcesNorm.find(s => s.src === src);
+            e.preventDefault(); e.stopPropagation();
+            if (found) setVideoSource(found.src, found.label);
+            menu.hidden = true;
+            btnSettings.setAttribute('aria-expanded', 'false');
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
+            return;
+          }
+        }
+
+        if (currentView === 'download') {
+          if (act === 'do-download') {
+            const url = String(item.getAttribute('data-url') || '');
+            const filename = String(item.getAttribute('data-filename') || '');
+            e.preventDefault(); e.stopPropagation();
+            if (url) {
+              // try create an <a download> click
+              try {
+                const a = document.createElement('a');
+                a.href = url;
+                if (filename) a.setAttribute('download', filename);
+                a.rel = 'noopener';
+                a.target = '_blank';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+              } catch {
+                try { window.open(url, '_blank', 'noopener'); } catch {}
+              }
+            }
+            menu.hidden = true;
+            btnSettings.setAttribute('aria-expanded', 'false');
+            menuManager.setView('main');
+            menuManager.resetHeightLock();
+            return;
+          }
+        }
       });
 
       document.addEventListener('click', function (e) {
@@ -1252,7 +1374,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
     ctx.onclick = function (ev) {
       const act = ev.target && ev.target.getAttribute('data-action');
       const at = Math.floor(video.currentTime || 0);
-      const vid = root.getAttribute('data-video-id') || '';
+      const vid2 = root.getAttribute('data-video-id') || '';
       if (act === 'pip') toggleMini();
       else if (act === 'copy-url') {
         const u = new URL(window.location.href);
@@ -1263,7 +1385,7 @@ export function wire(root, startAt, DEBUG, hooks, startFromUrl, BASE) {
         u2.searchParams.set('t', String(at));
         copyText(u2.toString());
       } else if (act === 'copy-embed') {
-        const src = (window.location.origin || '') + '/embed?v=' + encodeURIComponent(vid || '');
+        const src = (window.location.origin || '') + '/embed?v=' + encodeURIComponent(vid2 || '');
         const iframe = `<iframe width="560" height="315" src="${src}" frameborder="0" allow="autoplay; encrypted-media; clipboard-write" allowfullscreen></iframe>`;
         copyText(iframe);
       }

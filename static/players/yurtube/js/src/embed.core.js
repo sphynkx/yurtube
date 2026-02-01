@@ -87,6 +87,11 @@ function mountOne(host, tpl, PLAYER_BASE) {
   const captionVtt = host.getAttribute('data-caption-vtt') || '';
   const captionLang = host.getAttribute('data-caption-lang') || '';
 
+  // NEW: sources + permit_download + download_items
+  const sources = parseJSONAttr(host, 'data-sources', []);
+  const permitDownload = String(host.getAttribute('data-permit-download') || '').trim() === '1';
+  const downloadItems = parseJSONAttr(host, 'data-download-items', []);
+
   if (source) source.setAttribute('src', videoSrc);
   if (poster) video.setAttribute('poster', poster);
   if (opts && opts.autoplay) video.setAttribute('autoplay', '');
@@ -145,10 +150,14 @@ function mountOne(host, tpl, PLAYER_BASE) {
   const centerLogo = root.querySelector('.yrp-center-logo');
   if (centerLogo) centerLogo.setAttribute('src', PLAYER_BASE + '/img/logo.png');
 
-  wireEmbed(root, wrap, video, controls, spritesVtt, DEBUG, ccBtn);
+  wireEmbed(root, wrap, video, controls, spritesVtt, DEBUG, ccBtn, {
+    sources: Array.isArray(sources) ? sources : [],
+    permitDownload: !!permitDownload,
+    downloadItems: Array.isArray(downloadItems) ? downloadItems : []
+  });
 }
 
-function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
+function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn, media) {
   function d() { if (!DEBUG) return; try { console.debug.apply(console, ['[YRP-EMBED]'].concat([].slice.call(arguments))); } catch (_) {} }
 
   const centerPlay = root.querySelector('.yrp-center-play');
@@ -175,6 +184,10 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
   let userTouchedVolume = false;
   let autoMuteApplied = false;
 
+  const sources = (media && Array.isArray(media.sources)) ? media.sources : [];
+  const permitDownload = !!(media && media.permitDownload);
+  const downloadItems = (media && Array.isArray(media.downloadItems)) ? media.downloadItems : [];
+
   // ---- submenu/menu state managed by MenuManager ----
   const menuManager = new MenuManager(menu);
 
@@ -184,6 +197,11 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
 
   const prefLang = (function(){ try { return String(localStorage.getItem('subtitle_lang') || ''); } catch (_) { return ''; } })();
   const prefSpeed = (function(){ try { return parseFloat(localStorage.getItem('playback_speed') || ''); } catch (_) { return NaN; } })();
+
+  // ---- quality preference ----
+  const videoIdForPref = root.getAttribute('data-video-id') || '';
+  const qualityPrefKey = videoIdForPref ? ('yrp:quality:' + videoIdForPref) : 'yrp:quality';
+  let prefQualitySrc = (function(){ try { return String(localStorage.getItem(qualityPrefKey) || ''); } catch (_) { return ''; } })();
 
   // Captions overlay (draggable, pointer events)
   function createCaptionsOverlay(container) {
@@ -290,6 +308,83 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
     wrappedApplyTrackModes();
     wrappedUpdateOverlayText();
     wrappedRefreshSubtitlesBtnUI();
+  }
+
+  // ---- source switching (quality) ----
+  function currentSourceUrl() {
+    try {
+      const srcEl = video.querySelector('source');
+      return (srcEl && srcEl.getAttribute('src')) ? String(srcEl.getAttribute('src') || '') : '';
+    } catch { return ''; }
+  }
+
+  function switchSourceTo(newSrc, newLabel) {
+    if (!newSrc) return;
+    const cur = currentSourceUrl();
+    if (cur && cur === newSrc) return;
+
+    const wasPlaying = !video.paused;
+    const t = Math.max(0, video.currentTime || 0);
+    const rate = (isFinite(video.playbackRate) && video.playbackRate > 0) ? video.playbackRate : 1;
+    const vol = isFinite(video.volume) ? video.volume : 1;
+    const muted0 = !!video.muted;
+
+    const srcEl = video.querySelector('source');
+    if (!srcEl) return;
+
+    // persist preference
+    try { localStorage.setItem(qualityPrefKey, String(newSrc)); } catch {}
+
+    // swap
+    try {
+      srcEl.setAttribute('src', String(newSrc));
+      // Safari sometimes needs .src assignment too
+      try { srcEl.src = String(newSrc); } catch {}
+      video.load();
+    } catch {}
+
+    const onMeta = function () {
+      video.removeEventListener('loadedmetadata', onMeta);
+
+      // restore properties
+      try { video.playbackRate = rate; } catch {}
+      try { video.volume = vol; } catch {}
+      try { video.muted = muted0; } catch {}
+
+      // restore time (after metadata available)
+      try {
+        const dur = isFinite(video.duration) ? video.duration : 0;
+        if (dur > 0) {
+          const target = Math.min(t, Math.max(0, dur - 0.25));
+          video.currentTime = target;
+        }
+      } catch {}
+
+      if (wasPlaying) {
+        try { video.play().catch(function(){}); } catch {}
+      }
+    };
+    video.addEventListener('loadedmetadata', onMeta);
+
+    // UI feedback (optional)
+    if (newLabel) {
+      d('switch quality', { src: newSrc, label: newLabel });
+    }
+  }
+
+  function pickInitialSourceIfPreferred() {
+    if (!sources || sources.length < 2) return;
+    if (!prefQualitySrc) return;
+
+    for (let i = 0; i < sources.length; i++) {
+      const s = sources[i];
+      if (!s) continue;
+      const src = String(s.src || '');
+      if (src && src === prefQualitySrc) {
+        switchSourceTo(src, s.label || '');
+        return;
+      }
+    }
   }
 
   // Sprites preview
@@ -463,22 +558,76 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
     tt.hidden = false;
   }
 
-  // Wrapper functions for menu operations using imported functions
-  function wrappedBuildLangsMenuView() {
-    buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
-    menuManager.setView('langs');
+  // ---- Menu views ----
+  function buildQualityMenuView() {
+    if (!menu) return;
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
+
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'yrp-menu-item';
+    back.setAttribute('data-action', 'back');
+    back.textContent = '← Back';
+    styleBackButton(back);
+    menu.appendChild(back);
+
+    const curSrc = currentSourceUrl();
+    const wrapList = buildScrollableListContainer(back, menu);
+    menu.appendChild(wrapList);
+
+    sources.forEach(function (s) {
+      if (!s) return;
+      const src = String(s.src || '');
+      if (!src) return;
+      const label = String(s.label || s.preset || 'Quality');
+      const it = document.createElement('button');
+      it.type = 'button';
+      it.className = 'yrp-menu-item';
+      it.setAttribute('data-action', 'set-quality');
+      it.setAttribute('data-src', src);
+      it.textContent = label + (curSrc === src ? ' ✓' : '');
+      ensureTransparentMenuButton(it);
+      wrapList.appendChild(it);
+    });
+
+    menuManager.setView('quality');
     menuManager.constrainToPlayerHeight(2/3);
   }
 
-  function wrappedBuildSpeedMenuView() {
-    buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
-    menuManager.setView('speed');
-    menuManager.constrainToPlayerHeight(2/3);
-  }
+  function buildDownloadMenuView() {
+    if (!menu) return;
+    while (menu.firstChild) menu.removeChild(menu.firstChild);
 
-  function wrappedBuildSubtitlesMenuView() {
-    buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
-    menuManager.setView('subs');
+    const back = document.createElement('button');
+    back.type = 'button';
+    back.className = 'yrp-menu-item';
+    back.setAttribute('data-action', 'back');
+    back.textContent = '← Back';
+    styleBackButton(back);
+    menu.appendChild(back);
+
+    const wrapList = buildScrollableListContainer(back, menu);
+    menu.appendChild(wrapList);
+
+    (downloadItems || []).forEach(function (it0) {
+      if (!it0) return;
+      const url = String(it0.url || '');
+      if (!url) return;
+      const label = String(it0.label || 'Download');
+      const filename = String(it0.filename || '');
+
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'yrp-menu-item';
+      btn.setAttribute('data-action', 'do-download');
+      btn.setAttribute('data-url', url);
+      if (filename) btn.setAttribute('data-filename', filename);
+      btn.textContent = label;
+      ensureTransparentMenuButton(btn);
+      wrapList.appendChild(btn);
+    });
+
+    menuManager.setView('download');
     menuManager.constrainToPlayerHeight(2/3);
   }
 
@@ -500,8 +649,34 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
           const btn = insertMainEntry(menu, 'Subtitles', 'open-subs', { hasSubmenu: true, disabled: !hasSubs });
           if (btn && !hasSubs) btn.title = 'No subtitles tracks';
         }
+      },
+      injectQuality: function() {
+        // remove placeholder quality section and inject our entry if sources exist
+        if (menu.querySelector('.yrp-menu-item[data-action="open-quality"]')) return;
+        if (!sources || sources.length < 2) return;
+        insertMainEntry(menu, 'Quality', 'open-quality', { hasSubmenu: true });
+      },
+      injectDownload: function() {
+        if (menu.querySelector('.yrp-menu-item[data-action="open-download"]')) return;
+        if (!permitDownload) return;
+        if (!downloadItems || downloadItems.length === 0) return;
+        insertMainEntry(menu, 'Download', 'open-download', { hasSubmenu: true });
       }
     });
+
+    // cleanup legacy placeholder
+    try {
+      const secQ = menu.querySelector('.yrp-menu-section[data-section="quality"]');
+      if (secQ && secQ.parentNode) secQ.parentNode.removeChild(secQ);
+    } catch {}
+
+    // menuManager.openMainView() calls normalizeQualitySectionTypography -> would recreate placeholder
+    // So ensure placeholder isn't re-added:
+    // easiest: just remove any `.quality-future` if appeared
+    try {
+      const qf = menu.querySelector('.yrp-menu-item.quality-future');
+      if (qf && qf.parentNode) qf.parentNode.removeChild(qf);
+    } catch {}
   }
 
   let menuMainHTML = '';
@@ -573,7 +748,6 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
 
   // speed persistence: keep old key yrp:speed but also support playback_speed
   (function () {
-    // existing embed behavior key
     try {
       const sp = localStorage.getItem('yrp:speed');
       if (sp) {
@@ -581,7 +755,6 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
         if (isFinite(v) && v > 0) video.playbackRate = v;
       }
     } catch {}
-    // new unified key (prefer if present)
     if (isFinite(prefSpeed) && prefSpeed > 0) applySpeed(prefSpeed);
 
     video.addEventListener('ratechange', function () {
@@ -764,14 +937,16 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
       if (menuManager.getView() === 'main') {
         if (act === 'open-speed') {
           e.preventDefault(); e.stopPropagation();
-          wrappedBuildSpeedMenuView();
+          buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
+          menuManager.setView('speed');
           menuManager.lockHeightFromCurrent();
           root.classList.add('vol-open'); showControls();
           return;
         }
         if (act === 'open-langs') {
           e.preventDefault(); e.stopPropagation();
-          wrappedBuildLangsMenuView();
+          buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
+          menuManager.setView('langs');
           menuManager.lockHeightFromCurrent();
           root.classList.add('vol-open'); showControls();
           return;
@@ -779,7 +954,22 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
         if (act === 'open-subs') {
           e.preventDefault(); e.stopPropagation();
           if (!anySubtitleTracks(video)) return;
-          wrappedBuildSubtitlesMenuView();
+          buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
+          menuManager.setView('subs');
+          menuManager.lockHeightFromCurrent();
+          root.classList.add('vol-open'); showControls();
+          return;
+        }
+        if (act === 'open-quality') {
+          e.preventDefault(); e.stopPropagation();
+          buildQualityMenuView();
+          menuManager.lockHeightFromCurrent();
+          root.classList.add('vol-open'); showControls();
+          return;
+        }
+        if (act === 'open-download') {
+          e.preventDefault(); e.stopPropagation();
+          buildDownloadMenuView();
           menuManager.lockHeightFromCurrent();
           root.classList.add('vol-open'); showControls();
           return;
@@ -835,6 +1025,38 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
         if (act === 'subs-off') {
           e.preventDefault(); e.stopPropagation();
           setSubtitlesEnabled(false);
+          menu.hidden = true;
+          btnSettings.setAttribute('aria-expanded', 'false');
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
+          return;
+        }
+      }
+
+      if (menuManager.getView() === 'quality') {
+        if (act === 'set-quality') {
+          e.preventDefault(); e.stopPropagation();
+          const src = String(item.getAttribute('data-src') || '');
+          const label = String(item.textContent || '').replace(/\s*✓\s*$/, '');
+          if (src) {
+            switchSourceTo(src, label);
+          }
+          menu.hidden = true;
+          btnSettings.setAttribute('aria-expanded', 'false');
+          menuManager.setView('main');
+          menuManager.resetHeightLock();
+          return;
+        }
+      }
+
+      if (menuManager.getView() === 'download') {
+        if (act === 'do-download') {
+          e.preventDefault(); e.stopPropagation();
+          const url = String(item.getAttribute('data-url') || '');
+          if (url) {
+            // open in new tab; backend should set correct headers, or url points to storage
+            try { window.open(url, '_blank', 'noopener'); } catch { window.location.href = url; }
+          }
           menu.hidden = true;
           btnSettings.setAttribute('aria-expanded', 'false');
           menuManager.setView('main');
@@ -995,11 +1217,25 @@ function wireEmbed(root, wrap, video, controls, spritesVttUrl, DEBUG, ccBtn) {
     if (menu && !menu.hidden) {
       const currentView = menuManager.getView();
       if (currentView === 'main') openMainMenuView();
-      else if (currentView === 'langs') wrappedBuildLangsMenuView();
-      else if (currentView === 'speed') wrappedBuildSpeedMenuView();
-      else if (currentView === 'subs') wrappedBuildSubtitlesMenuView();
+      else if (currentView === 'langs') {
+        buildLangsMenuView(menu, video, activeTrackIndex, styleBackButton, ensureTransparentMenuButton, buildScrollableListContainer);
+        menuManager.setView('langs');
+      }
+      else if (currentView === 'speed') {
+        buildSpeedMenuView(menu, video, styleBackButton, ensureTransparentMenuButton);
+        menuManager.setView('speed');
+      }
+      else if (currentView === 'subs') {
+        buildSubtitlesMenuView(menu, overlayActive, styleBackButton, ensureTransparentMenuButton);
+        menuManager.setView('subs');
+      }
+      else if (currentView === 'quality') buildQualityMenuView();
+      else if (currentView === 'download') buildDownloadMenuView();
     }
   });
+
+  // Apply preferred quality ASAP after initial mount
+  setTimeout(pickInitialSourceIfPreferred, 0);
 
   video.addEventListener('timeupdate', function () { updateTimes(); updateProgress(); wrappedUpdateOverlayText(); });
   video.addEventListener('progress', function () { updateProgress(); });

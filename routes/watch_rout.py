@@ -205,7 +205,6 @@ def _build_download_items(video: Dict[str, Any], renditions: List[Dict[str, Any]
         if not rel:
             continue
         ext = _ext_from_path(rel)
-        # for label use ext (mp3/ogg) as primary hint
         label = f"Audio ({ext.upper()})"
         items.append(
             {
@@ -223,6 +222,58 @@ def _build_download_items(video: Dict[str, Any], renditions: List[Dict[str, Any]
         if not u or u in seen:
             continue
         seen.add(u)
+        uniq.append(it)
+    return uniq
+
+
+def _build_player_sources(video: Dict[str, Any], renditions: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    """
+    Build sources list for player quality switching.
+    Only includes webm for now (your requirement).
+    """
+    storage_rel = (video.get("storage_path") or "").strip("/").rstrip("/")
+    items: List[Dict[str, str]] = []
+
+    # original
+    items.append({
+        "id": "original",
+        "label": "Original",
+        "preset": "",
+        "src": build_storage_url(f"{storage_rel}/original.webm"),
+    })
+
+    # renditions
+    for r in (renditions or []):
+        st = str(r.get("status") or "").strip().lower()
+        rel = (r.get("storage_path") or "").strip().lstrip("/")
+        if st not in ("ok", "ready", "done", "success", ""):
+            # keep conservative: only ok-ish statuses
+            continue
+        if not rel:
+            continue
+        if not rel.lower().endswith(".webm"):
+            continue
+        preset = (r.get("preset") or "").strip()
+        codec = (r.get("codec") or "").strip()
+        # label: 720p (VP9) etc
+        lbl = preset or "Variant"
+        if codec:
+            lbl = f"{lbl} ({codec})"
+        items.append({
+            "id": f"{preset}:{codec}" if (preset or codec) else rel,
+            "label": lbl,
+            "preset": preset,
+            "src": build_storage_url(rel),
+        })
+
+    # de-dup by src
+    seen = set()
+    uniq: List[Dict[str, str]] = []
+    for it in items:
+        src = it.get("src")
+        if not src or src in seen:
+            continue
+        seen.add(src)
         uniq.append(it)
     return uniq
 
@@ -272,6 +323,10 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
                 # download menu
                 "show_download_menu": False,
                 "download_items": [],
+                # player extra
+                "player_sources": [],
+                "player_permit_download": False,
+                "player_download_items": [],
             }
             headers = {"Cache-Control": "no-store"}
             return templates.TemplateResponse("watch.html", context, headers=headers)
@@ -350,19 +405,25 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
 
         allow_comments = video.get("allow_comments", True)
 
-        # Download menu data
+        # Renditions: used both for download menu and for player sources
+        try:
+            renditions = await db_list_video_renditions(conn, video["video_id"])
+        except Exception:
+            renditions = []
+
+        player_sources = _build_player_sources(video, renditions)
+
+        # Download menu data (page)
         show_download_menu = bool(video.get("permit_download"))
         download_items: List[Dict[str, str]] = []
+        player_download_items: List[Dict[str, str]] = []
         if show_download_menu:
-            try:
-                renditions = await db_list_video_renditions(conn, video["video_id"])
-            except Exception:
-                renditions = []
             try:
                 audio_assets = await list_video_audio_assets_for_download(conn, video["video_id"])
             except Exception:
                 audio_assets = []
             download_items = _build_download_items(video, renditions, audio_assets)
+            player_download_items = download_items
 
         context = {
             "brand_logo_url": settings.BRAND_LOGO_URL,
@@ -389,12 +450,17 @@ async def watch_page(request: Request, v: str, p: Optional[str] = Query(None)) -
             "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
             "allow_comments": allow_comments,
             "upnext_title": upnext_title,
-            # download menu
+            # download menu (page)
             "show_download_menu": show_download_menu,
             "download_items": download_items,
+            # player extra
+            "player_sources": player_sources,
+            "player_permit_download": show_download_menu,
+            "player_download_items": player_download_items,
         }
 
         link_entries: List[str] = []
+
         def _add_link(url: Optional[str], rel: str, as_type: str) -> None:
             if url:
                 link_entries.append(f"<{url}>; rel={rel}; as={as_type}; crossorigin=anonymous")
@@ -461,6 +527,10 @@ async def embed_page(
                 "caption_lang": caption_lang,
                 "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
                 "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
+                # player extra
+                "player_sources": [],
+                "player_permit_download": False,
+                "player_download_items": [],
             }
             headers = {"Cache-Control": "no-store"}
             return templates.TemplateResponse("embed.html", context, headers=headers)
@@ -496,6 +566,23 @@ async def embed_page(
                     "default": False,
                 })
 
+        # renditions for sources and downloads
+        try:
+            renditions = await db_list_video_renditions(conn, video["video_id"])
+        except Exception:
+            renditions = []
+        player_sources = _build_player_sources(video, renditions)
+
+        # permit_download + download items for embed player:
+        show_download_menu = bool(video.get("permit_download"))
+        player_download_items: List[Dict[str, str]] = []
+        if show_download_menu:
+            try:
+                audio_assets = await list_video_audio_assets_for_download(conn, video["video_id"])
+            except Exception:
+                audio_assets = []
+            player_download_items = _build_download_items(video, renditions, audio_assets)
+
         context = {
             "brand_logo_url": settings.BRAND_LOGO_URL,
             "brand_tagline": settings.BRAND_TAGLINE,
@@ -514,9 +601,14 @@ async def embed_page(
             "caption_lang": caption_lang,
             "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
             "caption_vtt_url": build_storage_url(caption_vtt) if caption_vtt else None,
+            # player extra
+            "player_sources": player_sources,
+            "player_permit_download": show_download_menu,
+            "player_download_items": player_download_items,
         }
 
         link_entries: List[str] = []
+
         def _add_link(url: Optional[str], rel: str, as_type: str) -> None:
             if url:
                 link_entries.append(f"<{url}>; rel={rel}; as={as_type}; crossorigin=anonymous")

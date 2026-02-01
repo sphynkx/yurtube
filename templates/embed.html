@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <!-- Expects:
      player_name, video_src, poster_url, video_id, subtitles, player_options, sprites_vtt_url,
-     caption_vtt, caption_lang, storage_public_base_url (optional)
+     caption_vtt, caption_lang, storage_public_base_url (optional),
+     player_sources (list), player_permit_download (bool), player_download_items (list)
 -->
 <html lang="en">
 <head>
@@ -33,6 +34,9 @@
              data-video-id="{{ video_id }}"
              data-subtitles='{{ subtitles|tojson }}'
              data-options='{{ player_options|tojson }}'
+             data-sources='{{ (player_sources or [])|tojson }}'
+             data-permit-download="{{ 1 if (player_permit_download) else 0 }}"
+             data-download-items='{{ (player_download_items or [])|tojson }}'
              {% if sprites_vtt_url %} data-sprites-vtt="{{ sprites_vtt_url }}" {% endif %}
              {% if caption_vtt_url %}
                data-caption-vtt="{{ caption_vtt_url }}"

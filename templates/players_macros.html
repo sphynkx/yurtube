@@ -9,7 +9,10 @@
   caption_vtt=None,
   caption_lang=None,
   caption_vtt_url=None,
-  storage_public_base_url=None
+  storage_public_base_url=None,
+  sources=[],
+  permit_download=False,
+  download_items=[]
 ) -%}
   {% set _video_src = video_src or "" %}
   {% set _poster = poster_url or "" %}
@@ -20,6 +23,10 @@
   {% set _cap_vtt_rel = caption_vtt or "" %}
   {% set _cap_vtt_url = caption_vtt_url or "" %}
   {% set _cap_lang = caption_lang or "" %}
+  {% set _sources = sources or [] %}
+  {% set _permit_download = permit_download %}
+  {% set _download_items = download_items or [] %}
+
   {% if not _cap_vtt_url and _cap_vtt_rel %}
     {% set _cap_vtt_url = (storage_public_base_url ~ '/' ~ _cap_vtt_rel) if storage_public_base_url else ('/storage/' ~ _cap_vtt_rel) %}
   {% endif %}
@@ -32,6 +39,9 @@
        data-video-id="{{ _vid }}"
        data-subtitles='{{ _subs|tojson }}'
        data-options='{{ _opts|tojson }}'
+       data-sources='{{ _sources|tojson }}'
+       data-permit-download="{{ 1 if _permit_download else 0 }}"
+       data-download-items='{{ _download_items|tojson }}'
        {%- if _sprites_vtt %} data-sprites-vtt="{{ _sprites_vtt }}" {%- endif %}
        {%- if _cap_vtt_url %} data-caption-vtt="{{ _cap_vtt_url }}" {%- endif %}
        {%- if _cap_lang %} data-caption-lang="{{ _cap_lang }}" {%- endif %}>

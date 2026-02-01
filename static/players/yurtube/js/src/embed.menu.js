@@ -151,7 +151,8 @@ export function buildScrollableListContainer(backBtn, menu) {
 }
 
 /**
- * Normalize quality section typography (remove old title, add placeholder)
+ * Normalize quality section typography (legacy helper)
+ * NOTE: kept for compatibility, but NOT auto-called by MenuManager anymore.
  */
 export function normalizeQualitySectionTypography(menu, ensureTransparentMenuButton) {
   if (!menu) return;
@@ -164,14 +165,6 @@ export function normalizeQualitySectionTypography(menu, ensureTransparentMenuBut
 
     if (secQ.querySelector('.yrp-menu-item.quality-future')) return;
 
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'yrp-menu-item quality-future';
-    btn.textContent = 'Quality (future)';
-    btn.disabled = true;
-    ensureTransparentMenuButton(btn);
-    btn.style.opacity = '0.75';
-    secQ.appendChild(btn);
   } catch {}
 }
 
@@ -267,7 +260,7 @@ export function applySpeed(video, sp) {
 export class MenuManager {
   constructor(menu) {
     this.menu = menu;
-    this.menuView = 'main'; // main | speed | langs | subs
+    this.menuView = 'main'; // main | speed | langs | subs | quality | download
     this.menuMainHTML = '';
     this.menuFixedMinHeight = 0;
   }
@@ -319,12 +312,16 @@ export class MenuManager {
     } catch {}
 
     removeFutureSubtitlesSection(this.menu);
-    normalizeQualitySectionTypography(this.menu, ensureTransparentMenuButton);
+
+    // IMPORTANT: do NOT auto-insert "Quality (future)" here anymore.
+    // Quality/Download entries are injected by callbacks from embed.core.js.
 
     if (callbacks) {
       callbacks.injectSpeed && callbacks.injectSpeed();
       callbacks.injectLanguages && callbacks.injectLanguages();
       callbacks.injectSubtitles && callbacks.injectSubtitles();
+      callbacks.injectQuality && callbacks.injectQuality();
+      callbacks.injectDownload && callbacks.injectDownload();
     }
   }
 
