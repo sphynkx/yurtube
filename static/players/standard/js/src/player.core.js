@@ -1,4 +1,4 @@
-import { fmtTime, clamp, parseJSONAttr } from './util.js';
+import { fmtTime, clamp, parseJSONAttr, throttle } from './util.js';
 import { installFallbackGuards } from './fallback.js';
 import { attachPlaylist } from './playlist.js';
 
@@ -44,6 +44,211 @@ function tryPlay(video, onDebug) {
         try { video.play(); } catch {}
       }
     }, 0);
+  }
+}
+
+// ===== NEW: quality/download overlay for standard player =====
+function attachMediaMenus({ root, host, video, DEBUG }) {
+  const d = (...a) => { if (!DEBUG) return; try { console.debug('[STD-MEDIA]', ...a); } catch {} };
+
+  const sources = parseJSONAttr(host, 'data-sources', []);
+  const permitDownload = String(host.getAttribute('data-permit-download') || '').trim() === '1';
+  const downloadItems = parseJSONAttr(host, 'data-download-items', []);
+
+  const wrap = root.querySelector('.yrp-video-wrap');
+  const mount = root.querySelector('.std-ext-media[data-std-media="1"]');
+
+  if (!wrap || !mount) return;
+
+  const hasQuality = Array.isArray(sources) && sources.filter(s => s && s.src).length > 1;
+  const hasDownload = !!permitDownload && Array.isArray(downloadItems) && downloadItems.length > 0;
+
+  if (!hasQuality && !hasDownload) return;
+
+  // ensure overlay positioning
+  try {
+    if (getComputedStyle(wrap).position === 'static') wrap.style.position = 'relative';
+  } catch {}
+
+  // basic UI (inline styles to avoid touching CSS)
+  mount.innerHTML = '';
+  Object.assign(mount.style, {
+    position: 'absolute',
+    right: '12px',
+    top: '12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    zIndex: '30',
+    pointerEvents: 'auto',
+    alignItems: 'flex-end'
+  });
+
+  function mkRow(labelText) {
+    const row = document.createElement('div');
+    Object.assign(row.style, {
+      display: 'flex',
+      gap: '6px',
+      alignItems: 'center',
+      background: 'rgba(0,0,0,0.45)',
+      border: '1px solid rgba(255,255,255,0.12)',
+      padding: '6px 8px',
+      borderRadius: '8px',
+      color: '#fff',
+      fontSize: '12px',
+      lineHeight: '1',
+      backdropFilter: 'blur(2px)'
+    });
+
+    const lab = document.createElement('div');
+    lab.textContent = labelText;
+    lab.style.opacity = '0.9';
+    lab.style.whiteSpace = 'nowrap';
+    row.appendChild(lab);
+
+    return { row };
+  }
+
+  function mkSelect() {
+    const sel = document.createElement('select');
+    Object.assign(sel.style, {
+      fontSize: '12px',
+      padding: '3px 6px',
+      borderRadius: '6px',
+      border: '1px solid rgba(255,255,255,0.22)',
+      background: 'rgba(0,0,0,0.55)',
+      color: '#fff',
+      outline: 'none'
+    });
+    return sel;
+  }
+
+  function currentSourceUrl() {
+    try {
+      const srcEl = video.querySelector('source');
+      return (srcEl && (srcEl.getAttribute('src') || srcEl.src)) ? String(srcEl.getAttribute('src') || srcEl.src || '') : '';
+    } catch { return ''; }
+  }
+
+  const videoIdForPref = root.getAttribute('data-video-id') || '';
+  const qualityPrefKey = videoIdForPref ? ('yrp:quality:' + videoIdForPref) : 'yrp:quality';
+
+  function switchSourceTo(newSrc) {
+    if (!newSrc) return;
+
+    const srcEl = video.querySelector('source');
+    if (!srcEl) return;
+
+    const cur = currentSourceUrl();
+    if (cur && cur === newSrc) return;
+
+    const wasPlaying = !video.paused;
+    const t = Math.max(0, video.currentTime || 0);
+    const rate = (isFinite(video.playbackRate) && video.playbackRate > 0) ? video.playbackRate : 1;
+    const vol = isFinite(video.volume) ? video.volume : 1;
+    const muted0 = !!video.muted;
+
+    try { localStorage.setItem(qualityPrefKey, String(newSrc)); } catch {}
+
+    try {
+      srcEl.setAttribute('src', String(newSrc));
+      try { srcEl.src = String(newSrc); } catch {}
+      video.load();
+    } catch (e) {
+      d('switchSource load error', e);
+      return;
+    }
+
+    const onMeta = function () {
+      video.removeEventListener('loadedmetadata', onMeta);
+      try { video.playbackRate = rate; } catch {}
+      try { video.volume = vol; } catch {}
+      try { video.muted = muted0; } catch {}
+
+      try {
+        const dur = isFinite(video.duration) ? video.duration : 0;
+        if (dur > 0) {
+          const target = Math.min(t, Math.max(0, dur - 0.25));
+          video.currentTime = target;
+        }
+      } catch {}
+
+      if (wasPlaying) {
+        try { video.play().catch(function(){}); } catch {}
+      }
+    };
+    video.addEventListener('loadedmetadata', onMeta);
+  }
+
+  // Quality select
+  if (hasQuality) {
+    const { row } = mkRow('Quality');
+    const sel = mkSelect();
+
+    const list = sources.filter(s => s && s.src).map(s => ({
+      label: String(s.label || s.preset || 'Quality'),
+      src: String(s.src || '')
+    }));
+
+    list.forEach((s) => {
+      const opt = document.createElement('option');
+      opt.value = s.src;
+      opt.textContent = s.label;
+      sel.appendChild(opt);
+    });
+
+    const pref = (function(){ try { return String(localStorage.getItem(qualityPrefKey) || ''); } catch { return ''; } })();
+    const curSrc = currentSourceUrl();
+    const initial = pref || curSrc || (list[0] && list[0].src) || '';
+    if (initial) {
+      sel.value = initial;
+      // apply preferred if differs
+      if (pref && pref !== curSrc) {
+        // defer until after mount
+        setTimeout(() => switchSourceTo(pref), 0);
+      }
+    }
+
+    sel.addEventListener('change', function () {
+      const v = String(sel.value || '');
+      if (!v) return;
+      switchSourceTo(v);
+    });
+
+    row.appendChild(sel);
+    mount.appendChild(row);
+  }
+
+  // Download select
+  if (hasDownload) {
+    const { row } = mkRow('Download');
+    const sel = mkSelect();
+
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = 'Select…';
+    sel.appendChild(ph);
+
+    downloadItems.forEach((it) => {
+      if (!it || !it.url) return;
+      const opt = document.createElement('option');
+      opt.value = String(it.url || '');
+      opt.textContent = String(it.label || 'Download');
+      if (it.filename) opt.setAttribute('data-filename', String(it.filename));
+      sel.appendChild(opt);
+    });
+
+    sel.addEventListener('change', function () {
+      const url = String(sel.value || '');
+      if (!url) return;
+      try { window.open(url, '_blank', 'noopener'); }
+      catch { window.location.href = url; }
+      // reset to placeholder
+      sel.value = '';
+    });
+
+    row.appendChild(sel);
+    mount.appendChild(row);
   }
 }
 
@@ -188,14 +393,6 @@ function mountOne(host, tpl, PLAYER_BASE) {
     for (let i = 0; i < list.length; i++) {
       // standard uses native rendering => 'showing' for the selected track
       list[i].mode = (i === want) ? 'showing' : 'disabled';
-    }
-  }
-
-  function applySelectedLang(code) {
-    const idx = findTrackIndexByLang(code);
-    if (idx >= 0) {
-      applySelectedTrackIndex(idx);
-      try { localStorage.setItem('subtitle_lang', String(code || '')); } catch (_){}
     }
   }
 
@@ -494,5 +691,9 @@ function mountOne(host, tpl, PLAYER_BASE) {
   // ===== end sprites =====
 
   attachPlaylist({ root, video, DEBUG });
+
+  // NEW: mount quality/download overlay
+  attachMediaMenus({ root, host, video, DEBUG });
+
   syncPlayingClass();
 }
