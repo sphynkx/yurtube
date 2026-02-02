@@ -2,17 +2,14 @@ import os
 import sys
 import time
 import pathlib
-import asyncio
 import grpc
 from typing import Callable, Dict, List, Optional, Tuple, Any
 
 from config.ytsprites.ytsprites_cfg import (
     ytsprites_servers,
     YTSPRITES_TOKEN,
-    YTSPRITES_SUBMIT_TIMEOUT,
     YTSPRITES_STATUS_TIMEOUT,
     YTSPRITES_RESULT_TIMEOUT,
-    YTSPRITES_MAX_UPLOAD_BYTES,
     YTSPRITES_DEFAULT_MIME,
     YTSPRITES_SPRITE_STEP_SEC,
     YTSPRITES_SPRITE_COLS,
@@ -26,12 +23,10 @@ from config.ytsprites.ytsprites_cfg import (
     YTSPRITES_SERVER_TTL,
 )
 
-# Import protobuf stubs: add the ytsprites_proto directory to sys.path
-# TODO: rework gen_proto.sh with sed, remove this construct (see in ytsprites realization)
+# Import protobuf stubs from ytsprites_proto/
 sys.path.append(str(pathlib.Path(__file__).resolve().parent / "ytsprites_proto"))
-import ytsprites_pb2 as pb
-import ytsprites_pb2_grpc as pbg
-
+import ytsprites_pb2 as pb  # type: ignore
+import ytsprites_pb2_grpc as pbg  # type: ignore
 
 _last_good: Dict[str, Any] = {"addr": None, "ts": 0.0}
 
@@ -46,11 +41,11 @@ def _auth_metadata() -> List[Tuple[str, str]]:
 
 def _build_options() -> pb.SpriteOptions:
     return pb.SpriteOptions(
-        step_sec=YTSPRITES_SPRITE_STEP_SEC,
-        cols=YTSPRITES_SPRITE_COLS,
-        rows=YTSPRITES_SPRITE_ROWS,
-        format=YTSPRITES_SPRITE_FORMAT,
-        quality=YTSPRITES_SPRITE_QUALITY,
+        step_sec=float(YTSPRITES_SPRITE_STEP_SEC),
+        cols=int(YTSPRITES_SPRITE_COLS),
+        rows=int(YTSPRITES_SPRITE_ROWS),
+        format=str(YTSPRITES_SPRITE_FORMAT or "jpg"),
+        quality=int(YTSPRITES_SPRITE_QUALITY),
     )
 
 
@@ -72,14 +67,10 @@ def _channel_for_addr(addr: str) -> grpc.Channel:
 
 
 def _open_stub(addr: str) -> pbg.SpritesStub:
-    channel = _channel_for_addr(addr)
-    return pbg.SpritesStub(channel)
+    return pbg.SpritesStub(_channel_for_addr(addr))
 
 
 def health_check(addr: Optional[str] = None) -> bool:
-    """
-    Service-native healthcheck (Sprites/Health).
-    """
     if not addr:
         cached = _last_good.get("addr")
         if cached:
@@ -97,10 +88,6 @@ def health_check(addr: Optional[str] = None) -> bool:
 
 
 def pick_ytsprites_addr() -> str:
-    """
-    Pick first healthy server from YTSPRITES_SERVERS (preferred order).
-    TTL-cached.
-    """
     servers = ytsprites_servers()
     if not servers:
         return "127.0.0.1:9094"
@@ -124,13 +111,19 @@ def pick_ytsprites_addr() -> str:
     return addr0
 
 
-def create_job_only(
-    video_id: str,
+def create_job_storage_driven(
     *,
-    filename: str = "original.webm",
+    video_id: str,
+    source_storage_addr: str,
+    source_rel_path: str,
+    out_storage_addr: str,
+    out_base_rel_dir: str,
     video_mime: Optional[str] = None,
+    filename: str = "original.webm",
+    storage_token: str = "",
 ) -> Tuple[str, str]:
     """
+    New protocol: CreateJob tells ytsprites where to read source and where to write output.
     Returns (job_id, job_server_addr).
     """
     mime = (video_mime or YTSPRITES_DEFAULT_MIME).strip() or YTSPRITES_DEFAULT_MIME
@@ -139,146 +132,32 @@ def create_job_only(
 
     req = pb.CreateJobRequest(
         video_id=video_id,
-        filename=(filename or ""),
+        filename=filename or "",
         video_mime=mime,
         options=_build_options(),
+        source=pb.SourceRef(
+            storage=pb.StorageRef(address=str(source_storage_addr or ""), tls=False, token=str(storage_token or "")),
+            rel_path=str(source_rel_path or ""),
+        ),
+        output=pb.OutputRef(
+            storage=pb.StorageRef(address=str(out_storage_addr or ""), tls=False, token=str(storage_token or "")),
+            base_rel_dir=str(out_base_rel_dir or ""),
+            sprites_rel_dir="sprites",
+            vtt_name="sprites.vtt",
+        ),
     )
-    rep: pb.CreateJobReply = stub.CreateJob(req, timeout=YTSPRITES_SUBMIT_TIMEOUT, metadata=_auth_metadata())
+
+    rep = stub.CreateJob(req, timeout=10.0, metadata=_auth_metadata())
     if not rep.accepted or not rep.job_id:
-        raise RuntimeError(f"CreateJob rejected for video_id={video_id}: {(rep.message or '')}")
+        raise RuntimeError(f"CreateJob rejected for video_id={video_id}: {rep.message}")
     return rep.job_id, addr
 
 
-def upload_source(
+def watch_status(
     job_id: str,
     job_server: str,
-    video_abs_path: str,
-    *,
-    chunk_bytes: int = 4 * 1024 * 1024,
-) -> pb.UploadReply:
-    """
-    Client-streaming upload to the SAME server (affinity).
-
-    Guarantees:
-      - offset starts at 0 and strictly increases by len(data)
-      - always attempts to send the final chunk with last=True (offset=total_bytes, data=b"")
-      - logs bytes_sent and whether last=True was sent
-      - on failure: raises; best-effort cancel is attempted if Cancel RPC exists
-    """
-    if not os.path.isfile(video_abs_path):
-        raise FileNotFoundError(f"File not found: {video_abs_path}")
-
-    file_size = os.path.getsize(video_abs_path)
-
-    # Client-side precheck (server may still reject with its own limit)
-    if file_size > int(YTSPRITES_MAX_UPLOAD_BYTES):
-        raise ValueError(f"File size {file_size} exceeds YTSPRITES_MAX_UPLOAD_BYTES={YTSPRITES_MAX_UPLOAD_BYTES}")
-
-    stub = _open_stub(job_server)
-
-    bytes_sent = 0
-    sent_last = False
-    started_ts = time.time()
-    last_log_ts = started_ts
-
-    print(f"[YTSPRITES][UPLOAD] start job_id={job_id} size={file_size} chunk_bytes={chunk_bytes} server={job_server}")
-
-    def gen():
-        nonlocal bytes_sent, sent_last, last_log_ts
-
-        offset = 0
-        with open(video_abs_path, "rb") as f:
-            while True:
-                data = f.read(chunk_bytes)
-                if not data:
-                    break
-
-                ln = len(data)
-                yield pb.UploadChunk(job_id=job_id, offset=offset, data=data, last=False)
-                offset += ln
-                bytes_sent += ln
-
-                # periodic log (every ~5s)
-                now = time.time()
-                if (now - last_log_ts) >= 5.0:
-                    pct = int((bytes_sent * 100) / file_size) if file_size > 0 else 0
-                    print(f"[YTSPRITES][UPLOAD] progress job_id={job_id} bytes_sent={bytes_sent}/{file_size} ({pct}%)")
-                    last_log_ts = now
-
-        # REQUIRED final chunk
-        yield pb.UploadChunk(job_id=job_id, offset=offset, data=b"", last=True)
-        sent_last = True
-        print(f"[YTSPRITES][UPLOAD] sent last=true job_id={job_id} final_offset={offset} bytes_sent={bytes_sent}")
-
-    try:
-        rep: pb.UploadReply = stub.UploadSource(gen(), timeout=YTSPRITES_SUBMIT_TIMEOUT, metadata=_auth_metadata())
-
-        if not getattr(rep, "accepted", False):
-            msg = getattr(rep, "message", "") or ""
-            raise RuntimeError(f"UploadSource rejected job_id={job_id}: {msg}")
-
-        elapsed = time.time() - started_ts
-        print(
-            f"[YTSPRITES][UPLOAD] done job_id={job_id} bytes_sent={bytes_sent} "
-            f"sent_last={sent_last} elapsed_sec={elapsed:.2f}"
-        )
-        return rep
-
-    except grpc.RpcError as e:
-        code = getattr(e, "code", lambda: None)()
-        details = getattr(e, "details", lambda: "")() or ""
-
-        # Recognize size-limit errors
-        if code == grpc.StatusCode.RESOURCE_EXHAUSTED or "Upload too large" in details:
-            print(
-                f"[YTSPRITES][UPLOAD][ERROR] too_large job_id={job_id} bytes_sent={bytes_sent}/{file_size} "
-                f"sent_last={sent_last} code={code} details={details!r}"
-            )
-            raise RuntimeError("upload_too_large") from e
-
-        print(
-            f"[YTSPRITES][UPLOAD][ERROR] grpc_error job_id={job_id} bytes_sent={bytes_sent}/{file_size} "
-            f"sent_last={sent_last} code={code} details={details!r}"
-        )
-
-        # Best-effort cancel to avoid dangling jobs
-        try:
-            stub.Cancel(pb.CancelRequest(job_id=job_id), timeout=5.0, metadata=_auth_metadata())
-        except Exception:
-            pass
-
-        raise
-
-    except Exception as e:
-        print(
-            f"[YTSPRITES][UPLOAD][ERROR] exception job_id={job_id} bytes_sent={bytes_sent}/{file_size} "
-            f"sent_last={sent_last} exc={e!r}"
-        )
-        # Best-effort cancel to avoid dangling jobs
-        try:
-            stub.Cancel(pb.CancelRequest(job_id=job_id), timeout=5.0, metadata=_auth_metadata())
-        except Exception:
-            pass
-        raise
-
-
-def submit_only(video_id: str, video_abs_path: str, video_mime: Optional[str] = None) -> Tuple[str, str]:
-    """
-    Returns (job_id, job_server_addr).
-    """
-    job_id, addr = create_job_only(
-        video_id,
-        filename=os.path.basename(video_abs_path) or "original.webm",
-        video_mime=video_mime,
-    )
-    upload_source(job_id, addr, video_abs_path)
-    return job_id, addr
-
-
-def watch_status(job_id: str, job_server: str, on_update: Optional[Callable[[Dict], None]] = None) -> Optional[pb.StatusUpdate]:
-    """
-    IMPORTANT: affinity — status is watched on the SAME server where job was created.
-    """
+    on_update: Optional[Callable[[Dict[str, Any]], None]] = None,
+) -> Optional[pb.StatusUpdate]:
     stub = _open_stub(job_server)
     last = None
     start_ts = time.time()
@@ -294,6 +173,7 @@ def watch_status(job_id: str, job_server: str, on_update: Optional[Callable[[Dic
                 "state": upd.state,
                 "percent": upd.percent,
                 "message": upd.message,
+                "bytes_processed": getattr(upd, "bytes_processed", 0),
             }
             if on_update:
                 try:
@@ -309,39 +189,14 @@ def watch_status(job_id: str, job_server: str, on_update: Optional[Callable[[Dic
     return last
 
 
-def get_result(job_id: str, job_server: str) -> Tuple[str, List[Tuple[str, bytes]], str]:
-    """
-    IMPORTANT: affinity — result is fetched from the SAME server where job was created.
-    """
+def get_result(job_id: str, job_server: str) -> pb.ResultReply:
     stub = _open_stub(job_server)
     rep: pb.ResultReply = stub.GetResult(
         pb.GetResultRequest(job_id=job_id),
         timeout=YTSPRITES_RESULT_TIMEOUT,
         metadata=_auth_metadata(),
     )
-    video_id = rep.video_id
-    sprites: List[Tuple[str, bytes]] = []
-    for sb in rep.sprites:
-        sprites.append((sb.name, bytes(sb.data)))
-    vtt = rep.vtt or ""
-    return video_id, sprites, vtt
-
-
-def submit_and_wait(
-    video_id: str,
-    video_abs_path: str,
-    video_mime: Optional[str] = None,
-    on_status: Optional[Callable[[Dict], None]] = None,
-) -> Tuple[str, List[Tuple[str, bytes]], str]:
-    """
-    Full flow with affinity:
-      - CreateJob chooses job_server
-      - UploadSource sends chunks to the SAME job_server
-      - WatchStatus + GetResult use the SAME job_server
-    """
-    job_id, job_server = submit_only(video_id, video_abs_path, video_mime=video_mime)
-    watch_status(job_id, job_server, on_update=on_status)
-    return get_result(job_id, job_server)
+    return rep
 
 
 async def create_thumbnails_job(
@@ -352,63 +207,63 @@ async def create_thumbnails_job(
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Thumbs generator.
-    Calls gRPC ytsprites.
-    Sync processing, saves files to out_base_path.
+    Backward-compat shim for legacy call sites.
 
-    Returns:
-    {
-      "ok": True,
-      "job_id": "...",
-      "vtt_rel": "sprites.vtt",
-      "sprites": ["sprites/sprite_0001.jpg", ..]
-    }
+    IMPORTANT: It no longer uploads/reads src_path. Instead it expects `extra` to include:
+      - storage_addr: ytstorage grpc host:port
+      - storage_token: (optional)
+      - source_rel_path: rel path to original video in storage
+      - out_base_rel_dir: base dir where to write sprites/vtt (usually storage_rel)
+
+    Returns the legacy-ish dict:
+      { ok, job_id, vtt_rel, sprites }
+    where vtt_rel/sprites are RELATIVE to out_base_rel_dir (like before).
     """
-    if not src_path and not src_url:
-        raise ValueError("src_path or src_url required")
-    if not src_path or not os.path.isfile(src_path):
-        raise FileNotFoundError(f"Video src_path not found: {src_path}")
+    if extra is None:
+        raise ValueError("create_thumbnails_job legacy shim requires extra dict with storage params")
 
-    mime = (YTSPRITES_DEFAULT_MIME or "video/webm").strip() or "video/webm"
+    storage_addr = str(extra.get("storage_addr") or "").strip()
+    storage_token = str(extra.get("storage_token") or "").strip()
+    source_rel_path = str(extra.get("source_rel_path") or "").strip().lstrip("/")
+    out_base_rel_dir = str(extra.get("out_base_rel_dir") or "").strip().lstrip("/")
 
-    # Run gRPC sync client in a separate thread (keeps event loop responsive).
-    video_id2, sprites, vtt_text = await asyncio.to_thread(submit_and_wait, video_id, src_path, mime)
+    if not storage_addr or not source_rel_path or not out_base_rel_dir:
+        raise ValueError("extra must include storage_addr, source_rel_path, out_base_rel_dir")
 
-    os.makedirs(out_base_path, exist_ok=True)
+    job_id, job_server = await asyncio.to_thread(
+        create_job_storage_driven,
+        video_id=video_id,
+        source_storage_addr=storage_addr,
+        source_rel_path=source_rel_path,
+        out_storage_addr=storage_addr,
+        out_base_rel_dir=out_base_rel_dir,
+        video_mime=(extra.get("video_mime") or None),
+        filename=str(extra.get("filename") or "original.webm"),
+        storage_token=storage_token,
+    )
 
-    # VTT
-    vtt_abs = os.path.join(out_base_path, "sprites.vtt")
-    try:
-        with open(vtt_abs, "w", encoding="utf-8") as f:
-            f.write(vtt_text or "")
-    except Exception:
-        try:
-            with open(vtt_abs, "w", encoding="utf-8") as f:
-                f.write("")
-        except Exception:
-            pass
+    await asyncio.to_thread(watch_status, job_id, job_server)
+    rep = await asyncio.to_thread(get_result, job_id, job_server)
 
-    # sprites/ subfolder
-    sprites_dir_abs = os.path.join(out_base_path, "sprites")
-    try:
-        os.makedirs(sprites_dir_abs, exist_ok=True)
-    except Exception:
-        pass
+    if rep.state != rep.JOB_STATE_DONE:
+        raise RuntimeError(rep.message or "ytsprites failed")
 
-    rel_sprites: List[str] = []
-    for name, data in sprites:
-        rel_path = os.path.join("sprites", name)
-        abs_path = os.path.join(out_base_path, rel_path)
-        try:
-            with open(abs_path, "wb") as f:
-                f.write(data or b"")
-            rel_sprites.append(rel_path)
-        except Exception:
+    # Convert absolute rel paths back to "relative to out_base_rel_dir"
+    base_prefix = out_base_rel_dir.rstrip("/") + "/"
+
+    vtt_rel = ""
+    if rep.vtt and rep.vtt.rel_path:
+        vtt_rel = rep.vtt.rel_path
+        if vtt_rel.startswith(base_prefix):
+            vtt_rel = vtt_rel[len(base_prefix):]
+
+    sprites_rel: List[str] = []
+    for art in rep.sprites:
+        if not art.rel_path:
             continue
+        p = art.rel_path
+        if p.startswith(base_prefix):
+            p = p[len(base_prefix):]
+        sprites_rel.append(p)
 
-    return {
-        "ok": True,
-        "job_id": "ytsprites-local",
-        "vtt_rel": "sprites.vtt",
-        "sprites": rel_sprites,
-    }
+    return {"ok": True, "job_id": job_id, "vtt_rel": vtt_rel, "sprites": sprites_rel}

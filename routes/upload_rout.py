@@ -12,6 +12,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from config.config import settings
+from config.ytstorage.ytstorage_remote_cfg import STORAGE_REMOTE_ADDRESS, STORAGE_REMOTE_TOKEN
+
 from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset
 from db.categories_db import category_exists, list_categories
@@ -25,10 +27,12 @@ from db.videos_db import (
     delete_video_by_owner,
 )
 from db.ytconvert.ytconvert_jobs_db import create_ytconvert_job
-
-from services.ytsprites.ytsprites_client_srv import create_thumbnails_job
 from db.ytsprites.ytsprites_db import fetch_video_storage_path
+from db.comments.root_db import delete_all_comments_for_video
+from db.captions_db import set_video_captions
 
+from services.ytcms.captions_generation import generate_captions
+from services.ytsprites.ytsprites_client_srv import create_job_storage_driven, watch_status, get_result, create_thumbnails_job
 from services.ffmpeg_srv import (
     async_generate_thumbnails,
     pick_thumbnail_offsets,
@@ -39,10 +43,7 @@ from services.search.indexer_srch import fire_and_forget_reindex, delete_from_in
 from utils.idgen_ut import gen_id
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
-from db.comments.root_db import delete_all_comments_for_video
 
-from services.ytcms.captions_generation import generate_captions
-from db.captions_db import set_video_captions
 
 # --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
@@ -710,12 +711,35 @@ async def upload_video(
                     original_abs_for_job = storage_client.to_abs(storage_client.join(storage_rel_db, "original.webm"))
                     out_base_abs = storage_client.to_abs(storage_rel_db)
                     if os.path.exists(original_abs_for_job):
+                        '''
                         job = await create_thumbnails_job(
                             video_id=video_id,
                             src_path=original_abs_for_job,
                             out_base_path=out_base_abs,
                             extra=None,
                         )
+                        '''
+                        ############
+                        job_id, job_server = create_job_storage_driven(
+                            video_id=video_id,
+                            source_storage_addr=STORAGE_REMOTE_ADDRESS,
+                            source_rel_path=f"{storage_rel_db}/original.webm".lstrip("/"),
+                            out_storage_addr=STORAGE_REMOTE_ADDRESS,
+                            out_base_rel_dir=storage_rel_db,
+                            video_mime="video/webm",
+                            filename="original.webm",
+                            storage_token=STORAGE_REMOTE_TOKEN,
+                        )
+                        watch_status(job_id, job_server)
+                        rep = get_result(job_id, job_server)
+                        if rep.state == rep.JOB_STATE_DONE:
+                            if rep.vtt and rep.vtt.rel_path:
+                                await upsert_video_asset(conn, video_id, "thumbs_vtt", rep.vtt.rel_path)
+                            for idx, art in enumerate(rep.sprites, start=1):
+                                if art.rel_path:
+                                    await upsert_video_asset(conn, video_id, f"sprite:{idx}", art.rel_path)
+                            await mark_thumbnails_ready(conn, video_id)
+                        ############
                         print(f"[AUTOSPRITES] queued video_id={video_id} job={job.get('job_id')}")
                     else:
                         print(f"[AUTOSPRITES] original missing for video_id={video_id}")

@@ -1,15 +1,21 @@
+import hmac
+import hashlib
+import json
 import os
-import inspect
-import tempfile
-import shutil
-import asyncio
 from typing import Any, Optional, Dict, List
 
 from fastapi import APIRouter, Request, HTTPException, Form
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
+from config.ytsprites.ytsprites_cfg import (
+    APP_STORAGE_WEB_PREFIX,
+)
 from config.config import settings
+from config.ytstorage.ytstorage_remote_cfg import (
+    STORAGE_REMOTE_ADDRESS,
+    STORAGE_REMOTE_TOKEN,
+)
 from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset
 from db.assets_db import get_video_sprite_assets, get_thumbs_vtt_asset
@@ -23,18 +29,21 @@ from db.ytsprites.ytsprites_db import (
 )
 from db.videos_db import get_owned_video
 from db.captions_db import get_video_captions_status
-from services.ytsprites.ytsprites_client_srv import create_thumbnails_job, pick_ytsprites_addr
+from services.ytsprites.ytsprites_client_srv import (
+    create_job_storage_driven,
+    watch_status,
+    get_result,
+    pick_ytsprites_addr,
+)
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from utils.ytcms.ytcms_ut import get_active_cms_server
 
+# --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter(tags=["ytsprites"])
 templates = Jinja2Templates(directory="templates")
-
-_video_locks: Dict[str, asyncio.Lock] = {}
-_thumbs_sem = asyncio.Semaphore(1)  # global limiter: only 1 heavy job per process
 
 
 def _csrf_cookie_name() -> str:
@@ -60,267 +69,6 @@ def _validate_csrf(request: Request, form_token: Optional[str]) -> bool:
         return _sec.compare_digest(cookie_tok, form_tok)
     except Exception:
         return False
-
-
-def _norm_sprite_rel(rel: str) -> str:
-    s = str(rel or "").strip().lstrip("/")
-    if not s:
-        return s
-    if not s.startswith("sprites/"):
-        s = "sprites/" + s
-    return s
-
-
-def _rewrite_vtt_add_prefix(src_vtt_abs: str, dst_vtt_abs: str) -> None:
-    try:
-        with open(src_vtt_abs, "r", encoding="utf-8", errors="replace") as f:
-            lines = f.read().splitlines()
-    except Exception:
-        return
-
-    out: List[str] = []
-    i = 0
-    ln = len(lines)
-    while i < ln:
-        line = (lines[i] or "").strip()
-        out.append(line)
-        if "-->" in line:
-            if i + 1 < ln:
-                ref = (lines[i + 1] or "").strip()
-                if "#xywh=" in ref:
-                    p, h = ref.split("#xywh=", 1)
-                    p = _norm_sprite_rel(p)
-                    out.append(p + "#xywh=" + h)
-                else:
-                    out.append(_norm_sprite_rel(ref))
-                i += 2
-                continue
-        i += 1
-
-    try:
-        with open(dst_vtt_abs, "w", encoding="utf-8") as f:
-            f.write("\n".join(out))
-    except Exception:
-        pass
-
-
-async def _download_original_with_retries(
-    storage: StorageClient,
-    original_rel: str,
-    tmp_original_abs: str,
-    *,
-    retries: int = 4,
-    sleep_base_sec: float = 2.0,
-) -> None:
-    last_err = None
-    part = tmp_original_abs + ".part"
-
-    for attempt in range(1, retries + 1):
-        try:
-            try:
-                if os.path.exists(part):
-                    os.remove(part)
-            except Exception:
-                pass
-
-            reader_ctx = storage.open_reader(original_rel)
-            if inspect.isawaitable(reader_ctx):
-                reader_ctx = await reader_ctx
-
-            bytes_written = 0
-            with open(part, "wb") as lf:
-                if hasattr(reader_ctx, "__aiter__") or hasattr(reader_ctx, "__anext__"):
-                    async for chunk in reader_ctx:
-                        if not chunk:
-                            continue
-                        b = bytes(chunk)
-                        lf.write(b)
-                        bytes_written += len(b)
-                else:
-                    for chunk in reader_ctx:
-                        if not chunk:
-                            continue
-                        lf.write(chunk)
-                        bytes_written += len(chunk)
-
-            if bytes_written <= 0:
-                raise RuntimeError("download_wrote_nothing")
-
-            os.replace(part, tmp_original_abs)
-            print(f"[YTSPRITES][DL] OK rel={original_rel} bytes={bytes_written} attempt={attempt}/{retries}")
-            return
-
-        except Exception as e:
-            last_err = e
-            print(f"[YTSPRITES][DL] FAIL rel={original_rel} attempt={attempt}/{retries} err={e!r}")
-            try:
-                if os.path.exists(part):
-                    os.remove(part)
-            except Exception:
-                pass
-            await asyncio.sleep(min(sleep_base_sec * attempt, 10.0))
-
-    raise RuntimeError(f"download_failed after {retries} attempts: {last_err!r}")
-
-
-async def _persist_assets_and_mark_ready(
-    video_id: str,
-    storage_rel: str,
-    vtt_rel: Optional[str],
-    sprites_rels: List[str],
-) -> None:
-    conn = await get_conn()
-    try:
-        if vtt_rel:
-            await upsert_video_asset(conn, video_id, "thumbs_vtt", vtt_rel)
-        for idx, rel in enumerate(sprites_rels, start=1):
-            await upsert_video_asset(conn, video_id, f"sprite:{idx}", rel)
-        await mark_thumbnails_ready(conn, video_id)
-    finally:
-        await release_conn(conn)
-
-
-async def _run_thumbnails_job(request: Request, video_id: str) -> None:
-    storage: StorageClient = request.app.state.storage
-
-    # Acquire global limiter so we don't kill DB pool / CPU / IO.
-    async with _thumbs_sem:
-        try:
-            # Fetch storage_rel using a short-lived DB connection
-            conn = await get_conn()
-            try:
-                storage_rel = await fetch_video_storage_path(conn, video_id, ensure_ready=True)
-            finally:
-                await release_conn(conn)
-
-            if not storage_rel:
-                raise RuntimeError("video_storage_not_found")
-
-            original_rel = storage.join(storage_rel, "original.webm")
-            original_abs_storage = storage.to_abs(original_rel)
-            out_base_abs_storage = storage.to_abs(storage_rel)
-
-            is_local_mode = os.path.exists(original_abs_storage)
-
-            if is_local_mode:
-                job = await create_thumbnails_job(
-                    video_id=video_id,
-                    src_path=original_abs_storage,
-                    out_base_path=out_base_abs_storage,
-                    src_url=None,
-                    extra=None,
-                )
-                vtt_rel_local = job.get("vtt_rel")  # "sprites.vtt"
-                sprites_rels_local = [_norm_sprite_rel(r) for r in (job.get("sprites") or [])]
-
-                vtt_rel_storage = storage.join(storage_rel, vtt_rel_local) if vtt_rel_local else None
-                sprites_rels_storage = [storage.join(storage_rel, r) for r in sprites_rels_local]
-
-                await _persist_assets_and_mark_ready(video_id, storage_rel, vtt_rel_storage, sprites_rels_storage)
-                return
-
-            # Remote mode
-            tmp_dir = tempfile.mkdtemp(prefix="ytms_")
-            try:
-                tmp_original_abs = os.path.join(tmp_dir, "original.webm")
-                await _download_original_with_retries(storage, original_rel, tmp_original_abs, retries=4)
-
-                tmp_out_abs = os.path.join(tmp_dir, "out")
-                os.makedirs(tmp_out_abs, exist_ok=True)
-
-                job = await create_thumbnails_job(
-                    video_id=video_id,
-                    src_path=tmp_original_abs,
-                    out_base_path=tmp_out_abs,
-                    src_url=None,
-                    extra=None,
-                )
-
-                vtt_rel_local = job.get("vtt_rel")
-                sprites_rels_local = [_norm_sprite_rel(r) for r in (job.get("sprites") or [])]
-
-                # Ensure remote dirs
-                sprites_rel_dir = storage.join(storage_rel, "sprites")
-                mkdirs_res = storage.mkdirs(sprites_rel_dir, exist_ok=True)
-                if inspect.isawaitable(mkdirs_res):
-                    await mkdirs_res
-
-                vtt_rel_remote: Optional[str] = None
-                if vtt_rel_local:
-                    vtt_abs_local_orig = os.path.join(tmp_out_abs, vtt_rel_local)
-                    if os.path.exists(vtt_abs_local_orig):
-                        vtt_abs_local_norm = os.path.join(tmp_out_abs, "sprites.vtt")
-                        _rewrite_vtt_add_prefix(vtt_abs_local_orig, vtt_abs_local_norm)
-                        vtt_upload_abs = vtt_abs_local_norm if os.path.exists(vtt_abs_local_norm) else vtt_abs_local_orig
-
-                        vtt_rel_remote = storage.join(storage_rel, "sprites.vtt")
-                        wctx_vtt = storage.open_writer(vtt_rel_remote, overwrite=True)
-                        if inspect.isawaitable(wctx_vtt):
-                            wctx_vtt = await wctx_vtt
-                        if hasattr(wctx_vtt, "__aenter__"):
-                            async with wctx_vtt as f:
-                                with open(vtt_upload_abs, "rb") as lf:
-                                    while True:
-                                        ch = lf.read(1024 * 1024)
-                                        if not ch:
-                                            break
-                                        wr = f.write(ch)
-                                        if inspect.isawaitable(wr):
-                                            await wr
-                        else:
-                            with wctx_vtt as f:
-                                with open(vtt_upload_abs, "rb") as lf:
-                                    while True:
-                                        ch = lf.read(1024 * 1024)
-                                        if not ch:
-                                            break
-                                        f.write(ch)
-
-                uploaded_sprites: List[str] = []
-                for rel_local in sprites_rels_local:
-                    abs_local = os.path.join(tmp_out_abs, rel_local)
-                    if not os.path.isfile(abs_local):
-                        fallback_abs = os.path.join(tmp_out_abs, "sprites", os.path.basename(rel_local))
-                        if os.path.isfile(fallback_abs):
-                            abs_local = fallback_abs
-                        else:
-                            continue
-
-                    remote_rel = storage.join(storage_rel, rel_local)
-                    wctx_sp = storage.open_writer(remote_rel, overwrite=True)
-                    if inspect.isawaitable(wctx_sp):
-                        wctx_sp = await wctx_sp
-                    if hasattr(wctx_sp, "__aenter__"):
-                        async with wctx_sp as f:
-                            with open(abs_local, "rb") as lf:
-                                while True:
-                                    ch = lf.read(1024 * 1024)
-                                    if not ch:
-                                        break
-                                    wr = f.write(ch)
-                                    if inspect.isawaitable(wr):
-                                        await wr
-                    else:
-                        with wctx_sp as f:
-                            with open(abs_local, "rb") as lf:
-                                while True:
-                                    ch = lf.read(1024 * 1024)
-                                    if not ch:
-                                        break
-                                    f.write(ch)
-
-                    uploaded_sprites.append(remote_rel)
-
-                await _persist_assets_and_mark_ready(video_id, storage_rel, vtt_rel_remote, uploaded_sprites)
-
-            finally:
-                try:
-                    shutil.rmtree(tmp_dir)
-                except Exception:
-                    pass
-
-        except Exception as e:
-            print(f"[YTSPRITES] thumbnails job failed video_id={video_id}: {e!r}")
 
 
 @router.get("/manage/video/{video_id}/media", response_class=HTMLResponse)
@@ -355,6 +103,7 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             captions_vtt_url = build_storage_url(captions_primary_rel)
             captions_lang = captions_status.get("captions_lang")
 
+        # captions listing via local filesystem is deprecated when ytstorage mandatory.
         assets = {
             "thumb_asset_path": thumb_rel,
             "thumb_url": thumb_url,
@@ -393,12 +142,15 @@ async def video_media_page(request: Request, video_id: str) -> Any:
     return resp
 
 
-@router.post("/internal/ytsprites/thumbnails/retry")
-async def retry_thumbnails(
+@router.post("/manage/video/{video_id}/media/process")
+async def start_media_process(
     request: Request,
-    video_id: str = Form(...),
+    video_id: str,
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
+    """
+    Deprecated handler retained for compatibility. Now routes to /internal/ytsprites/thumbnails/retry.
+    """
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
@@ -414,37 +166,109 @@ async def retry_thumbnails(
     finally:
         await release_conn(conn)
 
-    lock = _video_locks.setdefault(video_id, asyncio.Lock())
-    if lock.locked():
-        return JSONResponse({"ok": True, "queued": True, "already_running": True})
-
-    async def _bg():
-        async with lock:
-            await _run_thumbnails_job(request, video_id)
-
-    asyncio.create_task(_bg())
+    # Frontend expects ok response; actual generation is invoked via /internal endpoint now.
     return JSONResponse({"ok": True, "queued": True})
+
+
+@router.post("/internal/ytsprites/thumbnails/retry")
+async def retry_thumbnails(
+    request: Request,
+    video_id: str = Form(...),
+    csrf_token: Optional[str] = Form(None),
+) -> Any:
+    """
+    New flow:
+    - yurtube does NOT download original.webm
+    - yurtube calls ytsprites.CreateJob with (ytstorage addr + rel_path) and output dir
+    - ytsprites downloads from ytstorage and uploads results back to ytstorage
+    - yurtube updates DB assets from ytsprites.GetResult (paths)
+    """
+    user = get_current_user(request)
+    if not user:
+        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
+    if not _validate_csrf(request, csrf_token):
+        return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
+
+    conn = await get_conn()
+    try:
+        owned = await get_owned_video(conn, video_id, user["user_uid"])
+        if not owned:
+            return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
+
+        storage_rel = owned["storage_path"].rstrip("/")
+        await reset_thumbnails_state(conn, video_id)
+
+        original_rel = f"{storage_rel}/original.webm".lstrip("/")
+
+        # Create job
+        job_id, job_server = create_job_storage_driven(
+            video_id=video_id,
+            source_storage_addr=STORAGE_REMOTE_ADDRESS,
+            source_rel_path=original_rel,
+            out_storage_addr=STORAGE_REMOTE_ADDRESS,
+            out_base_rel_dir=storage_rel,
+            video_mime="video/webm",
+            filename="original.webm",
+            storage_token=STORAGE_REMOTE_TOKEN,
+        )
+
+        # Wait for completion and fetch result
+        watch_status(job_id, job_server)
+        rep = get_result(job_id, job_server)
+
+        if rep.state != rep.JOB_STATE_DONE:
+            return JSONResponse(
+                {"ok": False, "job_id": job_id, "state": int(rep.state), "error": rep.message or "failed"},
+                status_code=500,
+            )
+
+        # Persist assets in DB (paths are already storage rel paths)
+        if rep.vtt and rep.vtt.rel_path:
+            await upsert_video_asset(conn, video_id, "thumbs_vtt", rep.vtt.rel_path)
+
+        sprite_urls: List[str] = []
+        for idx, art in enumerate(rep.sprites, start=1):
+            if not art.rel_path:
+                continue
+            await upsert_video_asset(conn, video_id, f"sprite:{idx}", art.rel_path)
+            sprite_urls.append(build_storage_url(art.rel_path))
+
+        await mark_thumbnails_ready(conn, video_id)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "job_id": job_id,
+                "vtt_url": build_storage_url(rep.vtt.rel_path) if rep.vtt and rep.vtt.rel_path else None,
+                "sprites": sprite_urls,
+            }
+        )
+
+    finally:
+        await release_conn(conn)
 
 
 @router.get("/internal/ytsprites/thumbnails/status")
 async def ytsprites_thumbnails_status(video_id: str):
+    """
+    Polling endpoint used by UI: backed by DB (not by ytsprites service).
+    """
     conn = await get_conn()
     try:
         asset_path = await get_thumbnails_asset_path(conn, video_id)
         ready_flag = await get_thumbnails_flag(conn, video_id)
         vtt_url = build_storage_url(asset_path) if asset_path else None
-        return {
-            "ok": True,
-            "video_id": video_id,
-            "ready": bool(ready_flag),
-            "vtt_path": vtt_url,
-        }
+        return {"ok": True, "video_id": video_id, "ready": bool(ready_flag), "vtt_path": vtt_url}
     finally:
         await release_conn(conn)
 
 
 @router.post("/internal/ytsprites/thumbnails/backfill")
 async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
+    """
+    Backfill: keep it simple for now — DB-driven list and sequential CreateJob+Wait.
+    (Can be moved to a dedicated worker later.)
+    """
     conn = await get_conn()
     try:
         rows = await list_videos_needing_thumbnails(conn, limit=limit)
@@ -454,16 +278,42 @@ async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
     results = []
     for r in rows:
         vid = r["video_id"]
-        lock = _video_locks.setdefault(vid, asyncio.Lock())
-        if lock.locked():
-            results.append({"video_id": vid, "ok": True, "queued": True, "already_running": True})
+        storage_rel = (r.get("storage_path") or "").rstrip("/")
+        if not storage_rel:
+            results.append({"video_id": vid, "ok": False, "error": "missing_storage_path"})
             continue
 
-        async def _bg(video_id_local: str, lk: asyncio.Lock):
-            async with lk:
-                await _run_thumbnails_job(request, video_id_local)
+        original_rel = f"{storage_rel}/original.webm".lstrip("/")
+        try:
+            job_id, job_server = create_job_storage_driven(
+                video_id=vid,
+                source_storage_addr=STORAGE_REMOTE_ADDRESS,
+                source_rel_path=original_rel,
+                out_storage_addr=STORAGE_REMOTE_ADDRESS,
+                out_base_rel_dir=storage_rel,
+                video_mime="video/webm",
+                filename="original.webm",
+                storage_token=STORAGE_REMOTE_TOKEN,
+            )
+            watch_status(job_id, job_server)
+            rep = get_result(job_id, job_server)
+            if rep.state != rep.JOB_STATE_DONE:
+                results.append({"video_id": vid, "ok": False, "error": rep.message or "failed"})
+                continue
 
-        asyncio.create_task(_bg(vid, lock))
-        results.append({"video_id": vid, "ok": True, "queued": True})
+            conn2 = await get_conn()
+            try:
+                if rep.vtt and rep.vtt.rel_path:
+                    await upsert_video_asset(conn2, vid, "thumbs_vtt", rep.vtt.rel_path)
+                for idx, art in enumerate(rep.sprites, start=1):
+                    if art.rel_path:
+                        await upsert_video_asset(conn2, vid, f"sprite:{idx}", art.rel_path)
+                await mark_thumbnails_ready(conn2, vid)
+            finally:
+                await release_conn(conn2)
+
+            results.append({"video_id": vid, "ok": True, "job_id": job_id})
+        except Exception as e:
+            results.append({"video_id": vid, "ok": False, "error": str(e)})
 
     return {"ok": True, "processed": results}
