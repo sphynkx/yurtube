@@ -90,7 +90,7 @@ def setup_regen_spinner():
             while btn.firstChild:
                 btn.removeChild(btn.firstChild)
             spinner = html.SPAN(Class="spin")
-            text = html.SPAN("Processing...")
+            text = html.SPAN("Processing..")
             btn <= spinner
             btn <= text
         except Exception:

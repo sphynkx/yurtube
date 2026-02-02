@@ -68,8 +68,6 @@
         <span id="ytsprites-start-status" style="margin-left:12px; font-size:13px;"></span>
       </form>
       {% endif %}
-
-      <div id="ytms-result" style="margin-top:16px; font-size:13px;"></div>
     </section>
 
     {# Preview shows when VTT exists; sprite images are resolved from VTT #}
@@ -136,7 +134,7 @@ NOTE: Captions generation may take a long time.
   </main>
 </div>
 
-<script src="/static/js/ytsprites.js"></script>
+<script src="/static/js/ytsprites.js?v={{ request.app.state.static_version }}"></script>
 <script src="/static/js/sprite_preview.js"></script>
 <script src="/static/js/video_media.js?v={{ request.app.state.static_version }}"></script>
 <script src="/static/js/captions_status.js"></script>

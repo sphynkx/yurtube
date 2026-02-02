@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import pathlib
+import asyncio
 import grpc
 from typing import Callable, Dict, List, Optional, Tuple, Any
 
@@ -122,10 +123,6 @@ def create_job_storage_driven(
     filename: str = "original.webm",
     storage_token: str = "",
 ) -> Tuple[str, str]:
-    """
-    New protocol: CreateJob tells ytsprites where to read source and where to write output.
-    Returns (job_id, job_server_addr).
-    """
     mime = (video_mime or YTSPRITES_DEFAULT_MIME).strip() or YTSPRITES_DEFAULT_MIME
     addr = pick_ytsprites_addr()
     stub = _open_stub(addr)
@@ -185,6 +182,7 @@ def watch_status(
             if (time.time() - start_ts) > YTSPRITES_STATUS_TIMEOUT:
                 break
     except grpc.RpcError:
+        # DO NOT raise: status stream may fail transiently; final wait is done via wait_result_done()
         pass
     return last
 
@@ -199,6 +197,39 @@ def get_result(job_id: str, job_server: str) -> pb.ResultReply:
     return rep
 
 
+def wait_result_done(
+    job_id: str,
+    job_server: str,
+    timeout_sec: float = 1800.0,
+    poll_sec: float = 1.0,
+) -> pb.ResultReply:
+    """
+    Robust wait: poll GetResult until it becomes available.
+    Eliminates FAILED_PRECONDITION 'Job not ready' issues.
+    """
+    start = time.time()
+    while True:
+        if (time.time() - start) > float(timeout_sec):
+            raise TimeoutError("Timed out waiting for ytsprites result")
+
+        try:
+            rep = get_result(job_id, job_server)
+            # if service returns final state - accept
+            if rep.state in (pb.JOB_STATE_DONE, pb.JOB_STATE_FAILED, pb.JOB_STATE_CANCELED):
+                return rep
+            time.sleep(poll_sec)
+            continue
+        except grpc.RpcError as e:
+            code = e.code()
+            if code == grpc.StatusCode.FAILED_PRECONDITION:
+                time.sleep(poll_sec)
+                continue
+            if code == grpc.StatusCode.NOT_FOUND:
+                time.sleep(poll_sec)
+                continue
+            raise
+
+
 async def create_thumbnails_job(
     video_id: str,
     src_path: Optional[str],
@@ -208,16 +239,6 @@ async def create_thumbnails_job(
 ) -> Dict[str, Any]:
     """
     Backward-compat shim for legacy call sites.
-
-    IMPORTANT: It no longer uploads/reads src_path. Instead it expects `extra` to include:
-      - storage_addr: ytstorage grpc host:port
-      - storage_token: (optional)
-      - source_rel_path: rel path to original video in storage
-      - out_base_rel_dir: base dir where to write sprites/vtt (usually storage_rel)
-
-    Returns the legacy-ish dict:
-      { ok, job_id, vtt_rel, sprites }
-    where vtt_rel/sprites are RELATIVE to out_base_rel_dir (like before).
     """
     if extra is None:
         raise ValueError("create_thumbnails_job legacy shim requires extra dict with storage params")
@@ -242,13 +263,16 @@ async def create_thumbnails_job(
         storage_token=storage_token,
     )
 
+    # watcher (best-effort)
     await asyncio.to_thread(watch_status, job_id, job_server)
-    rep = await asyncio.to_thread(get_result, job_id, job_server)
 
-    if rep.state != rep.JOB_STATE_DONE:
+    # FIX: robust final wait
+    rep = await asyncio.to_thread(wait_result_done, job_id, job_server, 1800.0, 1.0)
+
+    # FIX: enum is in pb, not in reply instance
+    if rep.state != pb.JOB_STATE_DONE:
         raise RuntimeError(rep.message or "ytsprites failed")
 
-    # Convert absolute rel paths back to "relative to out_base_rel_dir"
     base_prefix = out_base_rel_dir.rstrip("/") + "/"
 
     vtt_rel = ""

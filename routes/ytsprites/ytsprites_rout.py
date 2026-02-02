@@ -1,26 +1,20 @@
-import hmac
-import hashlib
-import json
 import os
+import time
+import asyncio
 from typing import Any, Optional, Dict, List
 
-from fastapi import APIRouter, Request, HTTPException, Form
+from fastapi import APIRouter, Request, HTTPException, Form, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
-from config.ytsprites.ytsprites_cfg import (
-    APP_STORAGE_WEB_PREFIX,
-)
 from config.config import settings
 from config.ytstorage.ytstorage_remote_cfg import (
     STORAGE_REMOTE_ADDRESS,
     STORAGE_REMOTE_TOKEN,
 )
 from db import get_conn, release_conn
-from db.assets_db import upsert_video_asset
-from db.assets_db import get_video_sprite_assets, get_thumbs_vtt_asset
+from db.assets_db import upsert_video_asset, get_video_sprite_assets, get_thumbs_vtt_asset
 from db.ytsprites.ytsprites_db import (
-    fetch_video_storage_path,
     mark_thumbnails_ready,
     get_thumbnails_asset_path,
     get_thumbnails_flag,
@@ -32,19 +26,55 @@ from db.captions_db import get_video_captions_status
 from services.ytsprites.ytsprites_client_srv import (
     create_job_storage_driven,
     watch_status,
-    get_result,
+    wait_result_done,
     pick_ytsprites_addr,
-    pb,  # IMPORTANT: enum constants live here
+    pb,
 )
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from utils.ytcms.ytcms_ut import get_active_cms_server
 
-# --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter(tags=["ytsprites"])
 templates = Jinja2Templates(directory="templates")
+
+_YTSPRITES_PROGRESS: Dict[str, Dict[str, Any]] = {}
+_PROGRESS_TTL_SEC = 6 * 3600
+
+
+def _now() -> float:
+    return time.time()
+
+
+def _set_progress(video_id: str, data: Dict[str, Any]) -> None:
+    d = dict(data)
+    d["ts"] = _now()
+    _YTSPRITES_PROGRESS[video_id] = d
+
+
+def _get_progress(video_id: str) -> Optional[Dict[str, Any]]:
+    d = _YTSPRITES_PROGRESS.get(video_id)
+    if not d:
+        return None
+    if (_now() - float(d.get("ts", 0.0))) > _PROGRESS_TTL_SEC:
+        try:
+            del _YTSPRITES_PROGRESS[video_id]
+        except Exception:
+            pass
+        return None
+    return d
+
+
+def _clear_progress(video_id: str) -> None:
+    try:
+        del _YTSPRITES_PROGRESS[video_id]
+    except Exception:
+        pass
+
+
+def _is_final_state(state: int) -> bool:
+    return int(state) in (int(pb.JOB_STATE_DONE), int(pb.JOB_STATE_FAILED), int(pb.JOB_STATE_CANCELED))
 
 
 def _csrf_cookie_name() -> str:
@@ -142,31 +172,59 @@ async def video_media_page(request: Request, video_id: str) -> Any:
     return resp
 
 
-@router.post("/manage/video/{video_id}/media/process")
-async def start_media_process(
-    request: Request,
-    video_id: str,
-    csrf_token: Optional[str] = Form(None),
-) -> Any:
-    """
-    Deprecated handler retained for compatibility. Now routes to /internal/ytsprites/thumbnails/retry.
-    """
-    user = get_current_user(request)
-    if not user:
-        return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
-    if not _validate_csrf(request, csrf_token):
-        return JSONResponse({"ok": False, "error": "csrf_required"}, status_code=403)
+@router.get("/internal/ytsprites/thumbnails/progress")
+async def ytsprites_thumbnails_progress(video_id: str = Query(...)) -> Any:
+    st = _get_progress(video_id)
+    if not st:
+        return {"ok": True, "active": False}
+    return {"ok": True, "active": True, **st}
 
-    conn = await get_conn()
-    try:
-        owned = await get_owned_video(conn, video_id, user["user_uid"])
-        if not owned:
-            return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
-        await reset_thumbnails_state(conn, video_id)
-    finally:
-        await release_conn(conn)
 
-    return JSONResponse({"ok": True, "queued": True})
+def _start_watch_task(video_id: str, job_id: str, job_server: str) -> None:
+    def _on_update(item: Dict[str, Any]) -> None:
+        _set_progress(
+            video_id,
+            {
+                "job_id": job_id,
+                "job_server": job_server,
+                "state": int(item.get("state") or 0),
+                "percent": int(item.get("percent") if item.get("percent") is not None else -1),
+                "message": str(item.get("message") or ""),
+                "bytes_processed": int(item.get("bytes_processed") or 0),
+            },
+        )
+
+    async def _runner():
+        # do not overwrite existing non-final state (single-flight safety)
+        cur = _get_progress(video_id)
+        if cur and not _is_final_state(int(cur.get("state") or 0)):
+            return
+
+        _set_progress(
+            video_id,
+            {
+                "job_id": job_id,
+                "job_server": job_server,
+                "state": int(pb.JOB_STATE_QUEUED),
+                "percent": 0,
+                "message": "Queued",
+            },
+        )
+        try:
+            await asyncio.to_thread(watch_status, job_id, job_server, _on_update)
+        except Exception as e:
+            _set_progress(
+                video_id,
+                {
+                    "job_id": job_id,
+                    "job_server": job_server,
+                    "state": int(pb.JOB_STATE_FAILED),
+                    "percent": 0,
+                    "message": f"watch failed: {e}",
+                },
+            )
+
+    asyncio.create_task(_runner())
 
 
 @router.post("/internal/ytsprites/thumbnails/retry")
@@ -187,23 +245,30 @@ async def retry_thumbnails(
         if not owned:
             return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
 
-        storage_rel = owned["storage_path"].rstrip("/")
-
-        # Optional: if already ready, short-circuit (helps double-click)
-        ready_flag = await get_thumbnails_flag(conn, video_id)
-        existing_vtt = await get_thumbnails_asset_path(conn, video_id)
-        if ready_flag and existing_vtt:
+        # ---- single-flight: if already running, do not start a new job ----
+        cur = _get_progress(video_id)
+        if cur and not _is_final_state(int(cur.get("state") or 0)):
             return JSONResponse(
                 {
                     "ok": True,
-                    "job_id": None,
-                    "vtt_url": build_storage_url(existing_vtt),
-                    "sprites": [build_storage_url(p) for p in (await get_video_sprite_assets(conn, video_id))],
-                    "already_ready": True,
+                    "already_running": True,
+                    "job_id": cur.get("job_id"),
+                    "state": int(cur.get("state") or 0),
+                    "percent": int(cur.get("percent") or 0),
+                    "message": cur.get("message") or "",
                 }
             )
 
+        # If DB already has thumbs ready - do not restart unless explicitly required
+        ready_flag = await get_thumbnails_flag(conn, video_id)
+        existing_vtt = await get_thumbnails_asset_path(conn, video_id)
+        if ready_flag and existing_vtt:
+            return JSONResponse({"ok": True, "already_ready": True})
+
+        storage_rel = owned["storage_path"].rstrip("/")
+
         await reset_thumbnails_state(conn, video_id)
+        _clear_progress(video_id)
 
         original_rel = f"{storage_rel}/original.webm".lstrip("/")
 
@@ -218,37 +283,38 @@ async def retry_thumbnails(
             storage_token=STORAGE_REMOTE_TOKEN,
         )
 
-        watch_status(job_id, job_server)
-        rep = get_result(job_id, job_server)
+        _start_watch_task(video_id, job_id, job_server)
 
-        # FIX: enums live in pb module, not in reply instance
+        rep = await asyncio.to_thread(wait_result_done, job_id, job_server, 1800.0, 1.0)
+
         if rep.state != pb.JOB_STATE_DONE:
+            _set_progress(
+                video_id,
+                {
+                    "job_id": job_id,
+                    "job_server": job_server,
+                    "state": int(rep.state),
+                    "percent": -1,
+                    "message": rep.message or "failed",
+                },
+            )
             return JSONResponse(
                 {"ok": False, "job_id": job_id, "state": int(rep.state), "error": rep.message or "failed"},
                 status_code=500,
             )
 
-        # Persist assets in DB (paths are already storage rel paths)
         if rep.vtt and rep.vtt.rel_path:
             await upsert_video_asset(conn, video_id, "thumbs_vtt", rep.vtt.rel_path)
 
-        sprite_urls: List[str] = []
         for idx, art in enumerate(rep.sprites, start=1):
-            if not art.rel_path:
-                continue
-            await upsert_video_asset(conn, video_id, f"sprite:{idx}", art.rel_path)
-            sprite_urls.append(build_storage_url(art.rel_path))
+            if art.rel_path:
+                await upsert_video_asset(conn, video_id, f"sprite:{idx}", art.rel_path)
 
         await mark_thumbnails_ready(conn, video_id)
 
-        return JSONResponse(
-            {
-                "ok": True,
-                "job_id": job_id,
-                "vtt_url": build_storage_url(rep.vtt.rel_path) if rep.vtt and rep.vtt.rel_path else None,
-                "sprites": sprite_urls,
-            }
-        )
+        _set_progress(video_id, {"job_id": job_id, "job_server": job_server, "state": int(pb.JOB_STATE_DONE), "percent": 100, "message": "Done"})
+
+        return JSONResponse({"ok": True, "job_id": job_id})
     finally:
         await release_conn(conn)
 
@@ -281,6 +347,12 @@ async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
             results.append({"video_id": vid, "ok": False, "error": "missing_storage_path"})
             continue
 
+        # single-flight for backfill too
+        cur = _get_progress(vid)
+        if cur and not _is_final_state(int(cur.get("state") or 0)):
+            results.append({"video_id": vid, "ok": True, "already_running": True, "job_id": cur.get("job_id")})
+            continue
+
         original_rel = f"{storage_rel}/original.webm".lstrip("/")
         try:
             job_id, job_server = create_job_storage_driven(
@@ -293,9 +365,10 @@ async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
                 filename="original.webm",
                 storage_token=STORAGE_REMOTE_TOKEN,
             )
-            watch_status(job_id, job_server)
-            rep = get_result(job_id, job_server)
 
+            _start_watch_task(vid, job_id, job_server)
+
+            rep = await asyncio.to_thread(wait_result_done, job_id, job_server, 1800.0, 1.0)
             if rep.state != pb.JOB_STATE_DONE:
                 results.append({"video_id": vid, "ok": False, "error": rep.message or "failed"})
                 continue
