@@ -158,31 +158,108 @@ def upload_source(
 ) -> pb.UploadReply:
     """
     Client-streaming upload to the SAME server (affinity).
+
+    Guarantees:
+      - offset starts at 0 and strictly increases by len(data)
+      - always attempts to send the final chunk with last=True (offset=total_bytes, data=b"")
+      - logs bytes_sent and whether last=True was sent
+      - on failure: raises; best-effort cancel is attempted if Cancel RPC exists
     """
     if not os.path.isfile(video_abs_path):
         raise FileNotFoundError(f"File not found: {video_abs_path}")
 
-    size = os.path.getsize(video_abs_path)
-    if size > int(YTSPRITES_MAX_UPLOAD_BYTES):
-        raise ValueError(f"File size {size} exceeds YTSPRITES_MAX_UPLOAD_BYTES={YTSPRITES_MAX_UPLOAD_BYTES}")
+    file_size = os.path.getsize(video_abs_path)
+
+    # Client-side precheck (server may still reject with its own limit)
+    if file_size > int(YTSPRITES_MAX_UPLOAD_BYTES):
+        raise ValueError(f"File size {file_size} exceeds YTSPRITES_MAX_UPLOAD_BYTES={YTSPRITES_MAX_UPLOAD_BYTES}")
 
     stub = _open_stub(job_server)
 
+    bytes_sent = 0
+    sent_last = False
+    started_ts = time.time()
+    last_log_ts = started_ts
+
+    print(f"[YTSPRITES][UPLOAD] start job_id={job_id} size={file_size} chunk_bytes={chunk_bytes} server={job_server}")
+
     def gen():
+        nonlocal bytes_sent, sent_last, last_log_ts
+
         offset = 0
         with open(video_abs_path, "rb") as f:
             while True:
                 data = f.read(chunk_bytes)
                 if not data:
                     break
-                yield pb.UploadChunk(job_id=job_id, offset=offset, data=data, last=False)
-                offset += len(data)
-        yield pb.UploadChunk(job_id=job_id, offset=offset, data=b"", last=True)
 
-    rep: pb.UploadReply = stub.UploadSource(gen(), timeout=YTSPRITES_SUBMIT_TIMEOUT, metadata=_auth_metadata())
-    if not rep.accepted:
-        raise RuntimeError(f"UploadSource rejected job_id={job_id}: {(rep.message or '')}")
-    return rep
+                ln = len(data)
+                yield pb.UploadChunk(job_id=job_id, offset=offset, data=data, last=False)
+                offset += ln
+                bytes_sent += ln
+
+                # periodic log (every ~5s)
+                now = time.time()
+                if (now - last_log_ts) >= 5.0:
+                    pct = int((bytes_sent * 100) / file_size) if file_size > 0 else 0
+                    print(f"[YTSPRITES][UPLOAD] progress job_id={job_id} bytes_sent={bytes_sent}/{file_size} ({pct}%)")
+                    last_log_ts = now
+
+        # REQUIRED final chunk
+        yield pb.UploadChunk(job_id=job_id, offset=offset, data=b"", last=True)
+        sent_last = True
+        print(f"[YTSPRITES][UPLOAD] sent last=true job_id={job_id} final_offset={offset} bytes_sent={bytes_sent}")
+
+    try:
+        rep: pb.UploadReply = stub.UploadSource(gen(), timeout=YTSPRITES_SUBMIT_TIMEOUT, metadata=_auth_metadata())
+
+        if not getattr(rep, "accepted", False):
+            msg = getattr(rep, "message", "") or ""
+            raise RuntimeError(f"UploadSource rejected job_id={job_id}: {msg}")
+
+        elapsed = time.time() - started_ts
+        print(
+            f"[YTSPRITES][UPLOAD] done job_id={job_id} bytes_sent={bytes_sent} "
+            f"sent_last={sent_last} elapsed_sec={elapsed:.2f}"
+        )
+        return rep
+
+    except grpc.RpcError as e:
+        code = getattr(e, "code", lambda: None)()
+        details = getattr(e, "details", lambda: "")() or ""
+
+        # Recognize size-limit errors
+        if code == grpc.StatusCode.RESOURCE_EXHAUSTED or "Upload too large" in details:
+            print(
+                f"[YTSPRITES][UPLOAD][ERROR] too_large job_id={job_id} bytes_sent={bytes_sent}/{file_size} "
+                f"sent_last={sent_last} code={code} details={details!r}"
+            )
+            raise RuntimeError("upload_too_large") from e
+
+        print(
+            f"[YTSPRITES][UPLOAD][ERROR] grpc_error job_id={job_id} bytes_sent={bytes_sent}/{file_size} "
+            f"sent_last={sent_last} code={code} details={details!r}"
+        )
+
+        # Best-effort cancel to avoid dangling jobs
+        try:
+            stub.Cancel(pb.CancelRequest(job_id=job_id), timeout=5.0, metadata=_auth_metadata())
+        except Exception:
+            pass
+
+        raise
+
+    except Exception as e:
+        print(
+            f"[YTSPRITES][UPLOAD][ERROR] exception job_id={job_id} bytes_sent={bytes_sent}/{file_size} "
+            f"sent_last={sent_last} exc={e!r}"
+        )
+        # Best-effort cancel to avoid dangling jobs
+        try:
+            stub.Cancel(pb.CancelRequest(job_id=job_id), timeout=5.0, metadata=_auth_metadata())
+        except Exception:
+            pass
+        raise
 
 
 def submit_only(video_id: str, video_abs_path: str, video_mime: Optional[str] = None) -> Tuple[str, str]:
