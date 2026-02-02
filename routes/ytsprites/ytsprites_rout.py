@@ -34,6 +34,7 @@ from services.ytsprites.ytsprites_client_srv import (
     watch_status,
     get_result,
     pick_ytsprites_addr,
+    pb,  # IMPORTANT: enum constants live here
 )
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
@@ -103,7 +104,6 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             captions_vtt_url = build_storage_url(captions_primary_rel)
             captions_lang = captions_status.get("captions_lang")
 
-        # captions listing via local filesystem is deprecated when ytstorage mandatory.
         assets = {
             "thumb_asset_path": thumb_rel,
             "thumb_url": thumb_url,
@@ -166,7 +166,6 @@ async def start_media_process(
     finally:
         await release_conn(conn)
 
-    # Frontend expects ok response; actual generation is invoked via /internal endpoint now.
     return JSONResponse({"ok": True, "queued": True})
 
 
@@ -176,13 +175,6 @@ async def retry_thumbnails(
     video_id: str = Form(...),
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
-    """
-    New flow:
-    - yurtube does NOT download original.webm
-    - yurtube calls ytsprites.CreateJob with (ytstorage addr + rel_path) and output dir
-    - ytsprites downloads from ytstorage and uploads results back to ytstorage
-    - yurtube updates DB assets from ytsprites.GetResult (paths)
-    """
     user = get_current_user(request)
     if not user:
         return JSONResponse({"ok": False, "error": "login_required"}, status_code=401)
@@ -196,11 +188,25 @@ async def retry_thumbnails(
             return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
 
         storage_rel = owned["storage_path"].rstrip("/")
+
+        # Optional: if already ready, short-circuit (helps double-click)
+        ready_flag = await get_thumbnails_flag(conn, video_id)
+        existing_vtt = await get_thumbnails_asset_path(conn, video_id)
+        if ready_flag and existing_vtt:
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "job_id": None,
+                    "vtt_url": build_storage_url(existing_vtt),
+                    "sprites": [build_storage_url(p) for p in (await get_video_sprite_assets(conn, video_id))],
+                    "already_ready": True,
+                }
+            )
+
         await reset_thumbnails_state(conn, video_id)
 
         original_rel = f"{storage_rel}/original.webm".lstrip("/")
 
-        # Create job
         job_id, job_server = create_job_storage_driven(
             video_id=video_id,
             source_storage_addr=STORAGE_REMOTE_ADDRESS,
@@ -212,11 +218,11 @@ async def retry_thumbnails(
             storage_token=STORAGE_REMOTE_TOKEN,
         )
 
-        # Wait for completion and fetch result
         watch_status(job_id, job_server)
         rep = get_result(job_id, job_server)
 
-        if rep.state != rep.JOB_STATE_DONE:
+        # FIX: enums live in pb module, not in reply instance
+        if rep.state != pb.JOB_STATE_DONE:
             return JSONResponse(
                 {"ok": False, "job_id": job_id, "state": int(rep.state), "error": rep.message or "failed"},
                 status_code=500,
@@ -243,16 +249,12 @@ async def retry_thumbnails(
                 "sprites": sprite_urls,
             }
         )
-
     finally:
         await release_conn(conn)
 
 
 @router.get("/internal/ytsprites/thumbnails/status")
 async def ytsprites_thumbnails_status(video_id: str):
-    """
-    Polling endpoint used by UI: backed by DB (not by ytsprites service).
-    """
     conn = await get_conn()
     try:
         asset_path = await get_thumbnails_asset_path(conn, video_id)
@@ -265,10 +267,6 @@ async def ytsprites_thumbnails_status(video_id: str):
 
 @router.post("/internal/ytsprites/thumbnails/backfill")
 async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
-    """
-    Backfill: keep it simple for now — DB-driven list and sequential CreateJob+Wait.
-    (Can be moved to a dedicated worker later.)
-    """
     conn = await get_conn()
     try:
         rows = await list_videos_needing_thumbnails(conn, limit=limit)
@@ -297,7 +295,8 @@ async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
             )
             watch_status(job_id, job_server)
             rep = get_result(job_id, job_server)
-            if rep.state != rep.JOB_STATE_DONE:
+
+            if rep.state != pb.JOB_STATE_DONE:
                 results.append({"video_id": vid, "ok": False, "error": rep.message or "failed"})
                 continue
 
