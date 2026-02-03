@@ -297,9 +297,9 @@ This service is required to install. You may install it both same server and sep
 The service allows you to set up various storage configurations - a local folder or S3 storage. See details in [ytstorage repository](https://github.com/sphynkx/ytstorage).
 
 After install need to configure ytstorage params:
-- `STORAGE_REMOTE_ADDRESS` - remote host and port
-- `STORAGE_REMOTE_TLS` - set true to use auth
-- `STORAGE_REMOTE_TOKEN` - set token same as on service side
+- `YTSTORAGE_GRPC_ADDRESS` - remote host and port
+- `YTSTORAGE_GRPC_TLS` - set true to use auth
+- `YTSTORAGE_GRPC_TOKEN` - set token same as on service side
 
 Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one in `ytstorage` installation. Otherwise you need regenerate proto files.. Just run `gen_proto.sh` in the same dir.
 

@@ -8,9 +8,9 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from config.config import settings
-from config.ytstorage.ytstorage_remote_cfg import (
-    STORAGE_REMOTE_ADDRESS,
-    STORAGE_REMOTE_TOKEN,
+from config.ytstorage.ytstorage_cfg import (
+    YTSTORAGE_GRPC_ADDRESS,
+    YTSTORAGE_GRPC_TOKEN,
 )
 from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset, get_video_sprite_assets, get_thumbs_vtt_asset
@@ -162,7 +162,7 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             "brand_tagline": settings.BRAND_TAGLINE,
             "favicon_url": settings.FAVICON_URL,
             "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+            "storage_public_base_url": getattr(settings, "YTSTORAGE_PUBLIC_BASE_URL", None),
             "active_sprites_server": active_sprites_server,
             "active_cms_server": active_cms_server,
         },
@@ -195,7 +195,6 @@ def _start_watch_task(video_id: str, job_id: str, job_server: str) -> None:
         )
 
     async def _runner():
-        # do not overwrite existing non-final state (single-flight safety)
         cur = _get_progress(video_id)
         if cur and not _is_final_state(int(cur.get("state") or 0)):
             return
@@ -245,7 +244,6 @@ async def retry_thumbnails(
         if not owned:
             return JSONResponse({"ok": False, "error": "not_found"}, status_code=404)
 
-        # ---- single-flight: if already running, do not start a new job ----
         cur = _get_progress(video_id)
         if cur and not _is_final_state(int(cur.get("state") or 0)):
             return JSONResponse(
@@ -259,7 +257,6 @@ async def retry_thumbnails(
                 }
             )
 
-        # If DB already has thumbs ready - do not restart unless explicitly required
         ready_flag = await get_thumbnails_flag(conn, video_id)
         existing_vtt = await get_thumbnails_asset_path(conn, video_id)
         if ready_flag and existing_vtt:
@@ -274,13 +271,13 @@ async def retry_thumbnails(
 
         job_id, job_server = create_job_storage_driven(
             video_id=video_id,
-            source_storage_addr=STORAGE_REMOTE_ADDRESS,
+            source_storage_addr=YTSTORAGE_GRPC_ADDRESS,
             source_rel_path=original_rel,
-            out_storage_addr=STORAGE_REMOTE_ADDRESS,
+            out_storage_addr=YTSTORAGE_GRPC_ADDRESS,
             out_base_rel_dir=storage_rel,
             video_mime="video/webm",
             filename="original.webm",
-            storage_token=STORAGE_REMOTE_TOKEN,
+            storage_token=YTSTORAGE_GRPC_TOKEN,
         )
 
         _start_watch_task(video_id, job_id, job_server)
@@ -347,7 +344,6 @@ async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
             results.append({"video_id": vid, "ok": False, "error": "missing_storage_path"})
             continue
 
-        # single-flight for backfill too
         cur = _get_progress(vid)
         if cur and not _is_final_state(int(cur.get("state") or 0)):
             results.append({"video_id": vid, "ok": True, "already_running": True, "job_id": cur.get("job_id")})
@@ -357,13 +353,13 @@ async def ytsprites_thumbnails_backfill(request: Request, limit: int = 50):
         try:
             job_id, job_server = create_job_storage_driven(
                 video_id=vid,
-                source_storage_addr=STORAGE_REMOTE_ADDRESS,
+                source_storage_addr=YTSTORAGE_GRPC_ADDRESS,
                 source_rel_path=original_rel,
-                out_storage_addr=STORAGE_REMOTE_ADDRESS,
+                out_storage_addr=YTSTORAGE_GRPC_ADDRESS,
                 out_base_rel_dir=storage_rel,
                 video_mime="video/webm",
                 filename="original.webm",
-                storage_token=STORAGE_REMOTE_TOKEN,
+                storage_token=YTSTORAGE_GRPC_TOKEN,
             )
 
             _start_watch_task(vid, job_id, job_server)

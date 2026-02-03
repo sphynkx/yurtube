@@ -12,7 +12,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 
 from config.config import settings
-from config.ytstorage.ytstorage_remote_cfg import STORAGE_REMOTE_ADDRESS, STORAGE_REMOTE_TOKEN
+from config.ytstorage.ytstorage_cfg import YTSTORAGE_GRPC_ADDRESS, YTSTORAGE_GRPC_TOKEN
 
 from db import get_conn, release_conn
 from db.assets_db import upsert_video_asset
@@ -722,13 +722,13 @@ async def upload_video(
                         ############
                         job_id, job_server = create_job_storage_driven(
                             video_id=video_id,
-                            source_storage_addr=STORAGE_REMOTE_ADDRESS,
+                            source_storage_addr=YTSTORAGE_GRPC_ADDRESS,
                             source_rel_path=f"{storage_rel_db}/original.webm".lstrip("/"),
-                            out_storage_addr=STORAGE_REMOTE_ADDRESS,
+                            out_storage_addr=YTSTORAGE_GRPC_ADDRESS,
                             out_base_rel_dir=storage_rel_db,
                             video_mime="video/webm",
                             filename="original.webm",
-                            storage_token=STORAGE_REMOTE_TOKEN,
+                            storage_token=YTSTORAGE_GRPC_TOKEN,
                         )
                         watch_status(job_id, job_server)
                         rep = get_result(job_id, job_server)

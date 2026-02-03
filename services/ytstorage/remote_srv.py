@@ -8,6 +8,13 @@ from typing import AsyncIterator, List, Optional, Dict, Any
 import grpc
 
 from config.config import settings
+from config.ytstorage.ytstorage_cfg import (
+    YTSTORAGE_GRPC_ADDRESS,
+    YTSTORAGE_GRPC_TLS,
+    YTSTORAGE_GRPC_TOKEN,
+    YTSTORAGE_BASE_PREFIX,
+    YTSTORAGE_GRPC_MAX_MSG_MB,
+)
 from services.ytstorage.base_srv import StorageClient
 
 # Generated stubs
@@ -53,16 +60,17 @@ def _cfg_int(name: str, default: int) -> int:
 
 
 def _auth_md() -> List[tuple]:
-    tok = _cfg_str("STORAGE_REMOTE_TOKEN", "")
+    tok = _cfg_str("YTSTORAGE_GRPC_TOKEN", YTSTORAGE_GRPC_TOKEN)
     if tok:
         return [("authorization", f"Bearer {tok}")]
     return []
 
 
 def _grpc_channel() -> grpc.aio.Channel:
-    target = _cfg_str("STORAGE_REMOTE_ADDRESS", "127.0.0.1:9092")
-    use_tls = _cfg_bool("STORAGE_REMOTE_TLS", False)
-    max_msg = _cfg_int("STORAGE_GRPC_MAX_MSG_MB", 64) * 1024 * 1024
+    target = _cfg_str("YTSTORAGE_GRPC_ADDRESS", YTSTORAGE_GRPC_ADDRESS)
+    use_tls = _cfg_bool("YTSTORAGE_GRPC_TLS", bool(YTSTORAGE_GRPC_TLS))
+    max_mb = _cfg_int("YTSTORAGE_GRPC_MAX_MSG_MB", int(YTSTORAGE_GRPC_MAX_MSG_MB))
+    max_msg = int(max_mb) * 1024 * 1024
     opts = [
         ("grpc.max_send_message_length", max_msg),
         ("grpc.max_receive_message_length", max_msg),
@@ -93,7 +101,6 @@ class _AsyncWriter:
 
     async def __aenter__(self):
         async def _producer():
-            # send header first
             header = pb.WriteHeader(
                 path=pb.Path(rel_path=self._path),
                 overwrite=self._overwrite,
@@ -101,7 +108,6 @@ class _AsyncWriter:
                 expected_size=0,
             )
             yield pb.WriteEnvelope(header=header)
-            # then stream chunks from queue
             while True:
                 item = await self._q.get()
                 if item is None:
@@ -144,12 +150,12 @@ class _AsyncWriter:
 class RemoteStorageClient(StorageClient):
     """
     Remote storage provider.
-    Note about_abs(): for remote storage it returns logical abs path with prefix STORAGE_REMOTE_BASE_PREFIX it is not a local FS-path!!
+    Note about_abs(): for remote storage it returns logical abs path with prefix YTSTORAGE_BASE_PREFIX.
     """
     def __init__(self) -> None:
         self._channel = _grpc_channel()
         self._stub = pb_grpc.StorageServiceStub(self._channel)
-        self._base_prefix = _cfg_str("STORAGE_REMOTE_BASE_PREFIX", "")
+        self._base_prefix = _cfg_str("YTSTORAGE_BASE_PREFIX", YTSTORAGE_BASE_PREFIX)
 
     def join(self, base: str, *parts: str) -> str:
         p = "/".join([_norm(base)] + [_norm(x) for x in parts])
@@ -232,9 +238,11 @@ class RemoteStorageClient(StorageClient):
             ),
             metadata=_auth_md(),
         )
+
         async def _aiter():
             async for chunk in stream:
                 yield bytes(chunk.data or b"")
+
         return _aiter()
 
     async def open_writer(self, rel_path: str, overwrite: bool = True, append: bool = False):
