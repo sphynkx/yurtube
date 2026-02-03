@@ -1,77 +1,18 @@
 """
-Build storage client based on three sources (priority order):
-1) Explicit 'kind' argument from main.py
-2) Environment variable (STORAGE_PROVIDER)
-3) Module-level config constants in:
-   - config.ytstorage.ytstorage_remote_cfg
-   - config.ytstorage.ytstorage_cfg
+Storage client builder.
 
-Local storage root is resolved from APP_STORAGE_FS_ROOT
+DEPRECATION NOTICE:
+- Local storage mode and STORAGE_PROVIDER switching are deprecated.
+- The application assumes remote ytstorage gRPC is always used.
 """
-import os
-import importlib
-from typing import Optional
+
 from services.ytstorage.base_srv import StorageClient
-from services.ytstorage.local_srv import LocalStorageClient  # type: ignore
 from services.ytstorage.remote_srv import RemoteStorageClient
 
 
-def _env_str(key: str) -> str:
-    val = os.getenv(key)
-    return val.strip() if isinstance(val, str) else ""
-
-
-def _mod_attr(mod_name: str, attr: str) -> Optional[str]:
-    # Try to import a module and read its top-level variable
-    try:
-        mod = importlib.import_module(mod_name)
-        v = getattr(mod, attr, None)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    except Exception:
-        pass
-    return None
-
-
-def _resolve_backend_kind(kind: str) -> str:
-    # 1. explicit arg
-    if isinstance(kind, str) and kind.strip():
-        return kind.strip().lower()
-
-    # 2. environment
-    sp = _env_str("STORAGE_PROVIDER")
-    if sp:
-        return sp.lower()
-
-    # 3. module-level config constants
-    spm = _mod_attr("config.ytstorage.ytstorage_remote_cfg", "STORAGE_PROVIDER")
-    if spm:
-        return spm.lower()
-
-    # default
-    return "local"
-
-
-def _resolve_local_abs_root() -> str:
-    app_root = _env_str("APP_STORAGE_FS_ROOT")
-    if app_root:
-        return app_root
-
-    app_root_mod = _mod_attr("config.ytstorage.ytstorage_cfg", "APP_STORAGE_FS_ROOT")
-    if app_root_mod:
-        return app_root_mod
-
-    raise RuntimeError("LocalStorageClient requires APP_STORAGE_FS_ROOT")
-
-
-def build_storage_client(kind: str) -> StorageClient:
+def build_storage_client(kind: str = "") -> StorageClient:
     """
-    Returns LocalStorageClient or RemoteStorageClient, based on resolved backend kind.
+    Return RemoteStorageClient unconditionally.
+    The 'kind' argument is ignored and kept only for backward compatibility.
     """
-    k = _resolve_backend_kind(kind)
-
-    if k == "remote":
-        return RemoteStorageClient()
-
-    abs_root = _resolve_local_abs_root()
-    return LocalStorageClient(abs_root=abs_root)
+    return RemoteStorageClient()
