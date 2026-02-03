@@ -14,7 +14,7 @@ Highlights
 
 
 Application is WIP now. Available base functional:
-* Register and authentification - local and SSO (Gmail, X)
+* Register and authentication - local and SSO (Gmail, X)
 * Two video players - custom (fully inspired by Youtube's one) and simple standard.
 * View and embed videos
 * Upload and edit videos:
@@ -35,8 +35,7 @@ Design notes
 
 
 # Base install and config
-For a minimal version with limited functionality, installing this app is sufficient. However, for full functionality, there are separate services with separate repositories:
-
+For a minimal version with limited functionality need to install the main app and [ytstorage](https://github.com/sphynkx/ytstorage) service. Other services are optional. Below is list of all services (they have separate repositories):
 * [ytcms](https://github.com/sphynkx/ytcms) - service for captions generation
 * [ytcms](https://github.com/sphynkx/ytconvert) - service for video conversions
 * [yttrans](https://github.com/sphynkx/yttrans) - service for captions translations
@@ -292,6 +291,18 @@ python3 reindex_all.py
 deactivate
 ```
 
+### Storage system (external)
+This service is required to install. You may install it both same server and separate one. App uses storage abstraction layer and all filesystem operations perform via this service. 
+
+The service allows you to set up various storage configurations - a local folder or S3 storage. See details in [ytstorage repository](https://github.com/sphynkx/ytstorage).
+
+After install need to configure ytstorage params:
+- `STORAGE_REMOTE_ADDRESS` - remote host and port
+- `STORAGE_REMOTE_TLS` - set true to use auth
+- `STORAGE_REMOTE_TOKEN` - set token same as on service side
+
+Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one in `ytstorage` installation. Otherwise you need regenerate proto files.. Just run `gen_proto.sh` in the same dir.
+
 
 ### Video converting service (external)
 This is separate service based on gRPC+protobuf and ffmpeg, allow to convert uploading video into different video/audio formats. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/ytconvert) for details about it's install and configuration.
@@ -359,20 +370,6 @@ Also make sure that file `services/ytsprites/ytsprites_proto/ytsprites.proto` is
 cd services/ytsprites/ytsprites_proto
 ./gen_proto.sh
 ```
-
-
-### Storage system (external)
-This step is optional - by default app uses local `storage/` dir.
-
-App supports storage layer abstraction and allow to use local directory and/or remote service as storage. See details in [ytstorage repository](https://github.com/sphynkx/ytstorage).
-
-After install need to configure ytstorage params:
-- `STORAGE_PROVIDER` - switch to remote service: set it from "local" to "remote" 
-- `STORAGE_REMOTE_ADDRESS` - remote host and port
-- `STORAGE_REMOTE_TLS` - set true to use auth
-- `STORAGE_REMOTE_TOKEN` - set token same as on service side
-
-Check `services/storage/storage_proto/ytstorage.proto`. It must be same as one in `ytstorage` installation. Otherwise you need regenerate proto files.. Just run `gen_proto.sh` in the same dir.
 
 
 ### Admin panel (external)
