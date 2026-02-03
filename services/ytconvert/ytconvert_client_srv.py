@@ -43,15 +43,14 @@ class YtconvertClient:
         *,
         video_id: str,
         idempotency_key: str,
+        source_storage: Dict[str, object],
+        source_rel_path: str,
+        output_storage: Dict[str, object],
+        output_base_rel_dir: str,
         variants: List[Dict[str, object]],
         options: Optional[Dict[str, object]] = None,
         timeout_sec: float = 10.0,
     ) -> ytconvert_pb2.JobAck:
-        """
-        variants: list of dicts with either full spec fields OR just variant_id.
-        This client will send full VariantSpec if provided.
-        """
-        print(f"[DEBUG] Submitting conversion job: video_id={video_id}, variants={variants}")
         vlist: List[ytconvert_pb2.VariantSpec] = []
         for v in variants:
             vlist.append(
@@ -70,18 +69,30 @@ class YtconvertClient:
         req = ytconvert_pb2.SubmitConvertRequest(
             video_id=video_id,
             idempotency_key=idempotency_key,
+            source=ytconvert_pb2.SourceRef(
+                storage=ytconvert_pb2.StorageRef(
+                    address=str(source_storage.get("address") or ""),
+                    tls=bool(source_storage.get("tls") or False),
+                    token=str(source_storage.get("token") or ""),
+                ),
+                rel_path=str(source_rel_path or ""),
+            ),
+            output=ytconvert_pb2.OutputRef(
+                storage=ytconvert_pb2.StorageRef(
+                    address=str(output_storage.get("address") or ""),
+                    tls=bool(output_storage.get("tls") or False),
+                    token=str(output_storage.get("token") or ""),
+                ),
+                base_rel_dir=str(output_base_rel_dir or ""),
+            ),
             variants=vlist,
+            options=None,
         )
 
-        print(f"[DEBUG] Sending SubmitConvertRequest: {req}")
-        return await self.stub.SubmitConvert(req, metadata=self.metadata, timeout=timeout_sec)
+        # options (Struct) are optional; keep it unset to avoid proto-json deps here.
+        # If you later want options, add struct conversion.
 
-    async def upload_source(
-        self,
-        chunks: AsyncIterator[ytconvert_pb2.UploadSourceChunk],
-        timeout_sec: float = 600.0,
-    ) -> ytconvert_pb2.UploadAck:
-        return await self.stub.UploadSource(chunks, metadata=self.metadata, timeout=timeout_sec)
+        return await self.stub.SubmitConvert(req, metadata=self.metadata, timeout=timeout_sec)
 
     async def watch_job(
         self,
@@ -96,21 +107,3 @@ class YtconvertClient:
     async def get_result(self, job_id: str, timeout_sec: float = 30.0) -> ytconvert_pb2.ConvertResult:
         req = ytconvert_pb2.GetResultRequest(job_id=job_id)
         return await self.stub.GetResult(req, metadata=self.metadata, timeout=timeout_sec)
-
-    async def download_result(
-        self,
-        *,
-        job_id: str,
-        variant_id: str,
-        artifact_id: str,
-        offset: int = 0,
-    ) -> AsyncIterator[ytconvert_pb2.DownloadChunk]:
-        req = ytconvert_pb2.DownloadRequest(
-            job_id=job_id,
-            variant_id=variant_id,
-            artifact_id=artifact_id,
-            offset=offset,
-        )
-        stream = self.stub.DownloadResult(req, metadata=self.metadata)
-        async for ch in stream:
-            yield ch

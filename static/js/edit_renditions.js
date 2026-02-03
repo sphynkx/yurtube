@@ -71,7 +71,6 @@
 
       const li = document.createElement("li");
 
-      // checkbox only for ready (as requested)
       if (status === "ready") {
         const cb = document.createElement("input");
         cb.type = "checkbox";
@@ -81,7 +80,6 @@
         cb.addEventListener("change", updateDeleteBtnState);
         li.appendChild(cb);
       } else {
-        // align text roughly
         const pad = document.createElement("span");
         pad.style.display = "inline-block";
         pad.style.width = "22px";
@@ -115,20 +113,17 @@
 
     delBtn.disabled = true;
 
-    // do normal POST navigation OR fetch; fetch is okay because endpoint redirects.
-    // We'll use fetch and then refresh list to avoid full page reload.
     const fd = new FormData();
     fd.append("csrf_token", csrf);
     fd.append("video_id", videoId);
     checked.forEach((v) => fd.append("del_items", v));
 
     try {
-      const r = await fetch("/manage/edit/ytconvert/delete", {
+      await fetch("/manage/edit/ytconvert/delete", {
         method: "POST",
         credentials: "same-origin",
         body: fd,
       });
-      // even if redirect happens, fetch follows; we just refresh the list
       await refreshRenditionsNow();
       setStatus("Deleted");
     } catch (e) {
@@ -318,7 +313,7 @@
     const st = String(job.state || "");
     const pct = Number(job.progress_percent || 0);
     const msg = String(job.message || "");
-    jobLine.textContent = st + (msg ? (" — " + msg) : "");
+    jobLine.textContent = st + " " + Math.max(0, Math.min(100, pct)) + "%" + (msg ? (" — " + msg) : "");
     jobBar.style.width = Math.max(0, Math.min(100, pct)) + "%";
     jobBar.style.background = (st === "FAILED") ? "#c33" : "#2a7";
   }
@@ -333,7 +328,6 @@
       if (st && (st === "DONE" || st === "FAILED" || st === "CANCELED")) {
         clearInterval(pollTimer);
         pollTimer = null;
-        // NEW: refresh list right after completion
         await refreshRenditionsNow();
       }
     }, 2000);
@@ -342,7 +336,6 @@
   btnProbe && btnProbe.addEventListener("click", probe);
   btnQueue && btnQueue.addEventListener("click", queueSelected);
 
-  // initial status render + initial renditions refresh
   (async function init() {
     await refreshRenditionsNow();
 
