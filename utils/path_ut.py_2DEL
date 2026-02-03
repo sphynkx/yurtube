@@ -1,0 +1,25 @@
+import os
+
+## This file will deprecate and will be removed!!
+
+def build_video_storage_dir(root: str, video_id: str) -> str:
+    """
+    DEPRECATED: local filesystem helper. Do not use in remote-only storage mode.
+    """
+    prefix = video_id[:2]
+    return os.path.join(root, prefix, video_id)
+
+
+def build_user_storage_dir(root: str, user_uid: str) -> str:
+    """
+    DEPRECATED: local filesystem helper. Do not use in remote-only storage mode.
+    """
+    return os.path.join(root, "users", user_uid)
+
+
+def safe_remove_storage_relpath(root: str, rel_path: str) -> bool:
+    """
+    REMOVED: local filesystem deletion is not supported in remote-only mode.
+    Use StorageClient.remove(rel_path) instead.
+    """
+    raise RuntimeError("safe_remove_storage_relpath is not supported (remote-only storage). Use StorageClient.remove().")

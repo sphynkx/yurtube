@@ -1,5 +1,6 @@
 import os
 import time
+import tempfile
 from typing import Any, Optional
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
@@ -8,7 +9,6 @@ from fastapi.templating import Jinja2Templates
 
 from config.config import settings
 from services.ffmpeg_srv import generate_image_thumbnail
-from utils.path_ut import build_user_storage_dir, safe_remove_storage_relpath
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 
@@ -19,7 +19,6 @@ from db.account_profile_db import (
     unlink_google_identity_if_possible,
 )
 
-# --- Storage abstraction ---
 from services.ytstorage.base_srv import StorageClient
 
 router = APIRouter()
@@ -27,10 +26,6 @@ templates = Jinja2Templates(directory="templates")
 
 
 def _cache_bust(url: Optional[str]) -> Optional[str]:
-    """
-    Append a timestamp query param to force browsers to reload updated images.
-    Only applied to local paths (starting with "/") to avoid breaking external CDN URLs.
-    """
     if not url:
         return None
     if not url.startswith("/"):
@@ -39,15 +34,28 @@ def _cache_bust(url: Optional[str]) -> Optional[str]:
     return f"{url}{sep}cb={int(time.time())}"
 
 
+async def _write_uploadfile_to_path(upload: UploadFile, dst_abs: str) -> None:
+    with open(dst_abs, "wb") as f:
+        while True:
+            chunk = await upload.read(1024 * 1024)
+            if not chunk:
+                break
+            f.write(chunk)
+
+
+async def _upload_local_file_to_storage(storage: StorageClient, rel_path: str, src_abs: str, overwrite: bool = True) -> None:
+    writer_ctx = await storage.open_writer(rel_path, overwrite=overwrite)
+    async with writer_ctx as w:
+        with open(src_abs, "rb") as f:
+            while True:
+                b = f.read(1024 * 1024)
+                if not b:
+                    break
+                await w.write(b)
+
+
 @router.get("/account", response_class=HTMLResponse)
 async def account_home(request: Request) -> Any:
-    """
-    Account profile page:
-    - Requires authenticated user
-    - Loads avatar asset path
-    - Loads SSO identities (shown when present)
-    - Prepares vars for header (avatar + display name)
-    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
@@ -60,7 +68,6 @@ async def account_home(request: Request) -> Any:
 
     provider = request.cookies.get("yt_authp") or "local"
 
-    # Find first available SSO picture/name (any provider)
     sso_picture = None
     sso_name = None
     for ident in sso_list:
@@ -69,7 +76,6 @@ async def account_home(request: Request) -> Any:
         if not sso_name and (ident.get("display_name") or ident.get("email")):
             sso_name = ident.get("display_name") or ident.get("email")
 
-    # Cookie fallbacks (in case DB identity is not yet visible)
     cookie_pic = request.cookies.get("yt_gpic")
     if not sso_picture and cookie_pic:
         sso_picture = cookie_pic
@@ -102,20 +108,13 @@ async def account_home(request: Request) -> Any:
             "brand_tagline": settings.BRAND_TAGLINE,
             "favicon_url": settings.FAVICON_URL,
             "apple_touch_icon_url": settings.APPLE_TOUCH_ICON_URL,
-            # pass public storage base for templates with fallbacks
-            "storage_public_base_url": getattr(settings, "STORAGE_PUBLIC_BASE_URL", None),
+            "storage_public_base_url": getattr(settings, "YTSTORAGE_PUBLIC_BASE_URL", None),
         },
     )
 
 
 @router.post("/account/profile", response_class=HTMLResponse)
 async def account_profile_update(request: Request, avatar: Optional[UploadFile] = File(None)) -> Any:
-    """
-    Update avatar:
-    - Accepts an image file
-    - Stores original + small thumbnail
-    - Upserts DB record for avatar path
-    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
@@ -126,67 +125,69 @@ async def account_profile_update(request: Request, avatar: Optional[UploadFile] 
     if not avatar.content_type or not avatar.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Invalid avatar file")
 
-    # STORAGE: use StorageClient and relative paths
-    storage_client: StorageClient = request.app.state.storage
-    # build relative user dir: {prefix}/{user_uid}
+    storage: StorageClient = request.app.state.storage
+
     prefix = (user["user_uid"] or "")[:2]
-    user_dir_rel = f"{prefix}/{user['user_uid']}"
-    user_dir_abs = storage_client.to_abs(user_dir_rel)
-    os.makedirs(user_dir_abs, exist_ok=True)
+    user_dir_rel = f"{prefix}/{user['user_uid']}".strip("/")
 
-    original_abs = os.path.join(user_dir_abs, "avatar.png")
-    small_abs = os.path.join(user_dir_abs, "avatar_small.png")
+    # canonical rel paths in ytstorage
+    original_rel = storage.join(user_dir_rel, "avatar.png")
+    small_rel = storage.join(user_dir_rel, "avatar_small.png")
 
-    with open(original_abs, "wb") as f:
-        while True:
-            chunk = await avatar.read(1024 * 1024)
-            if not chunk:
-                break
-            f.write(chunk)
+    # generate thumbnails locally in temp dir, then upload to ytstorage
+    with tempfile.TemporaryDirectory(prefix="yurtube-avatar-") as tmpd:
+        original_abs = os.path.join(tmpd, "avatar.png")
+        small_abs = os.path.join(tmpd, "avatar_small.png")
 
-    generate_image_thumbnail(original_abs, original_abs, 512)
-    generate_image_thumbnail(original_abs, small_abs, 96)
+        await _write_uploadfile_to_path(avatar, original_abs)
 
-    # relative path for DB
-    rel_path = os.path.relpath(original_abs, storage_client.to_abs(""))
+        # normalize/resize
+        generate_image_thumbnail(original_abs, original_abs, 512)
+        generate_image_thumbnail(original_abs, small_abs, 96)
 
-    await save_user_avatar_path(user["user_uid"], rel_path)
+        # ensure remote dir exists
+        await storage.mkdirs(user_dir_rel, exist_ok=True)
+
+        await _upload_local_file_to_storage(storage, original_rel, original_abs, overwrite=True)
+        await _upload_local_file_to_storage(storage, small_rel, small_abs, overwrite=True)
+
+    # store original path in DB (you can also store small if needed later)
+    await save_user_avatar_path(user["user_uid"], original_rel)
 
     return RedirectResponse("/account", status_code=status.HTTP_302_FOUND)
 
 
 @router.post("/account/avatar/delete")
 async def account_avatar_delete(request: Request) -> Any:
-    """
-    Delete current avatar:
-    - Removes DB record
-    - Deletes storage directory for the user
-    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)
 
     await remove_user_avatar_record(user["user_uid"])
 
-    # Use StorageClient for absolute root and relative user dir
-    storage_client: StorageClient = request.app.state.storage
+    storage: StorageClient = request.app.state.storage
     prefix = (user["user_uid"] or "")[:2]
-    rel_user_dir = f"{prefix}/{user['user_uid']}"
-    # safe_remove_storage_relpath expects absolute root + relative path
-    abs_root = storage_client.to_abs("")
-    safe_remove_storage_relpath(abs_root, rel_user_dir)
+    user_dir_rel = f"{prefix}/{user['user_uid']}".strip("/")
+
+    # best-effort delete of files + directory (recursive supported by RemoteStorageClient.remove)
+    try:
+        await storage.remove(storage.join(user_dir_rel, "avatar.png"), recursive=False)  # type: ignore[arg-type]
+    except Exception:
+        pass
+    try:
+        await storage.remove(storage.join(user_dir_rel, "avatar_small.png"), recursive=False)  # type: ignore[arg-type]
+    except Exception:
+        pass
+    try:
+        await storage.remove(user_dir_rel, recursive=True)  # type: ignore[arg-type]
+    except Exception:
+        pass
 
     return RedirectResponse("/account", status_code=status.HTTP_302_FOUND)
 
 
 @router.post("/account/sso/google/unlink")
 async def account_unlink_google(request: Request) -> Any:
-    """
-    Unlink Google identity:
-    - Requires existing Google SSO
-    - Requires local password (prevents losing final login method)
-    - Deletes identity and resets header cookies to local
-    """
     user = get_current_user(request)
     if not user:
         return RedirectResponse("/auth/login", status_code=status.HTTP_302_FOUND)

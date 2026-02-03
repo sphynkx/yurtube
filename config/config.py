@@ -49,14 +49,15 @@ class Settings:
 
     PASSWORD_MIN_SCORE: int = _getenv_int("PASSWORD_MIN_SCORE", 2)
 
-    GOOGLE_OAUTH_DEBUG=1
+    GOOGLE_OAUTH_DEBUG = 1
     GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
     GOOGLE_OAUTH_CLIENT_SECRET = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
     GOOGLE_OAUTH_REDIRECT_URL = os.getenv("GOOGLE_OAUTH_REDIRECT_URL", "")
     GOOGLE_ALLOWED_DOMAINS = os.getenv("GOOGLE_ALLOWED_DOMAINS", "")
 
-    APP_STORAGE_FS_ROOT: str = _getenv_required("APP_STORAGE_FS_ROOT")
-    STORAGE_PUBLIC_BASE_URL: Optional[str] = os.getenv("STORAGE_PUBLIC_BASE_URL", None)
+    # Remote-only storage: no local fs root.
+    # Optional public base URL (if you ever decide to serve storage directly, otherwise unused).
+    YTSTORAGE_PUBLIC_BASE_URL: Optional[str] = os.getenv("YTSTORAGE_PUBLIC_BASE_URL", None)
 
     BASE_URL: Optional[str] = os.getenv("BASE_URL", None)
     DEBUG: bool = _getenv_bool("DEBUG", False)
@@ -72,13 +73,11 @@ class Settings:
     EMBED_DEFAULT_LOOP: int = _getenv_int("EMBED_DEFAULT_LOOP", 0)
     VIDEO_PLAYER: str = os.getenv("VIDEO_PLAYER", "yurtube").strip() or "yurtube"
 
-    # Fallback placeholder for not-found videos (static/anim. images).
     FALLBACK_PLACEHOLDER_URL: str = os.getenv(
         "FALLBACK_PLACEHOLDER_URL",
         "static/img/fallback_video_notfound.gif",
     )
 
-    # Brand/Sitename/Email assets
     BRAND_LOGO_URL: str = os.getenv("BRAND_LOGO_URL", "/static/img/YT_long.png")
     FAVICON_URL: str = os.getenv("FAVICON_URL", "/static/img/YT_fav32.png")
     APPLE_TOUCH_ICON_URL: str = os.getenv("APPLE_TOUCH_ICON_URL", "/static/img/YT_fav128.png")
@@ -86,7 +85,6 @@ class Settings:
     SITENAME: str = os.getenv("SITENAME", "Yurtube_DEV")
     SUPPORT_EMAIL: str = os.getenv("SUPPORT_EMAIL", "support@example.com")
 
-    # Right-bar recommendations (tunable; safe defaults)
     RIGHTBAR_ENABLED: bool = _getenv_bool("RIGHTBAR_ENABLED", True)
     RIGHTBAR_LIMIT: int = _getenv_int("RIGHTBAR_LIMIT", 10)
     RIGHTBAR_TAU_DAYS: int = _getenv_int("RIGHTBAR_TAU_DAYS", 7)
@@ -94,7 +92,6 @@ class Settings:
     RIGHTBAR_MAX_SAME_AUTHOR_TOP10: int = _getenv_int("RIGHTBAR_MAX_SAME_AUTHOR_TOP10", 3)
     RIGHTBAR_MAX_SAME_CATEGORY_TOP10: int = _getenv_int("RIGHTBAR_MAX_SAME_CATEGORY_TOP10", 6)
 
-    # Twitter OAuth 2.0
     TWITTER_OAUTH_CLIENT_ID: str = os.getenv("TWITTER_OAUTH_CLIENT_ID", "")
     TWITTER_OAUTH_CLIENT_SECRET: str = os.getenv("TWITTER_OAUTH_CLIENT_SECRET", "")
     TWITTER_OAUTH_REDIRECT_URL: str = os.getenv("TWITTER_OAUTH_REDIRECT_URL", "")
@@ -102,14 +99,11 @@ class Settings:
     TWITTER_OAUTH_DEBUG: bool = _getenv_bool("TWITTER_OAUTH_DEBUG", False)
     TWITTER_ENABLE_OIDC: bool = _getenv_bool("TWITTER_ENABLE_OIDC", False)
 
-    # Optional pseudo-email when provider does not supply email
     TWITTER_ALLOW_PSEUDO_EMAIL: bool = _getenv_bool("TWITTER_ALLOW_PSEUDO_EMAIL", True)
     PSEUDO_EMAIL_DOMAIN: str = os.getenv("PSEUDO_EMAIL_DOMAIN", "twitter.local")
 
-    # Auto-linking policy
     AUTO_LINK_GOOGLE_BY_EMAIL: bool = _getenv_bool("AUTO_LINK_GOOGLE_BY_EMAIL", True)
 
-    # Sprites control for video upload process
     AUTO_SPRITES_ENABLED = True
     AUTO_SPRITES_MIN_DURATION = 3
 
@@ -117,15 +111,11 @@ class Settings:
     AUTO_CAPTIONS_ENABLED = False
     AUTO_CAPTIONS_LANG = "auto"
 
-    # Comments service integration
     YTCOMMENTS_ENABLED: bool = _getenv_bool("YTCOMMENTS_ENABLED", False)
-    # transport: "local" (legacy direct DB), "grpc" (external service)
     YTCOMMENTS_TRANSPORT: str = os.getenv("YTCOMMENTS_TRANSPORT", "local").strip() or "local"
-    # gRPC target (host:port)
     YTCOMMENTS_ADDR: str = os.getenv("YTCOMMENTS_ADDR", "127.0.0.1:9093")
-    # optional TLS enablement for gRPC
     YTCOMMENTS_TLS_ENABLED: bool = _getenv_bool("YTCOMMENTS_TLS_ENABLED", False)
-    # timeouts (ms)
     YTCOMMENTS_TIMEOUT_MS: int = _getenv_int("YTCOMMENTS_TIMEOUT_MS", 3000)
+
 
 settings = Settings()
