@@ -1,7 +1,7 @@
 import os
 import time
 import grpc
-from typing import Optional, Tuple, Callable, Any, Dict, List
+from typing import Optional, Tuple, Any, Dict, List
 
 from grpc_health.v1 import health_pb2, health_pb2_grpc  # type: ignore
 
@@ -10,7 +10,6 @@ from config.ytcms.ytcms_cfg import (
     YTCMS_TOKEN,
     YTCMS_DEFAULT_LANG,
     YTCMS_DEFAULT_TASK,
-    YTCMS_POLL_INTERVAL,
     YTCMS_SUBMIT_TIMEOUT,
     YTCMS_STATUS_TIMEOUT,
     YTCMS_RESULT_TIMEOUT,
@@ -58,7 +57,7 @@ def _healthcheck_addr(addr: str) -> bool:
             resp2 = stub.Check(
                 health_pb2.HealthCheckRequest(service=""),
                 metadata=md,
-                timeout=_YTCMS_HEALTH_TIMEOUT_SEC,
+               timeout=_YTCMS_HEALTH_TIMEOUT_SEC,
             )
             return resp2.status == health_pb2.HealthCheckResponse.SERVING
         except Exception:
@@ -98,31 +97,24 @@ def pick_ytcms_server_addr() -> str:
     return addr0
 
 
-def submit_storage_job_and_wait(
+def submit_storage_job(
     *,
     video_id: str,
-    source_rel_path: str,
-    output_base_rel_dir: str,
+    storage_rel: str,
     lang: Optional[str] = None,
     task: Optional[str] = None,
     idempotency_key: Optional[str] = None,
-    poll_interval: float = YTCMS_POLL_INTERVAL,
     submit_timeout: float = YTCMS_SUBMIT_TIMEOUT,
-    status_timeout: float = YTCMS_STATUS_TIMEOUT,
-    result_timeout: float = YTCMS_RESULT_TIMEOUT,
-    on_status: Optional[Callable[[str, str, str, int], None]] = None,
-) -> Tuple[ytcms_pb2.JobResult, str]:
-    """
-    Storage-driven workflow:
-    - SubmitJob(video_id, source storage ref+rel_path, output base dir)
-    - WatchJob updates -> on_status(video_id, job_id, state_name, percent)
-    - GetResult returns storage paths to vtt/meta
-    Returns (result, job_server_addr)
-    """
+) -> Tuple[str, str]:
     addr = pick_ytcms_server_addr()
-    lang = (lang or YTCMS_DEFAULT_LANG).strip() or "auto"
-    task = (task or YTCMS_DEFAULT_TASK).strip() or "transcribe"
-    idem = (idempotency_key or f"yurtube:{video_id}:{task}:{lang}:{source_rel_path}").strip()
+    lang2 = (lang or YTCMS_DEFAULT_LANG).strip() or "auto"
+    task2 = (task or YTCMS_DEFAULT_TASK).strip() or "transcribe"
+
+    storage_rel_n = (storage_rel or "").replace("\\", "/").strip().lstrip("/")
+    source_rel_path = f"{storage_rel_n}/original.webm"
+    output_base_rel_dir = f"{storage_rel_n}/captions"
+
+    idem = (idempotency_key or f"yurtube:{video_id}:{task2}:{lang2}:{source_rel_path}").strip()
 
     md = _auth_md()
     channel = grpc.insecure_channel(addr)
@@ -132,17 +124,17 @@ def submit_storage_job_and_wait(
         req = ytcms_pb2.SubmitJobRequest(
             video_id=video_id,
             idempotency_key=idem,
-            lang=lang,
-            task=task,
+            lang=lang2,
+            task=task2,
             source=ytcms_pb2.SourceRef(
                 storage=ytcms_pb2.StorageRef(
                     address=str(YTSTORAGE_GRPC_ADDRESS),
                     tls=bool(YTSTORAGE_GRPC_TLS),
                     token=str(YTSTORAGE_GRPC_TOKEN or ""),
                 ),
-                rel_path=source_rel_path.lstrip("/"),
+                rel_path=source_rel_path,
                 mime="video/webm",
-                filename=os.path.basename(source_rel_path) or "original.webm",
+                filename="original.webm",
             ),
             output=ytcms_pb2.OutputRef(
                 storage=ytcms_pb2.StorageRef(
@@ -150,45 +142,91 @@ def submit_storage_job_and_wait(
                     tls=bool(YTSTORAGE_GRPC_TLS),
                     token=str(YTSTORAGE_GRPC_TOKEN or ""),
                 ),
-                base_rel_dir=output_base_rel_dir.lstrip("/"),
+                base_rel_dir=output_base_rel_dir,
             ),
         )
 
         ack = stub.SubmitJob(req, metadata=md, timeout=submit_timeout)
         if not ack.accepted:
             raise RuntimeError(f"Submit rejected: {ack.message}")
+        if not ack.job_id:
+            raise RuntimeError("Submit returned empty job_id")
 
-        job_id = ack.job_id
-
-        def _emit(state_name: str, percent: int):
-            try:
-                if on_status:
-                    on_status(video_id, job_id, state_name, int(percent))
-            except Exception:
-                pass
-
-        # watch until final
-        watch_req = ytcms_pb2.WatchJobRequest(job_id=job_id, send_initial=True)
-        last_state = ""
-        last_percent = -1
-        for ev in stub.WatchJob(watch_req, metadata=md, timeout=status_timeout):
-            st = ev.status
-            if not st or not st.job_id:
-                continue
-            state_name = ytcms_pb2.JobStatus.State.Name(st.state)
-            pct = int(st.percent or 0)
-
-            if state_name != last_state or pct != last_percent:
-                _emit(state_name, pct)
-                last_state, last_percent = state_name, pct
-
-            if st.state in (ytcms_pb2.JobStatus.DONE, ytcms_pb2.JobStatus.FAILED, ytcms_pb2.JobStatus.CANCELED):
-                break
-
-        res = stub.GetResult(ytcms_pb2.GetResultRequest(job_id=job_id), metadata=md, timeout=result_timeout)
-        return res, addr
+        return ack.job_id, addr
     finally:
         try:
             channel.close()
         except Exception:
             pass
+
+
+def get_status(*, job_id: str, server_addr: str, timeout: float = YTCMS_STATUS_TIMEOUT) -> ytcms_pb2.JobStatus:
+    md = _auth_md()
+    channel = grpc.insecure_channel(server_addr)
+    stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
+    try:
+        rep = stub.GetStatus(ytcms_pb2.GetStatusRequest(job_id=job_id), metadata=md, timeout=timeout)
+        return rep.status
+    finally:
+        try:
+            channel.close()
+        except Exception:
+            pass
+
+
+def get_result(*, job_id: str, server_addr: str, timeout: float = YTCMS_RESULT_TIMEOUT) -> ytcms_pb2.JobResult:
+    md = _auth_md()
+    channel = grpc.insecure_channel(server_addr)
+    stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
+    try:
+        return stub.GetResult(ytcms_pb2.GetResultRequest(job_id=job_id), metadata=md, timeout=timeout)
+    finally:
+        try:
+            channel.close()
+        except Exception:
+            pass
+
+
+def delete_captions(*, storage_rel: str, server_addr: Optional[str] = None, timeout: float = 30.0) -> None:
+    addr = server_addr or pick_ytcms_server_addr()
+    md = _auth_md()
+    channel = grpc.insecure_channel(addr)
+    stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
+
+    storage_rel_n = (storage_rel or "").replace("\\", "/").strip().lstrip("/")
+    try:
+        rep = stub.DeleteCaptions(
+            ytcms_pb2.DeleteCaptionsRequest(
+                storage=ytcms_pb2.StorageRef(
+                    address=str(YTSTORAGE_GRPC_ADDRESS),
+                    tls=bool(YTSTORAGE_GRPC_TLS),
+                    token=str(YTSTORAGE_GRPC_TOKEN or ""),
+                ),
+                storage_rel=storage_rel_n,
+            ),
+            metadata=md,
+            timeout=timeout,
+        )
+        if not rep.ok:
+            raise RuntimeError(rep.message or "DeleteCaptions failed")
+    finally:
+        try:
+            channel.close()
+        except Exception:
+            pass
+
+
+def poll_until_done(
+    *,
+    job_id: str,
+    server_addr: str,
+    timeout_sec: float = 600.0,
+    poll_interval_sec: float = 1.0,
+) -> ytcms_pb2.JobResult:
+    deadline = time.time() + float(timeout_sec)
+    while time.time() < deadline:
+        st = get_status(job_id=job_id, server_addr=server_addr)
+        if st.state in (st.DONE, st.FAILED, st.CANCELED):
+            break
+        time.sleep(float(poll_interval_sec))
+    return get_result(job_id=job_id, server_addr=server_addr)

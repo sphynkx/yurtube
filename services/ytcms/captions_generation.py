@@ -1,68 +1,62 @@
-import os
-import json
-import asyncio
-from typing import Tuple, Dict, Optional, Callable
+from __future__ import annotations
 
-from services.ytcms.ytcms_client_srv import submit_storage_job_and_wait
+from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
+
+from services.ytcms.ytcms_client_srv import submit_storage_job, poll_until_done
+from services.ytcms.ytcms_proto import ytcms_pb2
 
 
-async def generate_captions_storage_driven(
+async def generate_captions(
     *,
     video_id: str,
     storage_rel: str,
+    src_path: str | None = None,  # kept for backward-compat signature; ignored in storage-driven flow
     lang: str = "auto",
-    task: str = "transcribe",
-    on_status: Optional[Callable[[str, str, str, int, float], None]] = None,
-) -> Tuple[str, Dict]:
+    on_status: Optional[Callable[[str, str, str, int, float], Any]] = None,
+    storage_client: Any = None,  # kept; not used
+) -> Tuple[str, Dict[str, Any]]:
     """
-    Storage-driven captions generation:
-    - SubmitJob with source=storage_rel/original.webm
-    - Service writes outputs into {storage_rel}/captions/
-    Returns (vtt_rel_path, meta_dict)
+    Backward-compatible wrapper used by old routes.
+
+    New behavior:
+    - Submit job by storage path (storage_rel/original.webm)
+    - Poll until done
+    - Return (vtt_rel_path, meta_dict)
     """
-    loop = asyncio.get_running_loop()
+    job_id, job_server = submit_storage_job(video_id=video_id, storage_rel=storage_rel, lang=lang, task="transcribe")
 
-    source_rel = os.path.join(storage_rel, "original.webm").replace("\\", "/").lstrip("/")
-    out_base = os.path.join(storage_rel, "captions").replace("\\", "/").lstrip("/")
+    if on_status:
+        try:
+            on_status(video_id, job_id, "queued", -1, -1.0)
+        except Exception:
+            pass
 
-    def _on_status_bridge(video_id2: str, job_id: str, state: str, percent: int) -> None:
-        if on_status:
-            # keep old signature: (video_id, job_id, status, percent, progress)
-            # progress isn't available from new API (percent is).
-            on_status(video_id2, job_id, state, int(percent), float(percent) / 100.0 if percent >= 0 else -1.0)
+    res = poll_until_done(job_id=job_id, server_addr=job_server)
 
-    res, job_server = await loop.run_in_executor(
-        None,
-        lambda: submit_storage_job_and_wait(
-            video_id=video_id,
-            source_rel_path=source_rel,
-            output_base_rel_dir=out_base,
-            lang=lang,
-            task=task,
-            on_status=_on_status_bridge,
-        ),
-    )
+    # Normalize result
+    state_name = ytcms_pb2.JobStatus.State.Name(res.state) if hasattr(ytcms_pb2.JobStatus, "State") else str(res.state)
 
-    if res.state != res.DONE:
-        msg = res.message or (res.error.message if res.error else "") or "ytcms failed"
-        raise RuntimeError(msg)
-
-    vtt_rel = (res.vtt_rel_path or "").lstrip("/")
-    meta_rel = (res.meta_rel_path or "").lstrip("/")
-
-    meta: Dict = {
-        "video_id": video_id,
-        "lang": res.detected_lang or lang,
-        "model": res.model or None,
-        "device": res.device or None,
-        "compute_type": res.compute_type or None,
-        "duration_sec": float(res.duration_sec or 0.0),
-        "task": res.task or task,
+    meta: Dict[str, Any] = {
+        "job_id": job_id,
         "job_server": job_server,
-        "job_id": None,  # optional: service could include it in meta; keep for compatibility
-        "vtt_rel_path": vtt_rel,
-        "meta_rel_path": meta_rel,
-        "source": "ytcms",
+        "state": state_name,
+        "lang": getattr(res, "detected_lang", "") or lang,
+        "task": getattr(res, "task", "") or "transcribe",
+        "model": getattr(res, "model", "") or "",
+        "device": getattr(res, "device", "") or "",
+        "compute_type": getattr(res, "compute_type", "") or "",
+        "duration_sec": float(getattr(res, "duration_sec", 0.0) or 0.0),
+        "meta_rel_path": getattr(res, "meta_rel_path", "") or "",
     }
+
+    vtt_rel = getattr(res, "vtt_rel_path", "") or ""
+    if not vtt_rel:
+        raise RuntimeError(f"ytcms_result_missing_vtt: state={state_name}")
+
+    if on_status:
+        try:
+            on_status(video_id, job_id, "done" if state_name == "DONE" else "fail", 100 if state_name == "DONE" else -1, 1.0)
+        except Exception:
+            pass
 
     return vtt_rel, meta
