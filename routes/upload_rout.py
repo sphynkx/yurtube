@@ -29,9 +29,10 @@ from db.videos_db import (
 from db.ytconvert.ytconvert_jobs_db import create_ytconvert_job
 from db.ytsprites.ytsprites_db import fetch_video_storage_path
 from db.comments.root_db import delete_all_comments_for_video
-from db.captions_db import set_video_captions
+from db.ytcms.captions_db import set_video_captions
 
-from services.ytcms.captions_generation import generate_captions
+## Deprecated:
+##from services.ytcms.captions_generation import generate_captions
 from services.ytsprites.ytsprites_client_srv import create_job_storage_driven, watch_status, get_result, create_thumbnails_job
 from services.ffmpeg_srv import (
     async_generate_thumbnails,

@@ -22,7 +22,7 @@ from db.ytsprites.ytsprites_db import (
     reset_thumbnails_state,
 )
 from db.videos_db import get_owned_video
-from db.captions_db import get_video_captions_status
+from db.ytcms.captions_db import get_video_captions_status
 from services.ytsprites.ytsprites_client_srv import (
     create_job_storage_driven,
     watch_status,

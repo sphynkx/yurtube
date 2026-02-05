@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Generate stubs from captions.proto
-# Make sure that captions.proto is identical to one from ytcms service!!
+# Generate stubs from ytcms.proto
+# Make sure that ytcms.proto is identical to one from ytcms service!!
 
 cd "$(dirname "$0")"
 
@@ -12,6 +12,8 @@ python -m grpc_tools.protoc \
   -I . \
   --python_out=. \
   --grpc_python_out=. \
-  captions.proto
+  ytcms.proto
 
-echo "Generated: captions_pb2.py captions_pb2_grpc.py in $(pwd)"
+sed -i 's/^import ytcms_pb2 as ytcms__pb2/from . import ytcms_pb2 as ytcms__pb2/' ytcms_pb2_grpc.py
+
+echo "Generated: ytcms_pb2.py ytcms_pb2_grpc.py in $(pwd)"

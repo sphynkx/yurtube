@@ -98,7 +98,7 @@ class YTCMSConfig:
     status_timeout: float = float(os.getenv("YTCMS_STATUS_TIMEOUT", "30.0"))
     result_timeout: float = float(os.getenv("YTCMS_RESULT_TIMEOUT", "30.0"))
 
-
+## Will be deprecated (in order to modify service logic to direct work with storage)!!
 # Audio pre-processing before sending to service:
 # Dont send full video  - audio only. Good for big videos..
 # YTCMS_AUDIO_PREPROCESS: enable feature | stream copy | recode to low format (off | demux | transcode)
