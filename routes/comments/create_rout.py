@@ -6,11 +6,11 @@ from utils.security_ut import get_current_user
 from db import get_conn, release_conn
 from db.videos_db import get_video
 from db.users_db import get_user_by_uid
-from services.comments.comment_create_srv import create_comment
+
+from services.ytcomments.client_srv import get_ytcomments_client, UserContext
 
 # Notifications publish
 from services.notifications.events_pub import publish
-from db.comments.mongo_conn import root_coll
 
 router = APIRouter(prefix="/comments", tags=["comments"])
 
@@ -40,40 +40,54 @@ async def create_comment_api(request: Request, data: CreateCommentIn) -> Dict[st
     if not vrow:
         raise HTTPException(status_code=404, detail="video_not_found")
 
-    enriched_user: Dict[str, Any] = {"user_uid": current_uid}
+    username = ""
     if user_row and user_row.get("username"):
-        enriched_user["username"] = user_row["username"]
+        username = str(user_row["username"] or "")
 
-    res = await create_comment(
-        data.video_id,
-        enriched_user,
-        data.text,
-        data.parent_id,
+    # TODO: if you have channel_id in user profile, pass it here too
+    ctx = UserContext(
+        user_uid=current_uid,
+        username=username or None,
+        channel_id=None,
+        ip=(request.client.host if request.client else None),
+        user_agent=str(request.headers.get("user-agent") or "") or None,
     )
-    if isinstance(res, dict) and "error" in res:
-        raise HTTPException(status_code=400, detail=res)
 
+    client = get_ytcomments_client()
+    dto = await client.create_comment(
+        video_id=data.video_id,
+        text=data.text,
+        parent_id=data.parent_id or "",
+        ctx=ctx,
+        idempotency_key="",  # can be wired from frontend later
+    )
+    if not dto:
+        raise HTTPException(status_code=502, detail="ytcomments_create_failed")
+
+    # Publish notification event (best-effort)
     try:
-        comment_id = res.get("comment_id")
-        parent_author_uid = None
-        if data.parent_id:
-            root = await root_coll().find_one({"video_id": data.video_id})
-            if root and isinstance(root.get("comments"), dict):
-                pmeta = root["comments"].get(data.parent_id)
-                if pmeta and isinstance(pmeta, dict):
-                    parent_author_uid = pmeta.get("author_uid")
-
         publish(
             "comment.created",
             {
                 "video_id": data.video_id,
-                "comment_id": comment_id,
+                "comment_id": dto.id,
                 "actor_uid": current_uid,
-                "parent_comment_author_uid": parent_author_uid,
+                "parent_comment_author_uid": None,  # no direct lookup without extra RPC
                 "text_preview": (data.text or "")[:160],
             },
         )
     except Exception:
         pass
 
-    return res
+    # Response format: keep it simple and compatible with old code
+    return {
+        "ok": True,
+        "comment_id": dto.id,
+        "video_id": dto.video_id,
+        "parent_id": dto.parent_id,
+        "text": dto.content_raw,
+        "created_at": dto.created_at_ms,
+        "updated_at": dto.updated_at_ms,
+        "author_uid": dto.user_uid,
+        "author_name": dto.username or dto.channel_id or "",
+    }

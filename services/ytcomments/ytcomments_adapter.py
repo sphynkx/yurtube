@@ -85,6 +85,7 @@ async def _fetch_via_service(video_id: str, page_size_top: int, sort_top: str, i
 
         ##print(f"ytcomments_adapter: calling client.list_replies parent={parent_id} depth={depth}")
         rep_page = await client.list_replies(
+            video_id=video_id,   # <-- NEW
             parent_id=parent_id,
             page_size=500,
             page_token="",

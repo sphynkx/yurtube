@@ -1,7 +1,7 @@
 import asyncio
 import json
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Literal
+from typing import Dict, List, Optional, Literal
 import logging
 
 from config.config import settings
@@ -74,32 +74,42 @@ class GrpcCommentsClient:
         if self._channel and self._stub:
             return
 
-        # Keepalive + Retry policy
         options = [
-            ('grpc.keepalive_time_ms', 60000),
-            ('grpc.keepalive_timeout_ms', 20000),
-            ('grpc.keepalive_permit_without_calls', 1),
-            ('grpc.http2.min_time_between_pings_ms', 300000),
-            ('grpc.http2.max_pings_without_data', 0),
-            ('grpc.service_config', json.dumps({
-                "methodConfig": [{
-                    "name": [{"service": "ytcomments.v1.YtComments"}],
-                    "retryPolicy": {
-                        "maxAttempts": 5,
-                        "initialBackoff": "0.5s",
-                        "maxBackoff": "5s",
-                        "backoffMultiplier": 2.0,
-                        "retryableStatusCodes": ["UNAVAILABLE", "DEADLINE_EXCEEDED"]
+            ("grpc.keepalive_time_ms", 300000),
+            ("grpc.keepalive_timeout_ms", 20000),
+            ("grpc.keepalive_permit_without_calls", 0),
+            ("grpc.http2.min_time_between_pings_ms", 300000),
+            ("grpc.http2.min_ping_interval_without_data_ms", 300000),
+            ("grpc.http2.max_pings_without_data", 0),
+            ("grpc.max_receive_message_length", 50 * 1024 * 1024),
+            ("grpc.max_send_message_length", 50 * 1024 * 1024),
+            (
+                "grpc.service_config",
+                json.dumps(
+                    {
+                        "methodConfig": [
+                            {
+                                "name": [{"service": "ytcomments.v1.YtComments"}],
+                                "retryPolicy": {
+                                    "maxAttempts": 5,
+                                    "initialBackoff": "0.5s",
+                                    "maxBackoff": "5s",
+                                    "backoffMultiplier": 2.0,
+                                    "retryableStatusCodes": ["UNAVAILABLE", "DEADLINE_EXCEEDED"],
+                                },
+                            }
+                        ]
                     }
-                }]
-            }))
+                ),
+            ),
         ]
 
         if self._tls_enabled:
             creds = grpc.ssl_channel_credentials()  # type: ignore
-            self._channel = grpc.aio.secure_channel(self._target, creds)  # type: ignore
+            self._channel = grpc.aio.secure_channel(self._target, creds, options=options)  # type: ignore
         else:
-            self._channel = grpc.aio.insecure_channel(self._target)  # type: ignore
+            self._channel = grpc.aio.insecure_channel(self._target, options=options)  # type: ignore
+
         self._stub = pbg.YtCommentsStub(self._channel)  # type: ignore
         log.info("client: channel opened to %s", self._target)
         print(f"ytcomments_client: channel opened to {self._target}")
@@ -154,6 +164,7 @@ class GrpcCommentsClient:
         except Exception as e:
             print(f"ytcomments_client: ensure failed in list_top: {e}")
             return ListPage(items=[], next_page_token="", total_count=0)
+
         req = pb.ListTopRequest(  # type: ignore
             video_id=video_id,
             page_size=int(page_size),
@@ -168,11 +179,13 @@ class GrpcCommentsClient:
         except Exception as e:
             print(f"ytcomments_client: ListTop failed: {e}")
             return ListPage(items=[], next_page_token="", total_count=0)
+
         items = [self._to_dto(c) for c in res.items]
         return ListPage(items=items, next_page_token=res.next_page_token or "", total_count=int(res.total_count))
 
     async def list_replies(
         self,
+        video_id: str,
         parent_id: str,
         page_size: int = 50,
         page_token: str = "",
@@ -185,7 +198,9 @@ class GrpcCommentsClient:
         except Exception as e:
             print(f"ytcomments_client: ensure failed in list_replies: {e}")
             return ListPage(items=[], next_page_token="", total_count=0)
+
         req = pb.ListRepliesRequest(  # type: ignore
+            video_id=video_id,
             parent_id=parent_id,
             page_size=int(page_size),
             page_token=page_token or "",
@@ -199,8 +214,98 @@ class GrpcCommentsClient:
         except Exception as e:
             print(f"ytcomments_client: ListReplies failed: {e}")
             return ListPage(items=[], next_page_token="", total_count=0)
+
         items = [self._to_dto(c) for c in res.items]
         return ListPage(items=items, next_page_token=res.next_page_token or "", total_count=int(res.total_count))
+
+    async def create_comment(
+        self,
+        video_id: str,
+        text: str,
+        parent_id: str = "",
+        ctx: Optional[UserContext] = None,
+        idempotency_key: str = "",
+    ) -> Optional[CommentDTO]:
+        try:
+            await self._ensure()
+        except Exception as e:
+            print(f"ytcomments_client: ensure failed in create_comment: {e}")
+            return None
+
+        req = pb.CreateCommentRequest(  # type: ignore
+            video_id=video_id,
+            parent_id=parent_id or "",
+            content_raw=text or "",
+            idempotency_key=idempotency_key or "",
+            ctx=self._ctx_to_pb(ctx),
+        )
+        try:
+            print("ytcomments_client: invoking Create")
+            res = await asyncio.wait_for(self._stub.Create(req), timeout=self._timeout / 1000.0)  # type: ignore
+            if not res or not getattr(res, "comment", None):
+                return None
+            return self._to_dto(res.comment)
+        except Exception as e:
+            print(f"ytcomments_client: Create failed: {e}")
+            return None
+
+    async def edit_comment(
+        self,
+        video_id: str,
+        comment_id: str,
+        text: str,
+        ctx: Optional[UserContext] = None,
+    ) -> Optional[CommentDTO]:
+        try:
+            await self._ensure()
+        except Exception as e:
+            print(f"ytcomments_client: ensure failed in edit_comment: {e}")
+            return None
+
+        req = pb.EditCommentRequest(  # type: ignore
+            video_id=video_id,
+            comment_id=comment_id,
+            content_raw=text or "",
+            ctx=self._ctx_to_pb(ctx),
+        )
+        try:
+            print("ytcomments_client: invoking Edit")
+            res = await asyncio.wait_for(self._stub.Edit(req), timeout=self._timeout / 1000.0)  # type: ignore
+            if not res or not getattr(res, "comment", None):
+                return None
+            return self._to_dto(res.comment)
+        except Exception as e:
+            print(f"ytcomments_client: Edit failed: {e}")
+            return None
+
+    async def delete_comment(
+        self,
+        video_id: str,
+        comment_id: str,
+        hard_delete: bool = False,
+        ctx: Optional[UserContext] = None,
+    ) -> Optional[CommentDTO]:
+        try:
+            await self._ensure()
+        except Exception as e:
+            print(f"ytcomments_client: ensure failed in delete_comment: {e}")
+            return None
+
+        req = pb.DeleteCommentRequest(  # type: ignore
+            video_id=video_id,
+            comment_id=comment_id,
+            hard_delete=bool(hard_delete),
+            ctx=self._ctx_to_pb(ctx),
+        )
+        try:
+            print("ytcomments_client: invoking Delete")
+            res = await asyncio.wait_for(self._stub.Delete(req), timeout=self._timeout / 1000.0)  # type: ignore
+            if not res or not getattr(res, "comment", None):
+                return None
+            return self._to_dto(res.comment)
+        except Exception as e:
+            print(f"ytcomments_client: Delete failed: {e}")
+            return None
 
     async def get_counts(self, video_id: str, ctx: Optional[UserContext] = None) -> Dict[str, int]:
         try:
@@ -208,6 +313,7 @@ class GrpcCommentsClient:
         except Exception as e:
             print(f"ytcomments_client: ensure failed in get_counts: {e}")
             return {"top_level_count": 0, "total_count": 0}
+
         req = pb.GetCountsRequest(video_id=video_id, ctx=self._ctx_to_pb(ctx))  # type: ignore
         try:
             print("ytcomments_client: invoking GetCounts")
@@ -215,10 +321,42 @@ class GrpcCommentsClient:
         except Exception as e:
             print(f"ytcomments_client: GetCounts failed: {e}")
             return {"top_level_count": 0, "total_count": 0}
+
         return {"top_level_count": int(res.top_level_count), "total_count": int(res.total_count)}
 
+    async def vote(
+        self,
+        video_id: str,
+        comment_id: str,
+        vote: int,
+        ctx: Optional[UserContext] = None,
+    ) -> Optional[Dict[str, int]]:
+        try:
+            await self._ensure()
+        except Exception as e:
+            print(f"ytcomments_client: ensure failed in vote: {e}")
+            return None
+
+        req = pb.VoteRequest(  # type: ignore
+            video_id=video_id,
+            comment_id=comment_id,
+            vote=int(vote),
+            ctx=self._ctx_to_pb(ctx),
+        )
+        try:
+            print("ytcomments_client: invoking Vote")
+            res = await asyncio.wait_for(self._stub.Vote(req), timeout=self._timeout / 1000.0)  # type: ignore
+            return {
+                "likes": int(res.likes),
+                "dislikes": int(res.dislikes),
+                "my_vote": int(res.my_vote),
+            }
+        except Exception as e:
+            print(f"ytcomments_client: Vote failed: {e}")
+            return None
 
 _client_singleton: Optional[GrpcCommentsClient] = None
+
 
 def get_ytcomments_client() -> GrpcCommentsClient:
     global _client_singleton
