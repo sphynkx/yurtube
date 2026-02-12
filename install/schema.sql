@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS videos (
     license              TEXT    NOT NULL DEFAULT 'standard',
     thumb_pref_offset    INTEGER NOT NULL DEFAULT 0 CHECK (thumb_pref_offset >= 0),
     comments_enabled     BOOLEAN NOT NULL DEFAULT TRUE,
-    comments_root_doc_id TEXT NULL,
+    comments_root_doc_id TEXT NULL, -- not used (legacy/deprecated)
     thumbnails_ready    BOOLEAN NOT NULL DEFAULT FALSE,
     captions_vtt         TEXT NULL,
     captions_lang        VARCHAR(8) NULL,
