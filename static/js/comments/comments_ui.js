@@ -85,13 +85,17 @@
       const dislike = e.target.closest('.btn-dislike');
       const btn = like || dislike; if (!btn) return;
       const cid = btn.dataset.cid; if (!cid) return;
+
+      // NEW: prefer per-comment video_id (set by tree renderer), fallback to page videoId
+      const vid = btn.dataset.videoId || videoId;
+
       const isLike = !!like;
       const otherSel = isLike ? '.btn-dislike' : '.btn-like';
       const other = btn.parentElement.querySelector(`${otherSel}[data-cid="${cid}"]`);
       const wasActive = btn.classList.contains('active');
       const want = wasActive ? 0 : (isLike ? 1 : -1);
       try{
-        const res = await CommentsAPI.vote({ video_id: videoId, comment_id: cid, vote: want });
+        const res = await CommentsAPI.vote({ video_id: vid, comment_id: cid, vote: want });
         if (!res || !res.ok) return;
         const likeBtn = isLike ? btn : other;
         const dislikeBtn = isLike ? other : btn;
@@ -117,14 +121,11 @@
       if (vAuthor){
         root.dataset.videoAuthorUid = vAuthor;
       }
-      // Flag from BE
       let moderatorFlag = !!data.moderator;
-      // Fallback: if no data and curr user is author
       if (!moderatorFlag && vAuthor && currentUid && vAuthor === currentUid){
         moderatorFlag = true;
       }
 
-      // Send all fields and moderator also (need for Del button)
       CommentsTree.renderTree(
         listEl,
         {
@@ -139,7 +140,6 @@
         { currentUid, avatars: data.avatars || {} }
       );
 
-      // Refresh counter
       if (countEl){
         const all = data.comments || {};
         const visibleCount = Object.values(all).filter(m => m && m.visible).length;
@@ -157,8 +157,6 @@
     }
   }
 
-  // export global reload
   window.CommentsReload = load;
-
   load();
 })();

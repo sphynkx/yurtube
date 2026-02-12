@@ -25,7 +25,8 @@ const CommentsTree = (() => {
 
   function fmtTime(unix){
     if (!unix || isNaN(unix)) return '';
-    const d = new Date(unix * 1000);
+    const ts = (unix < 2_000_000_0000) ? (unix * 1000) : unix; // < ~2033 in seconds
+    const d = new Date(ts);
     const y = d.getFullYear();
     const m = String(d.getMonth()+1).padStart(2,'0');
     const da= String(d.getDate()).padStart(2,'0');
@@ -247,6 +248,7 @@ const CommentsTree = (() => {
       like.className = 'btn-like';
       like.dataset.cid = cid;
       like.dataset.vote = '1';
+	  like.dataset.videoId = meta.video_id || window.CommentsTreeVideoId || '';
       // Heart + count
       like.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18">
           <path d="M9 21h9a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2h-5.31l.95-4.57.02-.23a1 1 0 0 0-.3-.7L12.17 3 6.59 8.59A2 2 0 0 0 6 10v9a2 2 0 0 0 2 2h1z"/>
@@ -263,6 +265,7 @@ const CommentsTree = (() => {
       dislike.className = 'btn-dislike';
       dislike.dataset.cid = cid;
       dislike.dataset.vote = '-1';
+	  dislike.dataset.videoId = meta.video_id || window.CommentsTreeVideoId || '';
       dislike.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18">
           <path d="M15 3H6a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h5.31l-.95 4.57-.02.23a1 1 0 0 0 .3.7l1.49 1.5 5.58-5.59A2 2 0 0 0 18 14V5a2 2 0 0 0-2-2h-1z"/>
         </svg><span class="count">${meta.dislikes||0}</span>`;
