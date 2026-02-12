@@ -37,7 +37,7 @@ class CommentDTO:
     created_at_ms: int
     updated_at_ms: int
     reply_count: int
-    # NEW: reaction counters from ytcomments service
+    # reaction counters from ytcomments service
     likes: int = 0
     dislikes: int = 0
 
@@ -137,7 +137,6 @@ class GrpcCommentsClient:
         )
 
     def _to_dto(self, c) -> CommentDTO:
-        # pb.Comment now includes likes/dislikes in ytcomments_couchbase proto
         likes = 0
         dislikes = 0
         try:
@@ -371,6 +370,47 @@ class GrpcCommentsClient:
         except Exception as e:
             print(f"ytcomments_client: Vote failed: {e}")
             return None
+
+    # NEW: fetch current user's votes for a set of comments (variant 2A)
+    async def get_my_votes(
+        self,
+        video_id: str,
+        comment_ids: List[str],
+        ctx: Optional[UserContext] = None,
+    ) -> Optional[Dict[str, int]]:
+        try:
+            await self._ensure()
+        except Exception as e:
+            print(f"ytcomments_client: ensure failed in get_my_votes: {e}")
+            return None
+
+        # tolerate empty list
+        comment_ids = [str(x).strip() for x in (comment_ids or []) if str(x).strip()]
+        req = pb.GetMyVotesRequest(  # type: ignore
+            video_id=video_id,
+            comment_ids=comment_ids,
+            ctx=self._ctx_to_pb(ctx),
+        )
+        try:
+            print("ytcomments_client: invoking GetMyVotes")
+            res = await asyncio.wait_for(self._stub.GetMyVotes(req), timeout=self._timeout / 1000.0)  # type: ignore
+        except Exception as e:
+            print(f"ytcomments_client: GetMyVotes failed: {e}")
+            return None
+
+        out: Dict[str, int] = {}
+        try:
+            for it in (res.votes or []):
+                cid = str(getattr(it, "comment_id", "") or "").strip()
+                v = int(getattr(it, "vote", 0) or 0)
+                if v not in (-1, 0, 1):
+                    v = 0
+                if cid:
+                    out[cid] = v
+        except Exception:
+            return out
+
+        return out
 
 
 _client_singleton: Optional[GrpcCommentsClient] = None

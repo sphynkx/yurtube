@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Query, Depends
 from typing import Dict, Any, Optional, List, Set
-##from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
 
 import logging
 log = logging.getLogger("comments_list")
@@ -96,38 +95,39 @@ async def list_comments(
         if must_hide:
             payload = _filter_and_reparent_tombstones(payload)
 
-    # Mark liked_by_author and my_vote; collect avatars
+    # Collect avatars + prepare vote defaults
     author_uids = set()
     for cid, meta in payload["comments"].items():
-        # liked_by_author
-        liked = False
-        if video_author_uid:
-            votes = (meta.get("votes") or {})
-            v = votes.get(video_author_uid)
-            try:
-                liked = (int(v) == 1)
-            except Exception:
-                liked = (str(v) == "1")
-        meta["liked_by_author"] = bool(liked)
-
-        # my_vote (robust)
-        if uid:
-            votes = (meta.get("votes") or {})
-            mv = 0
-            if uid in votes:
-                try:
-                    mv = int(votes[uid])
-                except Exception:
-                    try:
-                        mv = int(str(votes[uid]))
-                    except Exception:
-                        mv = 0
-            meta["my_vote"] = mv
-
+        # We no longer have legacy per-user "votes" map from service.
+        meta["liked_by_author"] = False  # without extra RPC we can't restore it reliably
+        meta["my_vote"] = 0
         payload["comments"][cid] = meta
+
         au = meta.get("author_uid")
         if au:
             author_uids.add(au)
+
+    # Fill my_vote via ytcomments GetMyVotes (variant 2A)
+    if uid:
+        try:
+            from services.ytcomments.client_srv import get_ytcomments_client, UserContext
+            client = get_ytcomments_client()
+            ctx = UserContext(
+                user_uid=str(uid),
+                username=str(current_user.get("username") or "") if current_user else None,
+                channel_id=str(current_user.get("channel_id") or "") if current_user else None,
+            )
+            comment_ids = list(payload.get("comments", {}).keys())
+            votes_map = await client.get_my_votes(video_id=video_id, comment_ids=comment_ids, ctx=ctx)
+            votes_map = votes_map or {}
+            for cid, meta in payload["comments"].items():
+                v = int(votes_map.get(cid, 0) or 0)
+                if v not in (-1, 0, 1):
+                    v = 0
+                meta["my_vote"] = v
+        except Exception as e:
+            # don't fail list on vote lookup errors
+            log.warning("comments_list: get_my_votes failed: %s", e)
 
     # Avatars map
     author_avatars: Dict[str, str] = {}
