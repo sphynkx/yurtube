@@ -37,6 +37,9 @@ class CommentDTO:
     created_at_ms: int
     updated_at_ms: int
     reply_count: int
+    # NEW: reaction counters from ytcomments service
+    likes: int = 0
+    dislikes: int = 0
 
 
 @dataclass
@@ -134,6 +137,18 @@ class GrpcCommentsClient:
         )
 
     def _to_dto(self, c) -> CommentDTO:
+        # pb.Comment now includes likes/dislikes in ytcomments_couchbase proto
+        likes = 0
+        dislikes = 0
+        try:
+            likes = int(getattr(c, "likes", 0) or 0)
+        except Exception:
+            likes = 0
+        try:
+            dislikes = int(getattr(c, "dislikes", 0) or 0)
+        except Exception:
+            dislikes = 0
+
         return CommentDTO(
             id=c.id,
             video_id=c.video_id,
@@ -148,6 +163,8 @@ class GrpcCommentsClient:
             created_at_ms=int(c.created_at),
             updated_at_ms=int(c.updated_at),
             reply_count=int(c.reply_count),
+            likes=likes,
+            dislikes=dislikes,
         )
 
     async def list_top(
@@ -354,6 +371,7 @@ class GrpcCommentsClient:
         except Exception as e:
             print(f"ytcomments_client: Vote failed: {e}")
             return None
+
 
 _client_singleton: Optional[GrpcCommentsClient] = None
 
