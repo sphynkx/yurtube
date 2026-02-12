@@ -95,12 +95,11 @@ async def list_comments(
         if must_hide:
             payload = _filter_and_reparent_tombstones(payload)
 
-    # Collect avatars + prepare vote defaults
+    # Collect avatars + init vote flags
     author_uids = set()
     for cid, meta in payload["comments"].items():
-        # We no longer have legacy per-user "votes" map from service.
-        meta["liked_by_author"] = False  # without extra RPC we can't restore it reliably
         meta["my_vote"] = 0
+        meta["liked_by_author"] = False
         payload["comments"][cid] = meta
 
         au = meta.get("author_uid")
@@ -108,6 +107,7 @@ async def list_comments(
             author_uids.add(au)
 
     # Fill my_vote via ytcomments GetMyVotes (variant 2A)
+    votes_map: Dict[str, int] = {}
     if uid:
         try:
             from services.ytcomments.client_srv import get_ytcomments_client, UserContext
@@ -118,16 +118,28 @@ async def list_comments(
                 channel_id=str(current_user.get("channel_id") or "") if current_user else None,
             )
             comment_ids = list(payload.get("comments", {}).keys())
-            votes_map = await client.get_my_votes(video_id=video_id, comment_ids=comment_ids, ctx=ctx)
-            votes_map = votes_map or {}
-            for cid, meta in payload["comments"].items():
-                v = int(votes_map.get(cid, 0) or 0)
-                if v not in (-1, 0, 1):
-                    v = 0
-                meta["my_vote"] = v
+            vm = await client.get_my_votes(video_id=video_id, comment_ids=comment_ids, ctx=ctx)
+            votes_map = dict(vm or {})
         except Exception as e:
-            # don't fail list on vote lookup errors
             log.warning("comments_list: get_my_votes failed: %s", e)
+            votes_map = {}
+
+    # Apply my_vote + liked_by_author (local rule)
+    # If the viewer is the video author, and viewer liked a comment => show author-heart.
+    for cid, meta in payload["comments"].items():
+        v = 0
+        try:
+            v = int(votes_map.get(cid, 0) or 0)
+        except Exception:
+            v = 0
+        if v not in (-1, 0, 1):
+            v = 0
+        meta["my_vote"] = v
+
+        if uid and video_author_uid and str(uid) == str(video_author_uid) and v == 1:
+            meta["liked_by_author"] = True
+        else:
+            meta["liked_by_author"] = False
 
     # Avatars map
     author_avatars: Dict[str, str] = {}
@@ -140,7 +152,6 @@ async def list_comments(
             for au in author_uids:
                 p = await get_user_avatar_path(conn, au)
                 if p:
-                    # Prefer small avatar if original path returned
                     if p.endswith("avatar.png"):
                         small_rel = p[: -len("avatar.png")] + "avatar_small.png"
                         author_avatars[au] = build_storage_url(small_rel)
@@ -160,7 +171,7 @@ async def list_comments(
     return {
         "ok": True,
         "comments_enabled": True,
-        "moderator": is_moderator,             # curr user is author of video (moderator)
+        "moderator": is_moderator,
         "video_author_uid": video_author_uid,
         "roots": payload["roots"],
         "children_map": payload["children_map"],
@@ -198,7 +209,6 @@ def _sort_ids_by_created(ids: List[str], comments: Dict[str, Dict[str, Any]]) ->
 
 
 def _build_children_map(comments: Dict[str, Dict[str, Any]]) -> Dict[str, List[str]]:
-    # Group children and sort every group by created_at (new in top)
     mapping: Dict[str, List[str]] = {}
     for cid, meta in (comments or {}).items():
         pid = meta.get("parent_id")
@@ -227,8 +237,11 @@ def _filter_and_reparent_tombstones(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     to_remove = set([cid for cid, m in comments.items() if is_tomb(m)])
     if not to_remove:
-        return {**payload, "children_map": _build_children_map(comments),
-                "roots": _sort_ids_by_created([cid for cid, m in comments.items() if m.get("parent_id") is None], comments)}
+        return {
+            **payload,
+            "children_map": _build_children_map(comments),
+            "roots": _sort_ids_by_created([cid for cid, m in comments.items() if m.get("parent_id") is None], comments),
+        }
 
     for rid in to_remove:
         pid = comments.get(rid, {}).get("parent_id")
@@ -276,8 +289,11 @@ def _filter_and_reparent_by_authors(payload: Dict[str, Any], banned_authors: Set
             to_remove.add(cid)
 
     if not to_remove:
-        return {**payload, "children_map": _build_children_map(comments),
-                "roots": _sort_ids_by_created([cid for cid, m in comments.items() if m.get("parent_id") is None], comments)}
+        return {
+            **payload,
+            "children_map": _build_children_map(comments),
+            "roots": _sort_ids_by_created([cid for cid, m in comments.items() if m.get("parent_id") is None], comments),
+        }
 
     for rid in to_remove:
         pid = comments.get(rid, {}).get("parent_id")

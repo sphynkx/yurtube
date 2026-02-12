@@ -37,7 +37,6 @@ class CommentDTO:
     created_at_ms: int
     updated_at_ms: int
     reply_count: int
-    # reaction counters from ytcomments service
     likes: int = 0
     dislikes: int = 0
 
@@ -193,7 +192,7 @@ class GrpcCommentsClient:
             print("ytcomments_client: invoking ListTop")
             res = await asyncio.wait_for(self._stub.ListTop(req), timeout=self._timeout / 1000.0)  # type: ignore
         except Exception as e:
-            print(f"ytcomments_client: ListTop failed: {e}")
+            print(f"ytcomments_client: ListTop failed: {type(e).__name__}: {e}")
             return ListPage(items=[], next_page_token="", total_count=0)
 
         items = [self._to_dto(c) for c in res.items]
@@ -228,7 +227,7 @@ class GrpcCommentsClient:
             print("ytcomments_client: invoking ListReplies")
             res = await asyncio.wait_for(self._stub.ListReplies(req), timeout=self._timeout / 1000.0)  # type: ignore
         except Exception as e:
-            print(f"ytcomments_client: ListReplies failed: {e}")
+            print(f"ytcomments_client: ListReplies failed: {type(e).__name__}: {e}")
             return ListPage(items=[], next_page_token="", total_count=0)
 
         items = [self._to_dto(c) for c in res.items]
@@ -262,7 +261,7 @@ class GrpcCommentsClient:
                 return None
             return self._to_dto(res.comment)
         except Exception as e:
-            print(f"ytcomments_client: Create failed: {e}")
+            print(f"ytcomments_client: Create failed: {type(e).__name__}: {e}")
             return None
 
     async def edit_comment(
@@ -291,7 +290,7 @@ class GrpcCommentsClient:
                 return None
             return self._to_dto(res.comment)
         except Exception as e:
-            print(f"ytcomments_client: Edit failed: {e}")
+            print(f"ytcomments_client: Edit failed: {type(e).__name__}: {e}")
             return None
 
     async def delete_comment(
@@ -320,7 +319,7 @@ class GrpcCommentsClient:
                 return None
             return self._to_dto(res.comment)
         except Exception as e:
-            print(f"ytcomments_client: Delete failed: {e}")
+            print(f"ytcomments_client: Delete failed: {type(e).__name__}: {e}")
             return None
 
     async def get_counts(self, video_id: str, ctx: Optional[UserContext] = None) -> Dict[str, int]:
@@ -335,7 +334,7 @@ class GrpcCommentsClient:
             print("ytcomments_client: invoking GetCounts")
             res = await asyncio.wait_for(self._stub.GetCounts(req), timeout=self._timeout / 1000.0)  # type: ignore
         except Exception as e:
-            print(f"ytcomments_client: GetCounts failed: {e}")
+            print(f"ytcomments_client: GetCounts failed: {type(e).__name__}: {e}")
             return {"top_level_count": 0, "total_count": 0}
 
         return {"top_level_count": int(res.top_level_count), "total_count": int(res.total_count)}
@@ -368,10 +367,9 @@ class GrpcCommentsClient:
                 "my_vote": int(res.my_vote),
             }
         except Exception as e:
-            print(f"ytcomments_client: Vote failed: {e}")
+            print(f"ytcomments_client: Vote failed: {type(e).__name__}: {e}")
             return None
 
-    # NEW: fetch current user's votes for a set of comments (variant 2A)
     async def get_my_votes(
         self,
         video_id: str,
@@ -384,7 +382,6 @@ class GrpcCommentsClient:
             print(f"ytcomments_client: ensure failed in get_my_votes: {e}")
             return None
 
-        # tolerate empty list
         comment_ids = [str(x).strip() for x in (comment_ids or []) if str(x).strip()]
         req = pb.GetMyVotesRequest(  # type: ignore
             video_id=video_id,
@@ -392,10 +389,17 @@ class GrpcCommentsClient:
             ctx=self._ctx_to_pb(ctx),
         )
         try:
-            print("ytcomments_client: invoking GetMyVotes")
+            print(f"ytcomments_client: invoking GetMyVotes target={self._target} timeout_ms={self._timeout} ids={len(comment_ids)}")
             res = await asyncio.wait_for(self._stub.GetMyVotes(req), timeout=self._timeout / 1000.0)  # type: ignore
         except Exception as e:
-            print(f"ytcomments_client: GetMyVotes failed: {e}")
+            # if it's grpc error, show code/details when possible
+            extra = ""
+            try:
+                if grpc is not None and isinstance(e, grpc.aio.AioRpcError):  # type: ignore[attr-defined]
+                    extra = f" code={e.code()} details={e.details()}"
+            except Exception:
+                pass
+            print(f"ytcomments_client: GetMyVotes failed: {type(e).__name__}: {e}{extra}")
             return None
 
         out: Dict[str, int] = {}
