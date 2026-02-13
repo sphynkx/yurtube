@@ -1,7 +1,8 @@
 from typing import Dict, Any
 from time import time
 from bson import ObjectId
-from db.comments.mongo_conn import root_coll, chunk_coll
+##deprecated
+##from db.comments.mongo_conn import root_coll, chunk_coll
 
 async def update_comment_text(video_id: str, comment_id: str, user_uid: str, new_text: str) -> Dict[str, Any]:
     rc = root_coll()

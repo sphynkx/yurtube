@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from utils.comments.time_ut import now_unix
-from db.comments.mongo_conn import root_coll
+##deprecated
+##from db.comments.mongo_conn import root_coll
 
 
 async def soft_ban_user(video_id: str, user_uid: str, reason: str = "") -> Dict[str, Any]:

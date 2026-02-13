@@ -1,6 +1,7 @@
 from typing import Dict, Any
 from time import time
-from db.comments.mongo_conn import root_coll, chunk_coll
+##deprecated
+##from db.comments.mongo_conn import root_coll, chunk_coll
 from bson import ObjectId
 
 

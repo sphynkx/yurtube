@@ -1,10 +1,11 @@
 from typing import Any, Dict, List, Optional
-import logging, os, collections
+import logging
+import os
+import collections
 
 from services.ytcomments.client_srv import get_ytcomments_client, CommentDTO
 
 log = logging.getLogger("ytcomments_adapter")
-##print("ytcomments_adapter: imported")
 
 
 def _meta_from_dto(c: CommentDTO) -> Dict[str, Any]:
@@ -32,14 +33,16 @@ def _meta_from_dto(c: CommentDTO) -> Dict[str, Any]:
         "reply_count": int(c.reply_count),
         "likes": int(getattr(c, "likes", 0) or 0),
         "dislikes": int(getattr(c, "dislikes", 0) or 0),
-        # my_vote/liked_by_author not implemented yet in service payload
+        # will be filled in routes/comments/list_rout.py via GetMyVotes
         "my_vote": 0,
         "liked_by_author": False,
     }
 
+
 def _sort_ids_by_created(ids: List[str], comments: Dict[str, Dict[str, Any]], newest_first: bool = True) -> List[str]:
     keyf = lambda cid: int(comments.get(cid, {}).get("created_at") or 0)
     return sorted(ids, key=keyf, reverse=newest_first)
+
 
 async def _fetch_via_service(video_id: str, page_size_top: int, sort_top: str, include_deleted: bool) -> Dict[str, Any]:
     client = get_ytcomments_client()
@@ -87,7 +90,7 @@ async def _fetch_via_service(video_id: str, page_size_top: int, sort_top: str, i
             page_token="",
             sort="oldest_first",
             include_deleted=bool(include_deleted),
-            ctx=None
+            ctx=None,
         )
 
         if not rep_page.items:
@@ -105,7 +108,7 @@ async def _fetch_via_service(video_id: str, page_size_top: int, sort_top: str, i
         children_map[pid] = _sort_ids_by_created(
             arr,
             comments,
-            newest_first=(pid is None and newest) or (pid is not None and False)
+            newest_first=(pid is None and newest) or (pid is not None and False),
         )
 
     counts = await client.get_counts(video_id, ctx=None)
@@ -121,24 +124,19 @@ async def _fetch_via_service(video_id: str, page_size_top: int, sort_top: str, i
         },
     }
 
-async def _fetch_via_legacy(video_id: str) -> Any:
-    from services.comments.comment_tree_srv import fetch_root as legacy_fetch_root
-    return await legacy_fetch_root(video_id)
 
-async def fetch_root(video_id: str, page_size_top: int = 50, sort_top: str = "newest_first", include_deleted: bool = False) -> Any:
+async def fetch_root(
+    video_id: str,
+    page_size_top: int = 50,
+    sort_top: str = "newest_first",
+    include_deleted: bool = False,
+) -> Any:
+    """
+    No legacy fallback: always use ytcomments service.
+    """
     log.info("ytcomments_adapter: fetch_root(video_id=%s)", video_id)
+    return await _fetch_via_service(video_id, page_size_top, sort_top, include_deleted)
 
-    force = (os.getenv("YTCOMMENTS_FORCE_SERVICE_READ", "").strip().lower() in ("1","true","yes","on"))
-
-    try:
-        service_payload = await _fetch_via_service(video_id, page_size_top, sort_top, include_deleted)
-        roots = list(service_payload.get("roots") or [])
-        total_all = int(dict(service_payload.get("totals") or {}).get("comments_count_total") or 0)
-        if force or roots or total_all > 0:
-            return service_payload
-        return await _fetch_via_legacy(video_id)
-    except Exception:
-        return await _fetch_via_legacy(video_id)
 
 def build_tree_payload(
     payload: Any,
@@ -147,8 +145,12 @@ def build_tree_payload(
     hide_deleted: Optional[str] = None,
     banned_authors: Optional[List[str]] = None,
     limit_children: Optional[int] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> Dict[str, Any]:
+    """
+    Service payload is already in the expected structure.
+    Legacy path removed.
+    """
     if isinstance(payload, dict) and isinstance(payload.get("comments"), dict):
         comments: Dict[str, Dict[str, Any]] = dict(payload.get("comments") or {})
         children_map: Dict[Optional[str], List[str]] = dict(payload.get("children_map") or {})
@@ -171,33 +173,26 @@ def build_tree_payload(
             "children_map": children_map,
         }
 
-    try:
-        from services.comments.comment_tree_srv import build_tree_payload as legacy_build
-        return legacy_build(
-            payload,
-            current_uid=current_uid,
-            show_hidden=show_hidden,
-            hide_deleted=hide_deleted,
-            banned_authors=banned_authors,
-            limit_children=limit_children,
-            **kwargs,
-        )
-    except Exception:
-        return {
-            "video_id": payload.get("video_id") if isinstance(payload, dict) else "",
-            "comments": {},
-            "roots": [],
-            "children_map": {},
-            "totals": {"comments_count_total": 0, "comments_count_visible": 0},
-        }
+    return {
+        "video_id": payload.get("video_id") if isinstance(payload, dict) else "",
+        "comments": {},
+        "roots": [],
+        "children_map": {},
+        "totals": {"comments_count_total": 0, "comments_count_visible": 0},
+    }
+
 
 async def fetch_texts_for_comments(
     video_id: str,
     payload_or_ids: Any,
     show_hidden: bool = False,
     current_uid: Optional[str] = None,
-    **kwargs: Any
+    **kwargs: Any,
 ) -> Dict[str, str]:
+    """
+    For service payload we just reuse content_raw/content_html already present.
+    Legacy path removed.
+    """
     if isinstance(payload_or_ids, dict) and isinstance(payload_or_ids.get("comments"), dict):
         comments = payload_or_ids.get("comments") or {}
         out: Dict[str, str] = {}
@@ -212,8 +207,4 @@ async def fetch_texts_for_comments(
                 meta["cached_text"] = html
         return out
 
-    try:
-        from services.comments.comment_tree_srv import fetch_texts_for_comments as legacy_texts
-        return await legacy_texts(video_id, payload_or_ids, show_hidden=show_hidden)
-    except Exception:
-        return {}
+    return {}

@@ -11,7 +11,8 @@ try:
     print("comments_list: using ytcomments_adapter")
 except Exception as e:
     log.warning("comments_list: adapter import failed, using legacy: %s", e)
-    from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
+    ##deprecated
+    ##from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
     print(f"comments_list: using legacy due to import error: {e}")
 
 from config.comments_cfg import comments_settings

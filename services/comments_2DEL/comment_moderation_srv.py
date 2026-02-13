@@ -1,5 +1,6 @@
 from typing import Dict, Any
-from db.comments.mongo_conn import root_coll
+##deprecated
+##from db.comments.mongo_conn import root_coll
 
 
 async def hide_comment(video_id: str, comment_id: str) -> Dict[str, Any]:

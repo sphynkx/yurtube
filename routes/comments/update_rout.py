@@ -3,10 +3,9 @@ from pydantic import BaseModel
 from typing import Dict, Any
 
 from utils.security_ut import get_current_user
+from services.ytcomments.client_srv import get_ytcomments_client, UserContext
 from db import get_conn, release_conn
 from db.videos_db import get_video
-
-from services.ytcomments.client_srv import get_ytcomments_client, UserContext
 
 router = APIRouter(prefix="/comments", tags=["comments"])
 
@@ -20,6 +19,7 @@ class UpdateCommentIn(BaseModel):
 class DeleteCommentIn(BaseModel):
     video_id: str
     comment_id: str
+    hard_delete: bool = False
 
 
 @router.post("/update")
@@ -28,36 +28,20 @@ async def update_comment_api(request: Request, data: UpdateCommentIn) -> Dict[st
     if not user:
         raise HTTPException(status_code=401, detail="auth_required")
 
-    video_id = (data.video_id or "").strip()
-    comment_id = (data.comment_id or "").strip()
-    if not video_id or not comment_id:
-        raise HTTPException(status_code=400, detail="invalid_args")
-
-    # Moderator = author of video (as before)
-    is_video_owner = False
-    conn = await get_conn()
-    try:
-        v = await get_video(conn, video_id)
-        if v and v.get("author_uid") == user["user_uid"]:
-            is_video_owner = True
-    finally:
-        await release_conn(conn)
-
+    uid = str(user["user_uid"])
+    client = get_ytcomments_client()
     ctx = UserContext(
-        user_uid=str(user["user_uid"]),
+        user_uid=uid,
         username=str(user.get("username") or "") or None,
         channel_id=str(user.get("channel_id") or "") or None,
-        is_video_owner=bool(is_video_owner),
-        is_moderator=bool(is_video_owner),
         ip=(request.client.host if request.client else None),
         user_agent=str(request.headers.get("user-agent") or "") or None,
     )
 
-    client = get_ytcomments_client()
     dto = await client.edit_comment(
-        video_id=video_id,
-        comment_id=comment_id,
-        text=data.text or "",
+        video_id=data.video_id,
+        comment_id=data.comment_id,
+        text=data.text,
         ctx=ctx,
     )
     if not dto:
@@ -65,14 +49,11 @@ async def update_comment_api(request: Request, data: UpdateCommentIn) -> Dict[st
 
     return {
         "ok": True,
-        "comment_id": dto.id,
         "video_id": dto.video_id,
-        "parent_id": dto.parent_id,
+        "comment_id": dto.id,
         "text": dto.content_raw,
         "edited": bool(dto.edited),
-        "created_at": dto.created_at_ms,
-        "updated_at": dto.updated_at_ms,
-        "is_deleted": bool(dto.is_deleted),
+        "updated_at": int(dto.updated_at_ms),
     }
 
 
@@ -82,37 +63,33 @@ async def delete_comment_api(request: Request, data: DeleteCommentIn) -> Dict[st
     if not user:
         raise HTTPException(status_code=401, detail="auth_required")
 
-    video_id = (data.video_id or "").strip()
-    comment_id = (data.comment_id or "").strip()
-    if not video_id or not comment_id:
-        raise HTTPException(status_code=400, detail="invalid_args")
+    uid = str(user["user_uid"])
 
-    # Moderator (author of video)
-    is_video_owner = False
+    # Determine moderator (author of video)
+    is_moderator = False
     conn = await get_conn()
     try:
-        v = await get_video(conn, video_id)
-        if v and v.get("author_uid") == user["user_uid"]:
-            is_video_owner = True
+        v = await get_video(conn, data.video_id)
+        if v and str(v.get("author_uid") or "") == uid:
+            is_moderator = True
     finally:
         await release_conn(conn)
 
+    client = get_ytcomments_client()
     ctx = UserContext(
-        user_uid=str(user["user_uid"]),
+        user_uid=uid,
         username=str(user.get("username") or "") or None,
         channel_id=str(user.get("channel_id") or "") or None,
-        is_video_owner=bool(is_video_owner),
-        is_moderator=bool(is_video_owner),
+        is_moderator=bool(is_moderator),
+        is_video_owner=bool(is_moderator),
         ip=(request.client.host if request.client else None),
         user_agent=str(request.headers.get("user-agent") or "") or None,
     )
 
-    client = get_ytcomments_client()
-    # Keep old semantics: /comments/delete is SOFT delete
     dto = await client.delete_comment(
-        video_id=video_id,
-        comment_id=comment_id,
-        hard_delete=False,
+        video_id=data.video_id,
+        comment_id=data.comment_id,
+        hard_delete=bool(data.hard_delete),
         ctx=ctx,
     )
     if not dto:
@@ -120,8 +97,9 @@ async def delete_comment_api(request: Request, data: DeleteCommentIn) -> Dict[st
 
     return {
         "ok": True,
-        "comment_id": dto.id,
         "video_id": dto.video_id,
+        "comment_id": dto.id,
         "is_deleted": bool(dto.is_deleted),
-        "updated_at": dto.updated_at_ms,
+        "hard_delete": bool(data.hard_delete),
+        "updated_at": int(dto.updated_at_ms),
     }

@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, Tuple
 from bson import ObjectId
-from db.comments.mongo_conn import root_coll
+##deprecated
+##from db.comments.mongo_conn import root_coll
 from datetime import datetime
 
 async def apply_vote(video_id: str, user_uid: str, comment_id: str, vote: int) -> Tuple[int, int, int]:

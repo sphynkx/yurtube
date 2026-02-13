@@ -29,11 +29,10 @@ from db.videos_query_db import (
 from db.videos_db import get_video as db_get_video
 from db.user_assets_db import get_user_avatar_path
 from db.users_db import get_usernames_by_uids
-from db.comments.root_db import delete_all_comments_for_video
 from utils.url_ut import build_storage_url
 from utils.security_ut import get_current_user
 
-from services.comments.comment_tree_srv import fetch_root, build_tree_payload
+from services.ytcomments.ytcomments_adapter import fetch_root, build_tree_payload
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -163,7 +162,7 @@ async def api_comments_users_get(request: Request, v: str = Query(..., min_lengt
     payload = build_tree_payload(root, current_uid=user["user_uid"], show_hidden=True)
 
     counts: Dict[str, int] = {}
-    for cid, meta in (payload.get("comments") or {}).items():
+    for _, meta in (payload.get("comments") or {}).items():
         uid = meta.get("author_uid")
         if not uid:
             continue
@@ -203,7 +202,6 @@ async def api_comments_users_get(request: Request, v: str = Query(..., min_lengt
             for au in uids:
                 p = await get_user_avatar_path(conn, au)
                 if p:
-                    # Prefer small avatar if original path returned
                     if p.endswith("avatar.png"):
                         small_rel = p[: -len("avatar.png")] + "avatar_small.png"
                         avatars[au] = build_storage_url(small_rel)
@@ -262,7 +260,6 @@ async def api_comments_ban_post(request: Request, payload: BanPost) -> Any:
         if not isinstance(ep, dict):
             ep = {}
 
-        # update bans
         s_list = ep.get("comments_soft_ban_uids")
         h_list = ep.get("comments_hard_ban_uids")
         if not isinstance(s_list, list):
@@ -281,7 +278,6 @@ async def api_comments_ban_post(request: Request, payload: BanPost) -> Any:
         ep["comments_soft_ban_uids"] = add_or_remove(s_list, target_uid, new_soft)
         ep["comments_hard_ban_uids"] = add_or_remove(h_list, target_uid, new_hard)
 
-        # update note
         if note_raw is not None:
             note_str = str(note_raw).strip()
             notes = ep.get("comments_ban_notes")
@@ -302,8 +298,9 @@ async def api_comments_ban_post(request: Request, payload: BanPost) -> Any:
 @router.post("/api/manage/comments/delete-all")
 async def api_comments_delete_all(request: Request, payload: DeleteAllPost) -> Any:
     """
-    Danger: delete all comments for the given video from Mongo (root + chunks).
-    Only video owner can perform this operation.
+    Delete all comments for the given video.
+    Legacy Mongo implementation removed.
+    Needs ytcomments service RPC (e.g. PurgeVideo) to be implemented.
     """
     user = get_current_user(request)
     if not user:
@@ -319,5 +316,11 @@ async def api_comments_delete_all(request: Request, payload: DeleteAllPost) -> A
     finally:
         await release_conn(conn)
 
-    stats = await delete_all_comments_for_video(video_id)
-    return {"ok": True, "deleted": stats}
+    return JSONResponse(
+        {
+            "ok": False,
+            "error": "not_implemented",
+            "detail": "delete-all now must be executed via ytcomments service (PurgeVideo RPC not implemented yet)",
+        },
+        status_code=501,
+    )

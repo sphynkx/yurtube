@@ -2,9 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from utils.security_ut import get_current_user
-
 from services.ytcomments.client_srv import get_ytcomments_client, UserContext
-
 from services.notifications.events_pub import publish
 
 router = APIRouter(prefix="/comments", tags=["comments"])
@@ -23,7 +21,14 @@ async def vote_comment(data: VoteIn, request: Request, user=Depends(get_current_
 
     video_id = (data.video_id or "").strip()
     comment_id = (data.comment_id or "").strip()
-    vote = int(data.vote or 0)
+    try:
+        vote = int(data.vote or 0)
+    except Exception:
+        vote = 0
+
+    if not video_id or not comment_id:
+        raise HTTPException(status_code=400, detail={"error": "missing video_id/comment_id"})
+
     if vote not in (-1, 0, 1):
         raise HTTPException(status_code=400, detail={"error": "invalid vote"})
 
@@ -40,8 +45,12 @@ async def vote_comment(data: VoteIn, request: Request, user=Depends(get_current_
     if not res:
         raise HTTPException(status_code=502, detail={"error": "ytcomments vote failed"})
 
-    # Publish only if vote became like
-    if res.get("my_vote") == 1:
+    likes = int(res.get("likes", 0) or 0)
+    dislikes = int(res.get("dislikes", 0) or 0)
+    my_vote = int(res.get("my_vote", 0) or 0)
+
+    # Publish only if vote became like (best-effort)
+    if my_vote == 1:
         try:
             publish(
                 "comment.voted",
@@ -58,8 +67,8 @@ async def vote_comment(data: VoteIn, request: Request, user=Depends(get_current_
 
     return {
         "ok": True,
-        "likes": int(res.get("likes", 0)),
-        "dislikes": int(res.get("dislikes", 0)),
-        "my_vote": int(res.get("my_vote", 0)),
+        "likes": likes,
+        "dislikes": dislikes,
+        "my_vote": my_vote,
         "user_id": str(user["user_uid"]),
     }

@@ -1,6 +1,7 @@
 from typing import Dict, Any, List, Optional
 from bson import ObjectId
-from db.comments.mongo_conn import root_coll, chunk_coll
+##deprecated
+##from db.comments.mongo_conn import root_coll, chunk_coll
 
 async def fetch_root(video_id: str) -> Optional[Dict[str, Any]]:
     return await root_coll().find_one({"video_id": video_id})

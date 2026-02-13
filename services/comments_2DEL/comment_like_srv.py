@@ -1,5 +1,6 @@
 from typing import Dict, Any
-from db.comments.mongo_conn import root_coll
+##deprecated
+##from db.comments.mongo_conn import root_coll
 
 
 async def like_delta(video_id: str, comment_id: str, delta_like: int = 0, delta_dislike: int = 0) -> Dict[str, Any]:

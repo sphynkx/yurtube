@@ -28,7 +28,8 @@ from db.videos_db import (
 )
 from db.ytconvert.ytconvert_jobs_db import create_ytconvert_job
 from db.ytsprites.ytsprites_db import fetch_video_storage_path
-from db.comments.root_db import delete_all_comments_for_video
+##deprecated
+##from db.comments.root_db import delete_all_comments_for_video
 from db.ytcms.captions_db import set_video_captions
 
 ## Deprecated:
