@@ -1,4 +1,4 @@
-[YurTube](https://yurtube.sphynkx.org.ua/) is a self‑hosted video hosting engine written in Python and built on FastAPI, PostgreSQL, MongoDB, Redis+Celery, Manticore, ffmpeg etc. UX is inspired by [Youtube service](https://www.youtube.com/) and [ClipBucket engine](https://github.com/sphynkx/clipbucket-v5), with a modular design that runs cleanly on a single host or scales out by moving services to external nodes via configuration.
+[YurTube](https://yurtube.sphynkx.org.ua/) is a self‑hosted video hosting engine written in Python and built on FastAPI, PostgreSQL, CouchBase, Redis+Celery, Manticore, ffmpeg etc. UX is inspired by [Youtube service](https://www.youtube.com/) and [ClipBucket engine](https://github.com/sphynkx/clipbucket-v5), with a modular design that runs cleanly on a single host or scales out by moving services to external nodes via configuration.
 
 Highlights
 * Accounts and authentication: local sign‑in and SSO (Google, X)
@@ -119,71 +119,6 @@ Apply schema creation and seed data (initial categories/tags):
 ```bash
 psql -U yt_user -h 127.0.0.1 -d yt_db -f install/schema.sql
 psql -U yt_user -h 127.0.0.1 -d yt_db -f install/seed.sql
-```
-
-
-## Configure DB for comments engine (MongoDB)
-__Note__: This section will be deprecated for app, due to implementation of new external [ytcomments](https://github.com/sphynkx/ytcomments) - see below. Local functional still works as legacy but may switched off.
-
-At the `.env` fill fields:
-```conf
-# MongoDB
-MONGO_HOST=127.0.0.1
-MONGO_PORT=27017
-MONGO_DB_NAME=yt_comments
-MONGO_USER=yt_user
-MONGO_PASSWORD=SECRET
-```
-according your configuration.
-
-Edit `/etc/mongod.conf` - temporarily disable `security` section, restart mongodb:
-```bash
-systemctl restart mongod
-```
-Copy sample file with mono user configuring:
-```bash
-cp install/mongo_setup.js-sample install/mongo_setup.js
-```
-Edit it - set password and apply:
-```bash
-mongosh < install/mongo_setup.js
-```
-Edit `/etc/mongod.conf` again - enable `security` section, restart mongodb:
-```bash
-service mongod restart
-```
-Dont forget to remove `install/mongo_setup.js`.
-
-
-### MongoDB tuning
-Optional recommendations in case then service periodically falls down. 
-
-Modify `/etc/mongod.conf`, set `storage` section so:
-```conf
-storage:
-  dbPath: /var/lib/mongo
-  journal:
-    enabled: true
-#  engine:
-  wiredTiger:
-    engineConfig:
-      cacheSizeGB: 1.5
-```
-Find unit file `mongod.service` (mostly in `/usr/lib/systemd/system/`). In the `[Service]` section add:
-```conf
-Restart=on-failure
-RestartSec=10s
-StartLimitBurst=5
-StartLimitIntervalSec=60s
-OOMScoreAdjust=-900
-MemoryAccounting=true
-```
-Then copy it to `/etc/systemd/system` and update systemd configuration:
-```bash
-cp /usr/lib/systemd/system/mongod.service /etc/systemd/system
-systemctl daemon-reload
-systemctl restart mongod
-systemctl status mongod.service
 ```
 
 
@@ -335,7 +270,7 @@ cd services/yttrans_proto
 
 
 ### Comments service (external)
-This is separate microservice for work with client side comments service. It communicates with MongoDB and exchanges info with app's client side part. To install and configure - see [ytcomments repo](https://github.com/sphynkx/ytcomments).
+This is separate microservice for work with client side comments service. It communicates with CouchBase DB and exchanges info with app's client side part. To install and configure - see [ytcomments repo](https://github.com/sphynkx/ytcomments).
 
 To configure app to work with service set options in the `.env`:
 ```conf
@@ -348,7 +283,6 @@ YTCOMMENTS_TLS_ENABLED=false
 YTCOMMENTS_TIMEOUT_MS=3000
 YTCOMMENTS_FORCE_SERVICE_READ=1
 ```
-In case of MongoDB falling issues you may apply some tunings for it - see [ytcomments repo](https://github.com/sphynkx/ytcomments)) for details.
 
 Make sure that the `services/ytcomments/ytcomments.proto` is same as one for the `ytcomments`. Otherwise run `gen_proto.sh` to regenerate protobuf files.
 
