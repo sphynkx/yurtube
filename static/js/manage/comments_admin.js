@@ -53,15 +53,26 @@
     ui.settingsWrap.appendChild(cardOnOff);
 
     const cardTmb = el('div', 'mc-card');
-    cardTmb.appendChild(el('div', 'mc-h', 'Deleted comments visibility'));
-    cardTmb.appendChild(el('div', 'mc-desc', 'Who can see removed (tombstone) comments.'));
+    cardTmb.appendChild(el('div', 'mc-h', 'Tombstone visibility ("Removed")'));
+    cardTmb.appendChild(el(
+      'div',
+      'mc-desc',
+      'Controls who can see the "Removed" placeholder. If hidden, replies are re-attached to the nearest visible parent.'
+    ));
     const group = el('div', 'mc-radio-group');
+
     const cur = settings?.hide_deleted || 'all';
+
+    // Backend values (keep as-is):
+    // - all   => hide tombstone for everyone (reparent replies)
+    // - owner => show tombstone only to video owner
+    // - none  => show tombstone to everyone
     const opts = [
-      { val:'none',  label:'Hide for everyone' },
+      { val:'all',   label:'Hide for everyone (re-attach replies silently)' },
       { val:'owner', label:'Show only to video owner' },
-      { val:'all',   label:'Show to everyone' }
+      { val:'none',  label:'Show to everyone (display "Removed")' }
     ];
+
     opts.forEach(o=>{
       const label = el('label', 'mc-radio');
       const r = document.createElement('input');

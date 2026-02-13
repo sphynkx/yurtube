@@ -4,16 +4,13 @@ from typing import Dict, Any, Optional, List, Set
 import logging
 log = logging.getLogger("comments_list")
 
-# Prefer external comments service adapter; fallback to legacy tree service if adapter fails to import
 try:
     from services.ytcomments.ytcomments_adapter import fetch_root, build_tree_payload, fetch_texts_for_comments
     log.info("comments_list: using ytcomments_adapter")
     print("comments_list: using ytcomments_adapter")
 except Exception as e:
-    log.warning("comments_list: adapter import failed, using legacy: %s", e)
-    ##deprecated
-    ##from services.comments.comment_tree_srv import fetch_root, build_tree_payload, fetch_texts_for_comments
-    print(f"comments_list: using legacy due to import error: {e}")
+    log.error("comments_list: ytcomments_adapter import failed: %s", e)
+    raise
 
 from config.comments_cfg import comments_settings
 from utils.security_ut import get_current_user
@@ -26,17 +23,14 @@ router = APIRouter(prefix="/comments", tags=["comments"])
 async def list_comments(
     video_id: str,
     include_hidden: bool = Query(False),
-    current_user: Optional[Dict[str, Any]] = Depends(get_current_user)
+    current_user: Optional[Dict[str, Any]] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     log.info("comments_list: called video_id=%s include_hidden=%s", video_id, include_hidden)
     print(f"comments_list: called video_id={video_id} include_hidden={include_hidden}")
-    # Global toggle
+
     if not comments_settings.COMMENTS_ENABLED:
-        log.info("comments_list: early return — COMMENTS_ENABLED is False")
-        print("comments_list: early return — COMMENTS_ENABLED is False")
         return _empty(False)
 
-    # Per-video flags
     video_allow = True
     video_author_uid: Optional[str] = None
     hide_deleted: str = "all"
@@ -45,14 +39,14 @@ async def list_comments(
     try:
         from db import get_conn, release_conn
         from db.videos_db import get_video
+
         conn = await get_conn()
         try:
             v = await get_video(conn, video_id)
             if v:
                 video_allow = bool(v.get("allow_comments", True))
                 video_author_uid = v.get("author_uid")
-                ep = v.get("embed_params")
-                ep = _parse_ep(ep)
+                ep = _parse_ep(v.get("embed_params"))
                 hv = str(ep.get("comments_hide_deleted", "") or "").strip()
                 if hv in ("none", "owner", "all"):
                     hide_deleted = hv
@@ -65,53 +59,54 @@ async def list_comments(
         pass
 
     if not video_allow:
-        log.info("comments_list: early return — video_allow is False for %s", video_id)
-        print(f"comments_list: early return — video_allow is False for {video_id}")
         return _empty(False)
 
-    log.info("comments_list: will call fetch_root for %s", video_id)
-    print(f"comments_list: will call fetch_root for {video_id}")
-    root = await fetch_root(video_id)
-    log.info("comments_list: fetch_root returned; building payload")
-    print("comments_list: fetch_root returned")
+    uid = current_user.get("user_uid") if current_user and "user_uid" in current_user else None
+    viewer_is_owner = bool(uid and video_author_uid and str(uid) == str(video_author_uid))
+
+    root = await fetch_root(video_id, include_deleted=True)
     if not root:
         return _empty(True)
 
-    uid = current_user.get("user_uid") if current_user and "user_uid" in current_user else None
     payload = build_tree_payload(root, current_uid=uid, show_hidden=include_hidden)
-    texts = await fetch_texts_for_comments(video_id, root, show_hidden=include_hidden)
 
-    # always rebuild children_map with sort by created_at (new in top)
     payload["children_map"] = _build_children_map(payload["comments"])
     payload["roots"] = _sort_ids_by_created(payload["roots"], payload["comments"])
 
-    # Apply soft-ban with reparent
     if soft_banned:
         payload = _filter_and_reparent_by_authors(payload, soft_banned)
 
-    # Apply hide_deleted with reparent
-    if hide_deleted in ("none", "owner"):
-        viewer_is_owner = (uid is not None and video_author_uid is not None and uid == video_author_uid)
-        must_hide = (hide_deleted == "none") or (hide_deleted == "owner" and not viewer_is_owner)
-        if must_hide:
-            payload = _filter_and_reparent_tombstones(payload)
+    must_hide_deleted = (hide_deleted == "all") or (hide_deleted == "owner" and not viewer_is_owner)
+    if must_hide_deleted:
+        payload = _filter_and_reparent_tombstones(payload)
 
-    # Collect avatars + init vote flags
+    # Tombstone marking: only when deleted comments are allowed to be visible
+    # (hide_deleted == "none") OR ("owner" and viewer_is_owner)
+    if not must_hide_deleted:
+        for _, meta in (payload.get("comments") or {}).items():
+            if not isinstance(meta, dict):
+                continue
+            is_del = bool(meta.get("is_deleted")) or (meta.get("visible") in (False, 0, "false", "False"))
+            if is_del:
+                meta["tombstone"] = True
+                meta["visible"] = False
+
+    texts = await fetch_texts_for_comments(video_id, payload, show_hidden=include_hidden)
+
     author_uids = set()
     for cid, meta in payload["comments"].items():
         meta["my_vote"] = 0
         meta["liked_by_author"] = False
         payload["comments"][cid] = meta
-
         au = meta.get("author_uid")
         if au:
             author_uids.add(au)
 
-    # Fill my_vote via ytcomments GetMyVotes (variant 2A)
     votes_map: Dict[str, int] = {}
     if uid:
         try:
             from services.ytcomments.client_srv import get_ytcomments_client, UserContext
+
             client = get_ytcomments_client()
             ctx = UserContext(
                 user_uid=str(uid),
@@ -125,8 +120,6 @@ async def list_comments(
             log.warning("comments_list: get_my_votes failed: %s", e)
             votes_map = {}
 
-    # Apply my_vote + liked_by_author (local rule)
-    # If the viewer is the video author, and viewer liked a comment => show author-heart.
     for cid, meta in payload["comments"].items():
         v = 0
         try:
@@ -136,18 +129,14 @@ async def list_comments(
         if v not in (-1, 0, 1):
             v = 0
         meta["my_vote"] = v
+        meta["liked_by_author"] = bool(viewer_is_owner and v == 1)
 
-        if uid and video_author_uid and str(uid) == str(video_author_uid) and v == 1:
-            meta["liked_by_author"] = True
-        else:
-            meta["liked_by_author"] = False
-
-    # Avatars map
     author_avatars: Dict[str, str] = {}
     if author_uids:
         from db import get_conn, release_conn
         from db.user_assets_db import get_user_avatar_path
         from utils.url_ut import build_storage_url
+
         conn = await get_conn()
         try:
             for au in author_uids:
@@ -163,16 +152,13 @@ async def list_comments(
         finally:
             await release_conn(conn)
 
-    is_moderator = bool(uid and video_author_uid and uid == video_author_uid)
-
-    # for roots and children - new in top
     payload["roots"] = _sort_ids_by_created(payload["roots"], payload["comments"])
     payload["children_map"] = _build_children_map(payload["comments"])
 
     return {
         "ok": True,
         "comments_enabled": True,
-        "moderator": is_moderator,
+        "moderator": bool(viewer_is_owner),
         "video_author_uid": video_author_uid,
         "roots": payload["roots"],
         "children_map": payload["children_map"],
