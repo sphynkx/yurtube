@@ -37,7 +37,7 @@ Design notes
 # Base install and config
 For a minimal version with limited functionality need to install the main app and [ytstorage](https://github.com/sphynkx/ytstorage) service. Other services are optional. Below is list of all services (they have separate repositories):
 * [ytcms](https://github.com/sphynkx/ytcms) - service for captions generation
-* [ytcms](https://github.com/sphynkx/ytconvert) - service for video conversions
+* [ytconvert](https://github.com/sphynkx/ytconvert) - service for video conversions
 * [yttrans](https://github.com/sphynkx/yttrans) - service for captions translations
 * [ytcomments](https://github.com/sphynkx/ytcomments) - service for comments
 * [ytsprites](https://github.com/sphynkx/ytsprites) - service for WebVTT sprites generation
