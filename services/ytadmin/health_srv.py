@@ -17,6 +17,23 @@ def check_db() -> Tuple[bool, Optional[str]]:
         return False, f"db_error:{e}"
 
 
+def check_db_pool() -> Tuple[bool, Optional[str], Dict[str, Any]]:
+    """
+    Checks the PostgreSQL connection pool: unhealthy when it has been fully
+    busy (no free connection) for more than 60 seconds - that is what a stuck
+    pool looks like from outside, while the process itself stays alive.
+    Returns (ok, error_message_if_any, stats).
+    """
+    try:
+        from db import pool_stats
+        st = pool_stats()
+    except Exception as e:
+        return True, None, {"error": f"pool_stats:{e}"}
+    if st.get("initialized") and float(st.get("exhausted_for_sec") or 0.0) > 60.0:
+        return False, f"db_pool_exhausted:{int(st.get('exhausted_for_sec') or 0)}s", st
+    return True, None, st
+
+
 def check_cache() -> Tuple[bool, Optional[str]]:
     """
     Performs a minimal cache liveness check.
@@ -48,18 +65,25 @@ def collect_health() -> Dict[str, Any]:
     """
     ok_db, msg_db = check_db()
     ok_cache, msg_cache = check_cache()
+    ok_pool, msg_pool, pool_st = check_db_pool()
 
-    healthy = ok_db and ok_cache
+    healthy = ok_db and ok_cache and ok_pool
 
     status: Dict[str, Any] = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "checks": {
             "db": "ok" if ok_db else (msg_db or "fail"),
             "cache": "ok" if ok_cache else (msg_cache or "fail"),
+            "db_pool": "ok" if ok_pool else (msg_pool or "fail"),
         },
         "metrics": {
             "uptime_sec": float(uptime.uptime_sec()),
             "uptime_started_iso": uptime.started_iso(),
+            # metrics must stay flat name -> number (protobuf map<string,double>)
+            "db_pool_size": float(pool_st.get("size") or 0),
+            "db_pool_idle": float(pool_st.get("idle") or 0),
+            "db_pool_held": float(pool_st.get("held") or 0),
+            "db_pool_oldest_hold_sec": float(pool_st.get("oldest_hold_sec") or 0.0),
         },
         "healthy": healthy,
     }

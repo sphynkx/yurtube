@@ -2,7 +2,8 @@ import os
 import time
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
@@ -13,6 +14,7 @@ from services.monitor.uptime import uptime
 from config.config import settings
 
 from routes import register_routes
+from db import DBPoolExhausted
 from services.ytstorage.build_client_srv import build_storage_client
 
 from middlewares.csrf_mw import NewCSRFMiddleware
@@ -32,6 +34,16 @@ app = FastAPI(
 )
 APP_GRPC_ENABLED = os.getenv("APP_GRPC_ENABLED", "1").lower() in ("1", "true", "yes", "on")
 app.state.static_version = str(int(time.time()))
+
+
+@app.exception_handler(DBPoolExhausted)
+async def _db_pool_exhausted_handler(request: Request, exc: DBPoolExhausted):
+    # Saturated DB pool: answer "busy, retry" instead of a 500 with a traceback.
+    return PlainTextResponse(
+        "Service is busy, please retry shortly.",
+        status_code=503,
+        headers={"Retry-After": "3"},
+    )
 
 
 @app.on_event("startup")

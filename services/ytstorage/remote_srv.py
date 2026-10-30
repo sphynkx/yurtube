@@ -22,6 +22,21 @@ from services.ytstorage.ytstorage_proto import ytstorage_pb2 as pb
 from services.ytstorage.ytstorage_proto import ytstorage_pb2_grpc as pb_grpc
 
 
+def _rpc_timeout() -> float:
+    """Deadline (seconds) for unary calls. A call without a deadline can hang forever."""
+    return float(max(1, _cfg_int("YTSTORAGE_GRPC_TIMEOUT_SEC", 10)))
+
+
+def _stream_idle_timeout() -> float:
+    """Max silence (seconds) between chunks of a streaming read."""
+    return float(max(1, _cfg_int("YTSTORAGE_GRPC_STREAM_IDLE_SEC", 30)))
+
+
+def _write_close_timeout() -> float:
+    """Max time (seconds) to wait for the server to finish/ack a write stream."""
+    return float(max(1, _cfg_int("YTSTORAGE_GRPC_WRITE_CLOSE_SEC", 300)))
+
+
 def _norm(rel: str) -> str:
     return (rel or "").strip().replace("\\", "/").lstrip("/")
 
@@ -74,6 +89,11 @@ def _grpc_channel() -> grpc.aio.Channel:
     opts = [
         ("grpc.max_send_message_length", max_msg),
         ("grpc.max_receive_message_length", max_msg),
+        # Detect dead/half-open connections instead of waiting forever
+        ("grpc.keepalive_time_ms", 30000),
+        ("grpc.keepalive_timeout_ms", 10000),
+        ("grpc.keepalive_permit_without_calls", 1),
+        ("grpc.http2.max_pings_without_data", 0),
     ]
     if use_tls:
         creds = grpc.ssl_channel_credentials()
@@ -133,7 +153,12 @@ class _AsyncWriter:
 
     async def __aexit__(self, exc_type, exc, tb):
         await self._q.put(None)
-        await self._done.wait()
+        try:
+            await asyncio.wait_for(self._done.wait(), timeout=_write_close_timeout())
+        except asyncio.TimeoutError:
+            if self._task:
+                self._task.cancel()
+            raise RuntimeError("remote write timed out waiting for storage acknowledgement")
         if self._task:
             try:
                 await self._task
@@ -170,13 +195,13 @@ class RemoteStorageClient(StorageClient):
     async def exists(self, rel_path: str) -> bool:
         req = pb.ExistsRequest(path=pb.Path(rel_path=_norm(rel_path)))
         try:
-            resp = await self._stub.Exists(req, metadata=_auth_md())
+            resp = await self._stub.Exists(req, metadata=_auth_md(), timeout=_rpc_timeout())
             return bool(resp.exists)
-        except grpc.RpcError:
+        except (grpc.RpcError, asyncio.TimeoutError):
             return False
 
     async def stat(self, rel_path: str) -> Dict[str, Any]:
-        resp = await self._stub.Stat(pb.StatRequest(path=pb.Path(rel_path=_norm(rel_path))), metadata=_auth_md())
+        resp = await self._stub.Stat(pb.StatRequest(path=pb.Path(rel_path=_norm(rel_path))), metadata=_auth_md(), timeout=_rpc_timeout())
         return {
             "name": resp.name,
             "rel_path": resp.rel_path,
@@ -188,7 +213,7 @@ class RemoteStorageClient(StorageClient):
         }
 
     async def mkdirs(self, rel_path: str, exist_ok: bool = True) -> None:
-        await self._stub.Mkdirs(pb.MkdirsRequest(path=pb.Path(rel_path=_norm(rel_path)), exist_ok=bool(exist_ok)), metadata=_auth_md())
+        await self._stub.Mkdirs(pb.MkdirsRequest(path=pb.Path(rel_path=_norm(rel_path)), exist_ok=bool(exist_ok)), metadata=_auth_md(), timeout=_rpc_timeout())
 
     async def listdir(self, rel_path: str, recursive: bool = False, limit: int = 0, page_token: str = "") -> Dict[str, Any]:
         resp = await self._stub.Listdir(
@@ -199,6 +224,7 @@ class RemoteStorageClient(StorageClient):
                 page_token=page_token or "",
             ),
             metadata=_auth_md(),
+            timeout=_rpc_timeout(),
         )
         entries = []
         for e in resp.entries:
@@ -220,12 +246,13 @@ class RemoteStorageClient(StorageClient):
                 overwrite=bool(overwrite),
             ),
             metadata=_auth_md(),
+            timeout=_rpc_timeout(),
         )
         if not resp.ok:
             raise RuntimeError("remote rename failed")
 
     async def remove(self, rel_path: str, recursive: bool = False) -> None:
-        resp = await self._stub.Remove(pb.RemoveRequest(path=pb.Path(rel_path=_norm(rel_path)), recursive=bool(recursive)), metadata=_auth_md())
+        resp = await self._stub.Remove(pb.RemoveRequest(path=pb.Path(rel_path=_norm(rel_path)), recursive=bool(recursive)), metadata=_auth_md(), timeout=_rpc_timeout())
         if not resp.ok:
             raise RuntimeError("remote remove failed")
 
@@ -240,8 +267,19 @@ class RemoteStorageClient(StorageClient):
         )
 
         async def _aiter():
-            async for chunk in stream:
-                yield bytes(chunk.data or b"")
+            it = stream.__aiter__()
+            try:
+                while True:
+                    try:
+                        chunk = await asyncio.wait_for(it.__anext__(), timeout=_stream_idle_timeout())
+                    except StopAsyncIteration:
+                        break
+                    yield bytes(chunk.data or b"")
+            finally:
+                try:
+                    stream.cancel()
+                except Exception:
+                    pass
 
         return _aiter()
 
@@ -252,15 +290,16 @@ class RemoteStorageClient(StorageClient):
         ref = await self._stub.EnqueuePut(
             pb.EnqueuePutRequest(path=pb.Path(rel_path=_norm(rel_path)), overwrite=bool(overwrite), expected_size=int(expected_size or 0)),
             metadata=_auth_md(),
+            timeout=_rpc_timeout(),
         )
         return ref.job_id or ""
 
     async def enqueue_get(self, rel_path: str) -> str:
-        ref = await self._stub.EnqueueGet(pb.EnqueueGetRequest(path=pb.Path(rel_path=_norm(rel_path))), metadata=_auth_md())
+        ref = await self._stub.EnqueueGet(pb.EnqueueGetRequest(path=pb.Path(rel_path=_norm(rel_path))), metadata=_auth_md(), timeout=_rpc_timeout())
         return ref.job_id or ""
 
     async def job_status(self, job_id: str) -> Dict[str, Any]:
-        resp = await self._stub.JobStatus(pb.JobStatusRequest(job_id=job_id or ""), metadata=_auth_md())
+        resp = await self._stub.JobStatus(pb.JobStatusRequest(job_id=job_id or ""), metadata=_auth_md(), timeout=_rpc_timeout())
         return {
             "status": int(resp.status),
             "percent": int(resp.percent),
@@ -269,9 +308,9 @@ class RemoteStorageClient(StorageClient):
         }
 
     async def cancel_job(self, job_id: str) -> bool:
-        resp = await self._stub.CancelJob(pb.CancelJobRequest(job_id=job_id or ""), metadata=_auth_md())
+        resp = await self._stub.CancelJob(pb.CancelJobRequest(job_id=job_id or ""), metadata=_auth_md(), timeout=_rpc_timeout())
         return bool(resp.ok)
 
     async def health(self) -> Dict[str, str]:
-        resp = await self._stub.Health(pb.HealthRequest(), metadata=_auth_md())
+        resp = await self._stub.Health(pb.HealthRequest(), metadata=_auth_md(), timeout=_rpc_timeout())
         return {"status": resp.status, "version": resp.version}
