@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS videos (
     captions_meta        JSONB NULL,
     captions_ready       BOOLEAN NOT NULL DEFAULT FALSE,
     captions_alt         JSONB NULL,-- Future translations container
-	permit_download 	 BOOLEAN NOT NULL DEFAULT FALSE,
+  permit_download 	 BOOLEAN NOT NULL DEFAULT FALSE,
 
     CONSTRAINT videos_video_id_len CHECK (char_length(video_id) = 12)
 );
@@ -136,15 +136,8 @@ CREATE INDEX IF NOT EXISTS subscriptions_subscriber_idx ON subscriptions (subscr
 CREATE INDEX IF NOT EXISTS subscriptions_channel_idx ON subscriptions (channel_uid);
 
 -- Playlists
-CREATE TABLE IF NOT EXISTS playlists (
-    playlist_id  TEXT PRIMARY KEY,
-    owner_uid    TEXT NOT NULL REFERENCES users(user_uid) ON DELETE CASCADE,
-    title        TEXT NOT NULL,
-    description  TEXT NOT NULL DEFAULT '',
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS playlists_owner_created_idx ON playlists (owner_uid, created_at DESC);
+-- NOTE: the table is defined once, below (older duplicate definition removed:
+-- it made fresh installs fail on the 'visibility' index).
 
 -- Playlists core schema (MVP) with indices and cascade behavior.
 -- Uses TEXT ids consistent with existing schema. Visibility/type/order are TEXT with CHECK constraints.
@@ -171,6 +164,7 @@ CREATE TABLE IF NOT EXISTS playlists (
 CREATE INDEX IF NOT EXISTS playlists_owner_idx ON playlists (owner_uid);
 CREATE INDEX IF NOT EXISTS playlists_owner_visibility_idx ON playlists (owner_uid, visibility, created_at DESC);
 CREATE INDEX IF NOT EXISTS playlists_parent_idx ON playlists (parent_id);
+CREATE INDEX IF NOT EXISTS playlists_owner_created_idx ON playlists (owner_uid, created_at DESC);
 
 -- Ensure only one system_watch_later per user
 CREATE UNIQUE INDEX IF NOT EXISTS playlists_unique_watch_later_per_user_uidx
