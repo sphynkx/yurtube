@@ -210,3 +210,13 @@ html, body { height:100%; background:#000; font-family:var(--yrp-font); }
 .yrp-embed-captions-text {
   min-height: 0;
 }
+
+/* Speaker colours (diarization): <c.spkN> cue markup; --yrp-spkN may be overridden per video by JS */
+.yrp-embed-captions-text .spk1 { color: var(--yrp-spk1, #ffd54f); }
+.yrp-embed-captions-text .spk2 { color: var(--yrp-spk2, #4fc3f7); }
+.yrp-embed-captions-text .spk3 { color: var(--yrp-spk3, #81c784); }
+.yrp-embed-captions-text .spk4 { color: var(--yrp-spk4, #f48fb1); }
+.yrp-embed-captions-text .spk5 { color: var(--yrp-spk5, #ffb74d); }
+.yrp-embed-captions-text .spk6 { color: var(--yrp-spk6, #ba68c8); }
+.yrp-embed-captions-text .spk7 { color: var(--yrp-spk7, #4db6ac); }
+.yrp-embed-captions-text .spk8 { color: var(--yrp-spk8, #e57373); }

@@ -69,3 +69,13 @@
 .std-embed-sprite-pop[style*="display: block"] {
   opacity: 1;
 }
+
+/* Speaker colours (diarization): native cue rendering, <c.spkN> markup; --yrp-spkN set per video by JS */
+.yrp-video::cue(.spk1) { color: var(--yrp-spk1, #ffd54f); }
+.yrp-video::cue(.spk2) { color: var(--yrp-spk2, #4fc3f7); }
+.yrp-video::cue(.spk3) { color: var(--yrp-spk3, #81c784); }
+.yrp-video::cue(.spk4) { color: var(--yrp-spk4, #f48fb1); }
+.yrp-video::cue(.spk5) { color: var(--yrp-spk5, #ffb74d); }
+.yrp-video::cue(.spk6) { color: var(--yrp-spk6, #ba68c8); }
+.yrp-video::cue(.spk7) { color: var(--yrp-spk7, #4db6ac); }
+.yrp-video::cue(.spk8) { color: var(--yrp-spk8, #e57373); }

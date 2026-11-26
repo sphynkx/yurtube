@@ -246,6 +246,19 @@ function mountOne(host, tpl, PLAYER_BASE){
   const wrap = root.querySelector('.yrp-video-wrap');
   const video = root.querySelector('.yrp-video');
   const source = video.querySelector('source');
+
+  // Speaker colours (diarization): palette rotated per video; used by ::cue(.spkN) in CSS
+  (function applySpeakerPalette() {
+    try {
+      const pal = ['#ffd54f', '#4fc3f7', '#81c784', '#f48fb1', '#ffb74d', '#ba68c8', '#4db6ac', '#e57373'];
+      const vid = String(root.getAttribute('data-video-id') || '');
+      if (!vid) return;
+      let h = 5381;
+      for (let i = 0; i < vid.length; i++) h = ((h * 33) ^ vid.charCodeAt(i)) >>> 0;
+      const shift = h % pal.length;
+      for (let n = 0; n < pal.length; n++) video.style.setProperty('--yrp-spk' + (n + 1), pal[(n + shift) % pal.length]);
+    } catch (e) {}
+  })();
   const centerBtn = root.querySelector('.yrp-center-play');
   const centerLogo = root.querySelector('.yrp-center-logo');
 

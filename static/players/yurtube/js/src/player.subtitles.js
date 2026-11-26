@@ -73,18 +73,79 @@ export function applyPageModes(video, activeTrackIndex, overlayActive) {
   });
 }
 
+
+/**
+ * Speaker colours (diarization). Captions may contain <c.spkN>..</c> tags
+ * (N = 1..8, numbered by first appearance in the video). The palette is rotated
+ * per video (hash of video id) so different videos get different colour order.
+ * Defaults for the same (unrotated) palette are also in the player CSS.
+ */
+const SPK_PALETTE = ['#ffd54f', '#4fc3f7', '#81c784', '#f48fb1', '#ffb74d', '#ba68c8', '#4db6ac', '#e57373'];
+
+function _spkShift(videoId) {
+  const s = String(videoId || '');
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+  return h % SPK_PALETTE.length;
+}
+
+/**
+ * Set CSS variables --yrp-spk1..8 on the element (once per element)
+ */
+function applySpeakerPalette(el) {
+  if (!el || el.__yrpSpkPal) return;
+  el.__yrpSpkPal = true;
+  try {
+    const holder = el.closest ? el.closest('[data-video-id]') : null;
+    const vid = holder ? holder.getAttribute('data-video-id') : '';
+    if (!vid) return;
+    const shift = _spkShift(vid);
+    for (let n = 0; n < SPK_PALETTE.length; n++) {
+      el.style.setProperty('--yrp-spk' + (n + 1), SPK_PALETTE[(n + shift) % SPK_PALETTE.length]);
+    }
+  } catch {}
+}
+
+/**
+ * Render a cue into the overlay box. Uses cue.getCueAsHTML() so WebVTT markup
+ * (<c.spkN>, <i>, <b>, <u>) is rendered; falls back to plain text.
+ * Re-renders only when the cue changes (avoids DOM churn on every timeupdate).
+ */
+function renderCueInto(box, cue) {
+  if (!box) return;
+  if (box.__yrpCue === cue && box.__yrpCueInit) return;
+  box.__yrpCue = cue;
+  box.__yrpCueInit = true;
+  box.textContent = '';
+  if (!cue) return;
+  let frag = null;
+  try {
+    if (typeof cue.getCueAsHTML === 'function') frag = cue.getCueAsHTML();
+  } catch {}
+  if (frag) box.appendChild(frag);
+  else box.textContent = String(cue.text || '').replace(/\r/g, '');
+}
+
+/**
+ * Get current cue object from active track at video's current time
+ */
+export function currentCue(video, activeTrackIndex) {
+  const tr = chooseActiveTrack(video, activeTrackIndex);
+  if (!tr || !tr.cues) return null;
+  const ct = video.currentTime || 0;
+  for (let i = 0; i < tr.cues.length; i++) {
+    const c = tr.cues[i];
+    if (ct >= c.startTime && ct <= c.endTime) return c;
+  }
+  return null;
+}
+
 /**
  * Get current cue text from active track at video's current time
  */
 export function currentCueText(video, activeTrackIndex) {
-  const tr = chooseActiveTrack(video, activeTrackIndex);
-  if (!tr || !tr.cues) return '';
-  const ct = video.currentTime || 0;
-  for (let i = 0; i < tr.cues.length; i++) {
-    const c = tr.cues[i];
-    if (ct >= c.startTime && ct <= c.endTime) return (c.text || '').replace(/\r/g, '');
-  }
-  return '';
+  const c = currentCue(video, activeTrackIndex);
+  return c ? (c.text || '').replace(/\r/g, '') : '';
 }
 
 /**
@@ -225,7 +286,8 @@ export function refreshSubtitlesBtn(btnSubtitles, video, overlayActive) {
  */
 export function updateOverlayText(hooks, video, activeTrackIndex, overlayActive) {
   if (!hooks || !hooks.textBox) return;
-  hooks.textBox.textContent = overlayActive ? currentCueText(video, activeTrackIndex) : '';
+  applySpeakerPalette(hooks.textBox);
+  renderCueInto(hooks.textBox, overlayActive ? currentCue(video, activeTrackIndex) : null);
 }
 
 /**
