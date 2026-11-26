@@ -13,6 +13,7 @@ from config.ytcms.ytcms_cfg import (
     YTCMS_SUBMIT_TIMEOUT,
     YTCMS_STATUS_TIMEOUT,
     YTCMS_RESULT_TIMEOUT,
+    YTCMS_DIARIZE_DEFAULT,
 )
 
 from config.ytstorage.ytstorage_cfg import (
@@ -20,6 +21,8 @@ from config.ytstorage.ytstorage_cfg import (
     YTSTORAGE_GRPC_TLS,
     YTSTORAGE_GRPC_TOKEN,
 )
+
+from google.protobuf import struct_pb2
 
 from services.ytcms.ytcms_proto import ytcms_pb2, ytcms_pb2_grpc
 
@@ -105,6 +108,8 @@ def submit_storage_job(
     task: Optional[str] = None,
     idempotency_key: Optional[str] = None,
     submit_timeout: float = YTCMS_SUBMIT_TIMEOUT,
+    diarize: Optional[bool] = None,
+    num_speakers: Optional[int] = None,
 ) -> Tuple[str, str]:
     addr = pick_ytcms_server_addr()
     lang2 = (lang or YTCMS_DEFAULT_LANG).strip() or "auto"
@@ -115,6 +120,15 @@ def submit_storage_job(
     output_base_rel_dir = f"{storage_rel_n}/captions"
 
     idem = (idempotency_key or f"yurtube:{video_id}:{task2}:{lang2}:{source_rel_path}").strip()
+
+    # Speaker diarization is requested through the "options" Struct of SubmitJobRequest.
+    # None -> project default (YTCMS_DIARIZE_DEFAULT). A service without diarization simply ignores it.
+    want_diarize = YTCMS_DIARIZE_DEFAULT if diarize is None else bool(diarize)
+    options = struct_pb2.Struct()
+    if want_diarize:
+        options.update({"diarize": True})
+        if num_speakers and int(num_speakers) > 0:
+            options.update({"num_speakers": int(num_speakers)})
 
     md = _auth_md()
     channel = grpc.insecure_channel(addr)
@@ -144,6 +158,7 @@ def submit_storage_job(
                 ),
                 base_rel_dir=output_base_rel_dir,
             ),
+            options=options,
         )
 
         ack = stub.SubmitJob(req, metadata=md, timeout=submit_timeout)
@@ -152,6 +167,74 @@ def submit_storage_job(
         if not ack.job_id:
             raise RuntimeError("Submit returned empty job_id")
 
+        return ack.job_id, addr
+    finally:
+        try:
+            channel.close()
+        except Exception:
+            pass
+
+
+def submit_label_job(
+    *,
+    video_id: str,
+    storage_rel: str,
+    vtt_rel: str,
+    num_speakers: Optional[int] = None,
+    submit_timeout: float = YTCMS_SUBMIT_TIMEOUT,
+) -> Tuple[str, str]:
+    """
+    Add speaker tags to EXISTING captions without re-running Whisper (text of the cues is never changed,
+    so manual edits are preserved). The file is rewritten in place; its very first version is kept once
+    as "<name>.orig.vtt" next to it.
+    """
+    addr = pick_ytcms_server_addr()
+
+    storage_rel_n = (storage_rel or "").replace("\\", "/").strip().lstrip("/")
+    vtt_rel_n = (vtt_rel or "").replace("\\", "/").strip().lstrip("/")
+    if not vtt_rel_n.lower().endswith(".vtt"):
+        raise ValueError("captions path must end with .vtt")
+    stem = vtt_rel_n[:-4]
+
+    options = struct_pb2.Struct()
+    options.update({
+        "diarize_mode": "label",
+        "label_vtt_rel_path": vtt_rel_n,
+        "label_out_rel_path": vtt_rel_n,
+        "allow_overwrite": True,
+        "backup_rel_path": f"{stem}.orig.vtt",
+    })
+    if num_speakers and int(num_speakers) > 0:
+        options.update({"num_speakers": int(num_speakers)})
+
+    storage_ref = ytcms_pb2.StorageRef(
+        address=str(YTSTORAGE_GRPC_ADDRESS),
+        tls=bool(YTSTORAGE_GRPC_TLS),
+        token=str(YTSTORAGE_GRPC_TOKEN or ""),
+    )
+    channel = grpc.insecure_channel(addr)
+    stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
+    try:
+        req = ytcms_pb2.SubmitJobRequest(
+            video_id=video_id,
+            # unique key: a new labelling run must never be merged with an earlier job
+            idempotency_key=f"yurtube:{video_id}:label:{vtt_rel_n}:{int(time.time())}",
+            lang="auto",
+            task="transcribe",
+            source=ytcms_pb2.SourceRef(
+                storage=storage_ref,
+                rel_path=f"{storage_rel_n}/original.webm",
+                mime="video/webm",
+                filename="original.webm",
+            ),
+            output=ytcms_pb2.OutputRef(storage=storage_ref, base_rel_dir=os.path.dirname(vtt_rel_n)),
+            options=options,
+        )
+        ack = stub.SubmitJob(req, metadata=_auth_md(), timeout=submit_timeout)
+        if not ack.accepted:
+            raise RuntimeError(f"Submit rejected: {ack.message}")
+        if not ack.job_id:
+            raise RuntimeError("Submit returned empty job_id")
         return ack.job_id, addr
     finally:
         try:

@@ -143,3 +143,9 @@ YTCMS_POLL_INTERVAL = _cfg.poll_interval
 YTCMS_SUBMIT_TIMEOUT = _cfg.submit_timeout
 YTCMS_STATUS_TIMEOUT = _cfg.status_timeout
 YTCMS_RESULT_TIMEOUT = _cfg.result_timeout
+
+# Speaker diarization (colouring of caption lines by speaker).
+# YTCMS_DIARIZE_DEFAULT: default state of the "Speaker colours" checkbox and value used where no
+# explicit choice exists. The ytcms service must have diarization enabled (YTCMS_DIARIZE_ENABLED=true),
+# otherwise the request is harmless: plain captions are produced.
+YTCMS_DIARIZE_DEFAULT: bool = (os.getenv("YTCMS_DIARIZE_DEFAULT", "true").strip().lower() in ("1", "true", "yes", "on"))

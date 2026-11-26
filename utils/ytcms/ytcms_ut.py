@@ -77,7 +77,10 @@ def get_active_cms_server(timeout_sec: float = 1.0) -> Dict[str, Any]:
         if parsed:
             host, port = parsed
 
-        model = (getattr(resp, "version", None) or "").strip() or ""
+        # Whisper model name is advertised by ytcms in labels["model"]; "version" is the legacy fallback.
+        labels = dict(getattr(resp, "labels", {}) or {})
+        model = (labels.get("model") or getattr(resp, "version", None) or "").strip()
+        diarization = str(labels.get("diarization") or "").strip() == "1"
 
         return {
             "host": host,
@@ -85,9 +88,10 @@ def get_active_cms_server(timeout_sec: float = 1.0) -> Dict[str, Any]:
             "model": model,
             "app_name": getattr(resp, "app_name", "") or "",
             "instance_id": getattr(resp, "instance_id", "") or "",
+            "diarization": diarization,
         }
     except Exception:
-        return {"host": host, "port": port, "model": "", "app_name": "", "instance_id": ""}
+        return {"host": host, "port": port, "model": "", "app_name": "", "instance_id": "", "diarization": False}
     finally:
         try:
             if channel is not None:

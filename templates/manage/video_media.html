@@ -89,7 +89,7 @@
       <h2>Captions</h2>
 		<div style="font-size:12px; color:#555; margin-bottom:6px;">
 		Server: <code>{{ active_cms_server["host"] or "unknown" }}:{{ active_cms_server["port"] or "0" }}</code><br>
-		Instance ID: <code>{{ active_cms_server["instance_id"] }}</code><br>
+		Instance ID: <code>{{ active_cms_server["instance_id"] or "-" }}</code><br>
 		Model: <code>{{ active_cms_server["model"] or "unknown" }}</code><br>
 		</div>
       <div class="alert" style="font-size:13px; white-space:pre-line; margin-bottom:10px;">
@@ -105,6 +105,11 @@ NOTE: Captions generation may take a long time.
           <input type="hidden" name="video_id" value="{{ video_id }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="{{ assets.captions_lang or 'auto' }}" style="width:90px;"></label>
+          <label style="font-size:12px;margin-left:8px;" title="Colour caption lines by speaker (needs diarization enabled on the ytcms server)">
+            <input type="hidden" name="diarize_form" value="1">
+            <input type="checkbox" name="diarize" value="1" {{ 'checked' if diarize_default else '' }} {{ '' if active_cms_server["diarization"] else 'disabled' }}> Speaker colours{{ '' if active_cms_server["diarization"] else ' (not available on server)' }}
+          </label>
+          <label style="font-size:12px;" title="Leave empty to detect automatically; if you know how many people speak, enter it - it is more reliable">Speakers: <input name="num_speakers" type="number" min="1" max="8" placeholder="auto" style="width:60px;"></label>
           <button id="btn-generate-captions" type="submit">Regenerate captions</button>
           <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
         </form>
@@ -112,6 +117,13 @@ NOTE: Captions generation may take a long time.
           <input type="hidden" name="video_id" value="{{ video_id }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button type="submit">Delete captions</button>
+        </form>
+        <form id="form-diarize-captions" action="/internal/ytcms/captions/diarize" method="post" style="margin-top:8px;">
+          <input type="hidden" name="video_id" value="{{ video_id }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <label style="font-size:12px;" title="Leave empty to detect automatically">Speakers: <input name="num_speakers" type="number" min="1" max="8" placeholder="auto" style="width:60px;"></label>
+          <button id="btn-diarize-captions" type="submit" {{ '' if active_cms_server["diarization"] else 'disabled' }} title="Colour the lines of the existing captions by speaker. The text (including your manual edits) is not changed; the original file is kept as *.orig.vtt">Add speaker colours to existing captions</button>
+          <span id="diarize-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
         </form>
         <div style="margin-top:10px;">
           <a class="btn" href="/manage/video/{{ video_id }}/translations">Open Translations</a>
@@ -121,6 +133,11 @@ NOTE: Captions generation may take a long time.
         <form id="form-start-captions" action="/manage/video/{{ video_id }}/captions/process" method="post" style="margin-top:8px;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <label style="font-size:12px;">Lang (auto or code): <input name="lang" value="auto" style="width:90px;"></label>
+          <label style="font-size:12px;margin-left:8px;" title="Colour caption lines by speaker (needs diarization enabled on the ytcms server)">
+            <input type="hidden" name="diarize_form" value="1">
+            <input type="checkbox" name="diarize" value="1" {{ 'checked' if diarize_default else '' }} {{ '' if active_cms_server["diarization"] else 'disabled' }}> Speaker colours{{ '' if active_cms_server["diarization"] else ' (not available on server)' }}
+          </label>
+          <label style="font-size:12px;" title="Leave empty to detect automatically; if you know how many people speak, enter it - it is more reliable">Speakers: <input name="num_speakers" type="number" min="1" max="8" placeholder="auto" style="width:60px;"></label>
           <button id="btn-generate-captions" type="submit">Generate captions</button>
           <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
         </form>
@@ -138,4 +155,30 @@ NOTE: Captions generation may take a long time.
 <script src="/static/js/sprite_preview.js"></script>
 <script src="/static/js/video_media.js?v={{ request.app.state.static_version }}"></script>
 <script src="/static/js/captions_status.js"></script>
+<script>
+(function () {
+  var el = document.getElementById("diarize-status");
+  if (!el) return;
+  var vid = el.getAttribute("data-video-id");
+  var timer = null;
+  function tick() {
+    fetch("/internal/ytcms/captions/diarize/status?video_id=" + encodeURIComponent(vid), { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || !d.active) { el.textContent = ""; return; }
+        if (d.state === "done") {
+          el.style.color = "#0a8a66";
+          el.textContent = d.diarized ? ("Speaker colours added (" + d.speakers + " speakers)") : (d.message || "no speakers found");
+          return;
+        }
+        if (d.state === "failed") { el.style.color = "#a00"; el.textContent = "Speaker colours failed: " + (d.message || ""); return; }
+        el.style.color = "#0070cc";
+        el.textContent = "Speaker colours: " + d.state + (d.percent >= 0 ? " (" + d.percent + "%)" : "");
+        timer = setTimeout(tick, 4000);
+      })
+      .catch(function () { timer = setTimeout(tick, 8000); });
+  }
+  tick();
+})();
+</script>
 {% endblock %}

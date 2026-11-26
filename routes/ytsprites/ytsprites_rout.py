@@ -33,6 +33,7 @@ from services.ytsprites.ytsprites_client_srv import (
 from utils.security_ut import get_current_user
 from utils.url_ut import build_storage_url
 from utils.ytcms.ytcms_ut import get_active_cms_server
+from config.ytcms.ytcms_cfg import YTCMS_DIARIZE_DEFAULT
 
 from services.ytstorage.base_srv import StorageClient
 
@@ -165,6 +166,7 @@ async def video_media_page(request: Request, video_id: str) -> Any:
             "storage_public_base_url": getattr(settings, "YTSTORAGE_PUBLIC_BASE_URL", None),
             "active_sprites_server": active_sprites_server,
             "active_cms_server": active_cms_server,
+            "diarize_default": YTCMS_DIARIZE_DEFAULT,
         },
     )
     if not _get_csrf_cookie(request):
