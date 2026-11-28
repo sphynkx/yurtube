@@ -33,9 +33,40 @@ def _normalize_target(s: str) -> str:
     return (s or "").strip()
 
 
+def _split_target(target: str) -> Tuple[str, bool]:
+    """
+    "host:port" -> ("host:port", False); "grpcs://host:port" -> ("host:port", True); "grpc://host:port" -> plain
+    """
+    t = _normalize_target(target)
+    low = t.lower()
+    if low.startswith("grpcs://"):
+        return t[8:], True
+    if low.startswith("grpc://"):
+        return t[7:], False
+    return t, False
+
+
+def _open_channel(server: YTTransServer):
+    """
+    Async channel to a yttrans server: plain text for a local network server,
+    TLS for "grpcs://host:port" (remote server behind nginx).
+    Optional YTTRANS_TLS_CA_FILE: PEM with a custom CA (default: system/gRPC bundled roots).
+    """
+    target, tls = _split_target(server.target)
+    tls = bool(tls or getattr(server, "tls", False))
+    if not tls:
+        return grpc.aio.insecure_channel(target)
+    ca_file = (os.getenv("YTTRANS_TLS_CA_FILE", "") or "").strip()
+    root = None
+    if ca_file:
+        with open(ca_file, "rb") as f:
+            root = f.read()
+    return grpc.aio.secure_channel(target, grpc.ssl_channel_credentials(root_certificates=root))
+
+
 def _parse_target_to_server(target: str) -> YTTransServer:
     """
-    Convert 'host:port' (stored in meta as job_server) back into YTTransServer.
+    Convert 'host:port' or 'grpcs://host:port' (stored in meta as job_server) back into YTTransServer.
     Token is resolved from current config list (if any).
     """
     t = _normalize_target(target)
@@ -49,6 +80,7 @@ def _parse_target_to_server(target: str) -> YTTransServer:
     # Fallback: parse host/port, no token
     host = cfg.host
     port = cfg.port
+    t, tls = _split_target(t)
     if t.startswith("["):
         rb = t.find("]")
         if rb > 0:
@@ -59,7 +91,7 @@ def _parse_target_to_server(target: str) -> YTTransServer:
                     port = int(rest[1:])
                 except Exception:
                     port = cfg.port
-            return YTTransServer(host=host, port=port, token=None)
+            return YTTransServer(host=host, port=port, token=None, tls=tls)
 
     if ":" in t:
         h, p = t.rsplit(":", 1)
@@ -68,11 +100,11 @@ def _parse_target_to_server(target: str) -> YTTransServer:
             port = int(p.strip())
         except Exception:
             port = port
-    return YTTransServer(host=host, port=port, token=None)
+    return YTTransServer(host=host, port=port, token=None, tls=tls)
 
 
 async def _healthcheck_server(server: YTTransServer) -> bool:
-    channel = grpc.aio.insecure_channel(server.target)
+    channel = _open_channel(server)
     try:
         stub = health_pb2_grpc.HealthStub(channel)
 
@@ -80,6 +112,7 @@ async def _healthcheck_server(server: YTTransServer) -> bool:
         try:
             resp = await stub.Check(
                 health_pb2.HealthCheckRequest(service="yttrans.v1.Translator"),
+                metadata=_auth_md(server.token),
                 timeout=_YTTRANS_HEALTH_TIMEOUT_SEC,
             )
             if resp.status == health_pb2.HealthCheckResponse.SERVING:
@@ -93,6 +126,7 @@ async def _healthcheck_server(server: YTTransServer) -> bool:
         try:
             resp2 = await stub.Check(
                 health_pb2.HealthCheckRequest(service=""),
+                metadata=_auth_md(server.token),
                 timeout=_YTTRANS_HEALTH_TIMEOUT_SEC,
             )
             return resp2.status == health_pb2.HealthCheckResponse.SERVING
@@ -137,7 +171,7 @@ async def list_languages() -> Tuple[List[str], str, Dict[str, Any]]:
         )
 
     server = await pick_yttrans_server()
-    channel = grpc.aio.insecure_channel(server.target)
+    channel = _open_channel(server)
     try:
         stub = yttrans_pb2_grpc.TranslatorStub(channel)  # type: ignore
         req = yttrans_pb2.ListLanguagesRequest()  # type: ignore
@@ -175,7 +209,7 @@ async def submit_translate(
         )
 
     server = await pick_yttrans_server()
-    channel = grpc.aio.insecure_channel(server.target)
+    channel = _open_channel(server)
     try:
         stub = yttrans_pb2_grpc.TranslatorStub(channel)  # type: ignore
         req = yttrans_pb2.SubmitTranslateRequest(  # type: ignore
@@ -206,7 +240,7 @@ async def get_status(job_id: str, server: Optional[str] = None) -> Dict[str, Any
         )
 
     s = _parse_target_to_server(server) if server else await pick_yttrans_server()
-    channel = grpc.aio.insecure_channel(s.target)
+    channel = _open_channel(s)
     try:
         stub = yttrans_pb2_grpc.TranslatorStub(channel)  # type: ignore
         req = yttrans_pb2.GetStatusRequest(job_id=job_id)  # type: ignore
@@ -237,7 +271,7 @@ async def get_partial_result(job_id: str, server: Optional[str] = None) -> Dict[
         )
 
     s = _parse_target_to_server(server) if server else await pick_yttrans_server()
-    channel = grpc.aio.insecure_channel(s.target)
+    channel = _open_channel(s)
     try:
         stub = yttrans_pb2_grpc.TranslatorStub(channel)  # type: ignore
         req = yttrans_pb2.GetPartialResultRequest(job_id=job_id)  # type: ignore
@@ -280,7 +314,7 @@ async def get_result(job_id: str, server: Optional[str] = None) -> Tuple[str, st
         )
 
     s = _parse_target_to_server(server) if server else await pick_yttrans_server()
-    channel = grpc.aio.insecure_channel(s.target)
+    channel = _open_channel(s)
     try:
         stub = yttrans_pb2_grpc.TranslatorStub(channel)  # type: ignore
         req = yttrans_pb2.GetResultRequest(job_id=job_id)  # type: ignore

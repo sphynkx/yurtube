@@ -262,7 +262,13 @@ cd services/ytcms_proto
 
 ### Caption translation service (external)
 This is separate service based on gRPC+protobuf and different translation providers. It installs as separate service on the same or external server. See [its repo](https://github.com/sphynkx/yttrans) for details about it's install and configuration.
-At app config you need to set IP address (`YTTRANS_HOST`) and port (`YTTRANS_PORT`) of `yttrans` service, `YTTRANS_TOKEN` same as on service side. Also make sure that file `services/yttrans/yttrans_proto/yttrans.proto` is identical with one at `yttrans` service. If not - you have to regenerate stubs:
+At app config you need to set IP address (`YTTRANS_HOST`) and port (`YTTRANS_PORT`) of `yttrans` service, `YTTRANS_TOKEN` same as on service side.
+Several servers can be listed in `YTTRANS_SERVERS` (the first healthy one is used), each with its own token after `@`. A service on a remote host (behind nginx with TLS) is written with the `grpcs://` scheme:
+```conf
+YTTRANS_SERVERS=192.168.7.3:9095@TOKEN1,grpcs://veda.example.org:8444@TOKEN2
+#YTTRANS_TLS_CA_FILE=/path/to/ca.pem   # only for a certificate from a custom CA
+```
+Also make sure that file `services/yttrans/yttrans_proto/yttrans.proto` is identical with one at `yttrans` service. If not - you have to regenerate stubs:
 ```bash
 cd services/yttrans_proto
 ./gen_proto.sh

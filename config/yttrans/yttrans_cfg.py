@@ -10,10 +10,12 @@ class YTTransServer:
     host: str
     port: int
     token: Optional[str] = None
+    tls: bool = False
 
     @property
     def target(self) -> str:
-        return f"{self.host}:{self.port}"
+        # a remote server behind an nginx TLS grpc proxy keeps the "grpcs://" scheme in the address string
+        return f"{'grpcs://' if self.tls else ''}{self.host}:{self.port}"
 
 
 def _parse_int(val: str, default_int: int) -> int:
@@ -60,9 +62,10 @@ def _parse_server_addr(raw: str, default_host: str, default_port: int) -> tuple[
 def parse_yttrans_servers_env(val: Optional[str]) -> List[YTTransServer]:
     """
     YTTRANS_SERVERS format (recommended):
-      host:port@token,host2:port2,[ipv6]:port3@token3
+      host:port@token,host2:port2,[ipv6]:port3@token3,grpcs://veda.wiki:8444@token4
 
     Token part is optional. Use '@' as separator because ':' conflicts with IPv6.
+    A server behind a TLS proxy is written with the scheme: grpcs://host:port (grpc://host:port means plain text).
     """
     raw = (val or "").strip()
     if not raw:
@@ -82,8 +85,16 @@ def parse_yttrans_servers_env(val: Optional[str]) -> List[YTTransServer]:
             tok = tok.strip()
             token = tok or None
 
-        host, port = _parse_server_addr(addr.strip(), default_host, default_port)
-        out.append(YTTransServer(host=host, port=port, token=token))
+        addr = addr.strip()
+        tls = False
+        low = addr.lower()
+        if low.startswith("grpcs://"):
+            tls, addr = True, addr[8:]
+        elif low.startswith("grpc://"):
+            addr = addr[7:]
+
+        host, port = _parse_server_addr(addr, default_host, default_port)
+        out.append(YTTransServer(host=host, port=port, token=token, tls=tls))
 
     return out
 
