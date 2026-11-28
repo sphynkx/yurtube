@@ -1,3 +1,4 @@
+import re
 import json
 import time
 import asyncio
@@ -76,6 +77,15 @@ def _parse_num_speakers(raw: Optional[str]) -> Optional[int]:
     return n if 1 <= n <= 8 else None
 
 
+_MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+\-]{0,63}$")
+
+
+def _parse_diarize_model(raw: Optional[str]) -> Optional[str]:
+    """Embedding model id chosen in the form (the server validates it against its own list); junk -> None = default."""
+    v = str(raw or "").strip()
+    return v if _MODEL_ID_RE.match(v) else None
+
+
 def _want_diarize(diarize: Optional[str], diarize_form: Optional[str]) -> bool:
     """
     HTML checkboxes send nothing when unchecked, so the forms also send a hidden "diarize_form" marker.
@@ -101,6 +111,7 @@ async def captions_process(
     diarize: Optional[str] = Form(None),
     diarize_form: Optional[str] = Form(None),
     num_speakers: Optional[str] = Form(None),
+    diarize_model: Optional[str] = Form(None),
     csrf_token: Optional[str] = Form(None),
 ) -> Any:
     user = get_current_user(request)
@@ -131,6 +142,7 @@ async def captions_process(
             task="transcribe",
             diarize=_want_diarize(diarize, diarize_form),
             num_speakers=_parse_num_speakers(num_speakers),
+            diarize_model=_parse_diarize_model(diarize_model),
         )
         _set_job_state(video_id, status="wait", percent=-1, job_id=job_id, job_server=job_server)
     except Exception as e:
@@ -300,6 +312,7 @@ async def captions_retry(
     diarize: Optional[str] = Form(None),
     diarize_form: Optional[str] = Form(None),
     num_speakers: Optional[str] = Form(None),
+    diarize_model: Optional[str] = Form(None),
     csrf_token: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
@@ -330,6 +343,7 @@ async def captions_retry(
             task="transcribe",
             diarize=_want_diarize(diarize, diarize_form),
             num_speakers=_parse_num_speakers(num_speakers),
+            diarize_model=_parse_diarize_model(diarize_model),
         )
         _set_job_state(video_id, status="wait", percent=-1, job_id=job_id, job_server=job_server)
     except Exception as e:
@@ -380,6 +394,7 @@ async def captions_diarize(
     request: Request,
     video_id: str = Form(...),
     num_speakers: Optional[str] = Form(None),
+    diarize_model: Optional[str] = Form(None),
     csrf_token: Optional[str] = Form(None),
 ):
     user = get_current_user(request)
@@ -409,6 +424,7 @@ async def captions_diarize(
             storage_rel=storage_rel,
             vtt_rel=vtt_rel,
             num_speakers=_parse_num_speakers(num_speakers),
+            diarize_model=_parse_diarize_model(diarize_model),
         )
         _LABEL_JOBS[video_id] = {"job_id": job_id, "job_server": job_server, "ts": time.time(), "stored": False, "error": ""}
     except Exception as e:

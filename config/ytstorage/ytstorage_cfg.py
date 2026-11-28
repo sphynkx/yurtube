@@ -8,6 +8,12 @@ gRPC (required):
 - YTSTORAGE_BASE_PREFIX: optional logical prefix (server-side namespace)
 - YTSTORAGE_GRPC_MAX_MSG_MB: max gRPC message size in MB
 
+Address of the storage as seen by REMOTE microservices (optional):
+- YTSTORAGE_PUBLIC_GRPC_ADDRESS: host:port reachable from outside the local network (e.g. through nginx grpc proxy)
+- YTSTORAGE_PUBLIC_GRPC_TLS: "true"/"false" (default true when the public address is set)
+- YTSTORAGE_PUBLIC_GRPC_TOKEN: token for the public address (default: YTSTORAGE_GRPC_TOKEN)
+  Used only in jobs sent to remote services (see ytcms server addresses with the grpcs:// scheme).
+
 Public URL (optional):
 - YTSTORAGE_PUBLIC_BASE_URL: if set, build_storage_url may use it (currently app serves via /internal/storage/file/* anyway)
 """
@@ -27,3 +33,9 @@ except Exception:
 
 # ---- optional public URL base (kept for future; not required for current /internal/storage/file/* serving) ----
 YTSTORAGE_PUBLIC_BASE_URL: str = os.getenv("YTSTORAGE_PUBLIC_BASE_URL", "").strip()
+
+# ---- storage address given to REMOTE microservices (they cannot reach the local network address) ----
+YTSTORAGE_PUBLIC_GRPC_ADDRESS: str = os.getenv("YTSTORAGE_PUBLIC_GRPC_ADDRESS", "").strip()
+_pub_tls = os.getenv("YTSTORAGE_PUBLIC_GRPC_TLS", "").strip().lower()
+YTSTORAGE_PUBLIC_GRPC_TLS: bool = (_pub_tls in ("1", "true", "yes", "on")) if _pub_tls else True
+YTSTORAGE_PUBLIC_GRPC_TOKEN: str = os.getenv("YTSTORAGE_PUBLIC_GRPC_TOKEN", "").strip() or YTSTORAGE_GRPC_TOKEN

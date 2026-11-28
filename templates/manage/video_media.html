@@ -110,6 +110,11 @@ NOTE: Captions generation may take a long time.
             <input type="checkbox" name="diarize" value="1" {{ 'checked' if diarize_default else '' }} {{ '' if active_cms_server["diarization"] else 'disabled' }}> Speaker colours{{ '' if active_cms_server["diarization"] else ' (not available on server)' }}
           </label>
           <label style="font-size:12px;" title="Leave empty to detect automatically; if you know how many people speak, enter it - it is more reliable">Speakers: <input name="num_speakers" type="number" min="1" max="8" placeholder="auto" style="width:60px;"></label>
+          {% if active_cms_server["diarization_models"]|length > 1 %}
+          <label style="font-size:12px;" title="Speaker recognition model. Different models separate voices differently - try another one if the colours are wrong">Model: <select name="diarize_model" {{ '' if active_cms_server["diarization"] else 'disabled' }}>
+            {% for m in active_cms_server["diarization_models"] %}<option value="{{ m["id"] }}" {{ 'selected' if m["default"] else '' }}>{{ m["title"] }}</option>{% endfor %}
+          </select></label>
+          {% endif %}
           <button id="btn-generate-captions" type="submit">Regenerate captions</button>
           <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
         </form>
@@ -122,6 +127,11 @@ NOTE: Captions generation may take a long time.
           <input type="hidden" name="video_id" value="{{ video_id }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <label style="font-size:12px;" title="Leave empty to detect automatically">Speakers: <input name="num_speakers" type="number" min="1" max="8" placeholder="auto" style="width:60px;"></label>
+          {% if active_cms_server["diarization_models"]|length > 1 %}
+          <label style="font-size:12px;" title="Speaker recognition model. Different models separate voices differently - try another one if the colours are wrong">Model: <select name="diarize_model" {{ '' if active_cms_server["diarization"] else 'disabled' }}>
+            {% for m in active_cms_server["diarization_models"] %}<option value="{{ m["id"] }}" {{ 'selected' if m["default"] else '' }}>{{ m["title"] }}</option>{% endfor %}
+          </select></label>
+          {% endif %}
           <button id="btn-diarize-captions" type="submit" {{ '' if active_cms_server["diarization"] else 'disabled' }} title="Colour the lines of the existing captions by speaker. The text (including your manual edits) is not changed; the original file is kept as *.orig.vtt">Add speaker colours to existing captions</button>
           <span id="diarize-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
         </form>
@@ -138,6 +148,11 @@ NOTE: Captions generation may take a long time.
             <input type="checkbox" name="diarize" value="1" {{ 'checked' if diarize_default else '' }} {{ '' if active_cms_server["diarization"] else 'disabled' }}> Speaker colours{{ '' if active_cms_server["diarization"] else ' (not available on server)' }}
           </label>
           <label style="font-size:12px;" title="Leave empty to detect automatically; if you know how many people speak, enter it - it is more reliable">Speakers: <input name="num_speakers" type="number" min="1" max="8" placeholder="auto" style="width:60px;"></label>
+          {% if active_cms_server["diarization_models"]|length > 1 %}
+          <label style="font-size:12px;" title="Speaker recognition model. Different models separate voices differently - try another one if the colours are wrong">Model: <select name="diarize_model" {{ '' if active_cms_server["diarization"] else 'disabled' }}>
+            {% for m in active_cms_server["diarization_models"] %}<option value="{{ m["id"] }}" {{ 'selected' if m["default"] else '' }}>{{ m["title"] }}</option>{% endfor %}
+          </select></label>
+          {% endif %}
           <button id="btn-generate-captions" type="submit">Generate captions</button>
           <span id="captions-status" data-video-id="{{ video_id }}" style="margin-left:10px;font-size:12px;color:#555;"></span>
         </form>

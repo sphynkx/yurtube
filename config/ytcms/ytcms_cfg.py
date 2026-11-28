@@ -50,16 +50,20 @@ def _parse_server_addr(raw: str, default_host: str, default_port: int) -> tuple[
 class YTCMSServer:
     host: str
     port: int
+    tls: bool = False
 
     @property
     def target(self) -> str:
-        return f"{self.host}:{self.port}"
+        # remote servers (behind an nginx TLS grpc proxy) keep the "grpcs://" scheme in the address string
+        return f"{'grpcs://' if self.tls else ''}{self.host}:{self.port}"
 
 
 def parse_ytcms_servers_env(val: Optional[str]) -> List[YTCMSServer]:
     """
     YTCMS_SERVERS format:
       host1:port1,host2:port2,[ipv6]:port3
+    A server behind a TLS proxy is written with the scheme: grpcs://veda.wiki:8443
+    (grpc://host:port is accepted too and means plain text).
 
     No token per-server for now. Auth token is global (YTCMS_TOKEN).
     """
@@ -73,8 +77,14 @@ def parse_ytcms_servers_env(val: Optional[str]) -> List[YTCMSServer]:
     out: List[YTCMSServer] = []
     parts = [p.strip() for p in raw.split(",") if p.strip()]
     for p in parts:
+        tls = False
+        low = p.lower()
+        if low.startswith("grpcs://"):
+            tls, p = True, p[8:]
+        elif low.startswith("grpc://"):
+            p = p[7:]
         host, port = _parse_server_addr(p, default_host, default_port)
-        out.append(YTCMSServer(host=host, port=port))
+        out.append(YTCMSServer(host=host, port=port, tls=tls))
     return out
 
 

@@ -20,6 +20,9 @@ from config.ytstorage.ytstorage_cfg import (
     YTSTORAGE_GRPC_ADDRESS,
     YTSTORAGE_GRPC_TLS,
     YTSTORAGE_GRPC_TOKEN,
+    YTSTORAGE_PUBLIC_GRPC_ADDRESS,
+    YTSTORAGE_PUBLIC_GRPC_TLS,
+    YTSTORAGE_PUBLIC_GRPC_TOKEN,
 )
 
 from google.protobuf import struct_pb2
@@ -32,6 +35,57 @@ _YTCMS_SERVER_TTL_SEC = float((os.getenv("YTCMS_SERVER_TTL", "") or "10").strip(
 _last_good: Dict[str, Any] = {"addr": None, "ts": 0.0}
 
 
+def split_addr(addr: str) -> Tuple[str, bool]:
+    """
+    "host:port" -> ("host:port", False); "grpcs://host:port" -> ("host:port", True); "grpc://host:port" -> plain
+    """
+    a = (addr or "").strip()
+    low = a.lower()
+    if low.startswith("grpcs://"):
+        return a[8:], True
+    if low.startswith("grpc://"):
+        return a[7:], False
+    return a, False
+
+
+def open_channel(addr: str) -> grpc.Channel:
+    """
+    Channel to a ytcms server: plain text for "host:port" (local network),
+    TLS for "grpcs://host:port" (remote server behind nginx).
+    Optional YTCMS_TLS_CA_FILE: PEM with a custom CA (default: system/gRPC bundled roots).
+    """
+    target, tls = split_addr(addr)
+    if not tls:
+        return grpc.insecure_channel(target)
+    ca_file = (os.getenv("YTCMS_TLS_CA_FILE", "") or "").strip()
+    root = None
+    if ca_file:
+        with open(ca_file, "rb") as f:
+            root = f.read()
+    return grpc.secure_channel(target, grpc.ssl_channel_credentials(root_certificates=root))
+
+
+def _job_storage_ref(server_addr: str) -> "ytcms_pb2.StorageRef":
+    """
+    Storage the ytcms server must use for this job.
+    A remote server (grpcs://) cannot reach the local network address of the storage,
+    so it gets the public one (YTSTORAGE_PUBLIC_GRPC_ADDRESS) when it is configured.
+    Local servers keep the local address.
+    """
+    _, remote = split_addr(server_addr)
+    if remote and YTSTORAGE_PUBLIC_GRPC_ADDRESS:
+        return ytcms_pb2.StorageRef(
+            address=YTSTORAGE_PUBLIC_GRPC_ADDRESS,
+            tls=bool(YTSTORAGE_PUBLIC_GRPC_TLS),
+            token=str(YTSTORAGE_PUBLIC_GRPC_TOKEN or ""),
+        )
+    return ytcms_pb2.StorageRef(
+        address=str(YTSTORAGE_GRPC_ADDRESS),
+        tls=bool(YTSTORAGE_GRPC_TLS),
+        token=str(YTSTORAGE_GRPC_TOKEN or ""),
+    )
+
+
 def _auth_md() -> List[Tuple[str, str]]:
     tok = (YTCMS_TOKEN or "").strip()
     if not tok:
@@ -40,7 +94,7 @@ def _auth_md() -> List[Tuple[str, str]]:
 
 
 def _healthcheck_addr(addr: str) -> bool:
-    channel = grpc.insecure_channel(addr)
+    channel = open_channel(addr)
     try:
         stub = health_pb2_grpc.HealthStub(channel)
         md = _auth_md()
@@ -85,7 +139,7 @@ def pick_ytcms_server_addr() -> str:
         return str(cached)
 
     for s in servers:
-        addr = f"{s.host}:{s.port}"
+        addr = s.target
         try:
             if _healthcheck_addr(addr):
                 _last_good["addr"] = addr
@@ -94,7 +148,7 @@ def pick_ytcms_server_addr() -> str:
         except Exception:
             continue
 
-    addr0 = f"{servers[0].host}:{servers[0].port}"
+    addr0 = servers[0].target
     _last_good["addr"] = addr0
     _last_good["ts"] = now
     return addr0
@@ -110,6 +164,7 @@ def submit_storage_job(
     submit_timeout: float = YTCMS_SUBMIT_TIMEOUT,
     diarize: Optional[bool] = None,
     num_speakers: Optional[int] = None,
+    diarize_model: Optional[str] = None,
 ) -> Tuple[str, str]:
     addr = pick_ytcms_server_addr()
     lang2 = (lang or YTCMS_DEFAULT_LANG).strip() or "auto"
@@ -120,6 +175,9 @@ def submit_storage_job(
     output_base_rel_dir = f"{storage_rel_n}/captions"
 
     idem = (idempotency_key or f"yurtube:{video_id}:{task2}:{lang2}:{source_rel_path}").strip()
+    if diarize_model and not idempotency_key:
+        # another speaker model must not be swallowed by an earlier job for the same video
+        idem = f"{idem}:dz={diarize_model}"
 
     # Speaker diarization is requested through the "options" Struct of SubmitJobRequest.
     # None -> project default (YTCMS_DIARIZE_DEFAULT). A service without diarization simply ignores it.
@@ -129,9 +187,11 @@ def submit_storage_job(
         options.update({"diarize": True})
         if num_speakers and int(num_speakers) > 0:
             options.update({"num_speakers": int(num_speakers)})
+        if diarize_model:
+            options.update({"diarize_model": str(diarize_model)})
 
     md = _auth_md()
-    channel = grpc.insecure_channel(addr)
+    channel = open_channel(addr)
     stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
 
     try:
@@ -141,21 +201,13 @@ def submit_storage_job(
             lang=lang2,
             task=task2,
             source=ytcms_pb2.SourceRef(
-                storage=ytcms_pb2.StorageRef(
-                    address=str(YTSTORAGE_GRPC_ADDRESS),
-                    tls=bool(YTSTORAGE_GRPC_TLS),
-                    token=str(YTSTORAGE_GRPC_TOKEN or ""),
-                ),
+                storage=_job_storage_ref(addr),
                 rel_path=source_rel_path,
                 mime="video/webm",
                 filename="original.webm",
             ),
             output=ytcms_pb2.OutputRef(
-                storage=ytcms_pb2.StorageRef(
-                    address=str(YTSTORAGE_GRPC_ADDRESS),
-                    tls=bool(YTSTORAGE_GRPC_TLS),
-                    token=str(YTSTORAGE_GRPC_TOKEN or ""),
-                ),
+                storage=_job_storage_ref(addr),
                 base_rel_dir=output_base_rel_dir,
             ),
             options=options,
@@ -181,6 +233,7 @@ def submit_label_job(
     storage_rel: str,
     vtt_rel: str,
     num_speakers: Optional[int] = None,
+    diarize_model: Optional[str] = None,
     submit_timeout: float = YTCMS_SUBMIT_TIMEOUT,
 ) -> Tuple[str, str]:
     """
@@ -206,13 +259,11 @@ def submit_label_job(
     })
     if num_speakers and int(num_speakers) > 0:
         options.update({"num_speakers": int(num_speakers)})
+    if diarize_model:
+        options.update({"diarize_model": str(diarize_model)})
 
-    storage_ref = ytcms_pb2.StorageRef(
-        address=str(YTSTORAGE_GRPC_ADDRESS),
-        tls=bool(YTSTORAGE_GRPC_TLS),
-        token=str(YTSTORAGE_GRPC_TOKEN or ""),
-    )
-    channel = grpc.insecure_channel(addr)
+    storage_ref = _job_storage_ref(addr)
+    channel = open_channel(addr)
     stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
     try:
         req = ytcms_pb2.SubmitJobRequest(
@@ -245,7 +296,7 @@ def submit_label_job(
 
 def get_status(*, job_id: str, server_addr: str, timeout: float = YTCMS_STATUS_TIMEOUT) -> ytcms_pb2.JobStatus:
     md = _auth_md()
-    channel = grpc.insecure_channel(server_addr)
+    channel = open_channel(server_addr)
     stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
     try:
         rep = stub.GetStatus(ytcms_pb2.GetStatusRequest(job_id=job_id), metadata=md, timeout=timeout)
@@ -259,7 +310,7 @@ def get_status(*, job_id: str, server_addr: str, timeout: float = YTCMS_STATUS_T
 
 def get_result(*, job_id: str, server_addr: str, timeout: float = YTCMS_RESULT_TIMEOUT) -> ytcms_pb2.JobResult:
     md = _auth_md()
-    channel = grpc.insecure_channel(server_addr)
+    channel = open_channel(server_addr)
     stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
     try:
         return stub.GetResult(ytcms_pb2.GetResultRequest(job_id=job_id), metadata=md, timeout=timeout)
@@ -273,18 +324,14 @@ def get_result(*, job_id: str, server_addr: str, timeout: float = YTCMS_RESULT_T
 def delete_captions(*, storage_rel: str, server_addr: Optional[str] = None, timeout: float = 30.0) -> None:
     addr = server_addr or pick_ytcms_server_addr()
     md = _auth_md()
-    channel = grpc.insecure_channel(addr)
+    channel = open_channel(addr)
     stub = ytcms_pb2_grpc.CaptionsServiceStub(channel)
 
     storage_rel_n = (storage_rel or "").replace("\\", "/").strip().lstrip("/")
     try:
         rep = stub.DeleteCaptions(
             ytcms_pb2.DeleteCaptionsRequest(
-                storage=ytcms_pb2.StorageRef(
-                    address=str(YTSTORAGE_GRPC_ADDRESS),
-                    tls=bool(YTSTORAGE_GRPC_TLS),
-                    token=str(YTSTORAGE_GRPC_TOKEN or ""),
-                ),
+                storage=_job_storage_ref(addr),
                 storage_rel=storage_rel_n,
             ),
             metadata=md,
